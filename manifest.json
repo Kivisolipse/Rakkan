@@ -1,0 +1,9 @@
+{
+  "id": "rakkan",
+  "name": "Rakkan",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Every character, signed. Mark which characters were written by you, by an AI, or quoted from elsewhere, with plain-text inline markers.",
+  "author": "Rakkan contributors",
+  "isDesktopOnly": false
+}
