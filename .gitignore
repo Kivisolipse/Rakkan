@@ -7,9 +7,6 @@
 !/SPEC.md
 !/CHANGELOG.md
 
-# Never touch the private journal folder, wherever it shows up.
-00 日乘/
-**/00 日乘/
 
 # Local Obsidian vaults used for manual testing (the demo vault is
 # committed separately under demo-vault/ and holds only fake data).

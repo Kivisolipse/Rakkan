@@ -34,7 +34,7 @@ describe("setOwner", () => {
   });
 
   it("wraps links, tags and inline code as a whole", () => {
-    expect(mark("见 [[UIUC 2]] 吧", 0, "2", "ai")).toBe("见 &&[[UIUC 2]]&& 吧");
+    expect(mark("见 [[笔记 2]] 吧", 0, "2", "ai")).toBe("见 &&[[笔记 2]]&& 吧");
     expect(mark("看 [文](http://e.com) 吧", 0, "文", "ai")).toBe("看 &&[文](http://e.com)&& 吧");
     expect(mark("跑 `npm i` 吧", 0, "npm", "ai")).toBe("跑 &&`npm i`&& 吧");
     expect(mark("标签 #学习 吧", 0, "学", "ai")).toBe("标签 &&#学习&& 吧");
