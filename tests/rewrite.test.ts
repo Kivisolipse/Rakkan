@@ -29,6 +29,10 @@ describe("setOwner", () => {
     expect(mark("a b c", 0, " b ", "ai")).toBe("a &&b&& c");
   });
 
+  it("joins islands separated only by whitespace", () => {
+    expect(mark("&& Claude\n\nAI @@x@@ y AI\n\n&&", 2, "y", "human")).toBe("AI @@x y@@ AI");
+  });
+
   it("wraps links, tags and inline code as a whole", () => {
     expect(mark("见 [[UIUC 2]] 吧", 0, "2", "ai")).toBe("见 &&[[UIUC 2]]&& 吧");
     expect(mark("看 [文](http://e.com) 吧", 0, "文", "ai")).toBe("看 &&[文](http://e.com)&& 吧");

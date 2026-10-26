@@ -148,6 +148,23 @@ export function rewriteLine(line: string, ctx: LineContext, edit: (chars: Char[]
   }
 
   const baseOwner: Owner = ctx.pair === "ai-block" ? "ai" : "human";
+
+  // Whitespace between two spans of the same owner joins them: `@@a@@ @@b@@` → `@@a b@@`.
+  for (let i = 0; i < chars.length; i++) {
+    if (!/\s/.test(chars[i].ch)) continue;
+    let j = i;
+    while (j < chars.length && /\s/.test(chars[j].ch)) j++;
+    const prev = chars[i - 1];
+    const next = chars[j];
+    if (prev && next && prev.owner !== baseOwner && prev.owner === next.owner && prev.key === next.key) {
+      for (let k = i; k < j; k++) {
+        chars[k].owner = prev.owner;
+        chars[k].key = prev.key;
+      }
+    }
+    i = j - 1;
+  }
+
   const want = signature(chars);
   for (const escape of [false, true]) {
     const out = serialize(chars, baseOwner, escape);

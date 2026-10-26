@@ -42,6 +42,12 @@ export interface ScanOptions {
   inComment?: boolean;
   /** Start offsets of runs that must stay literal (reading view: escapes already consumed). */
   literalRuns?: ReadonlySet<number>;
+  /**
+   * Text already rendered to HTML (reading view): code, math, comments and
+   * escapes are gone or replaced by placeholders, so only markers, URLs and
+   * cites are scanned.
+   */
+  rendered?: boolean;
 }
 
 const isSpace = (c: string) => c === " " || c === "\t" || c === "　";
@@ -165,7 +171,7 @@ export function scanInline(text: string, opts: ScanOptions): InlineScan {
       continue;
     }
 
-    if (c === "\\") {
+    if (c === "\\" && !opts.rendered) {
       const next = text[i + 1];
       if (next === "&" || next === "@") {
         // `\&&` escapes the whole run.
@@ -176,7 +182,7 @@ export function scanInline(text: string, opts: ScanOptions): InlineScan {
       continue;
     }
 
-    if (c === "`") {
+    if (c === "`" && !opts.rendered) {
       const len = runLength(text, i);
       let j = i + len;
       let close = -1;
@@ -197,7 +203,7 @@ export function scanInline(text: string, opts: ScanOptions): InlineScan {
       continue;
     }
 
-    if (c === "%" && text[i + 1] === "%") {
+    if (c === "%" && text[i + 1] === "%" && !opts.rendered) {
       const close = text.indexOf("%%", i + 2);
       if (close < 0) {
         out.skips.push({ from: i, to: n, type: "comment" });
@@ -209,7 +215,7 @@ export function scanInline(text: string, opts: ScanOptions): InlineScan {
       continue;
     }
 
-    if (c === "$") {
+    if (c === "$" && !opts.rendered) {
       if (text[i + 1] === "$") {
         const close = text.indexOf("$$", i + 2);
         if (close >= 0) {
@@ -383,6 +389,7 @@ export interface LineCtx {
   atLen: number;
   inComment: boolean;
   literalRuns?: ReadonlySet<number>;
+  rendered?: boolean;
 }
 
 export interface LineSegment {
@@ -443,6 +450,7 @@ export function parseLine(text: string, ctx: LineCtx): LineResult {
     prose,
     inComment: ctx.inComment,
     literalRuns: ctx.literalRuns,
+    rendered: ctx.rendered,
   });
   result.endsInComment = scan.endsInComment;
 
