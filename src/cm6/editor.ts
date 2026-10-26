@@ -135,9 +135,8 @@ function build(view: EditorView, cfg: RakkanEditorConfig): DecorationSet {
         }
         case "block-open":
         case "block-close": {
-          const line = state.doc.lineAt(s.from);
-          const hideLine = hide && !touches(state, line.from, line.to);
-          out.push((hideLine ? hidden : markDeco("rk-mark rk-mark-block")).range(s.from, s.to));
+          // Collapsed together with its blank lines by collapseField; only style it when shown.
+          if (!collapsedAt(state, s.from)) out.push(markDeco("rk-mark rk-mark-block").range(s.from, s.to));
           break;
         }
         case "decl":
@@ -287,9 +286,79 @@ function pasteHandler(e: ClipboardEvent, view: EditorView) {
   return true;
 }
 
+// ── Collapsing block lines ──────────────────────────────────────────────
+
+const BLANK = /^s*$/;
+
+/**
+ * Ranges to collapse away from the cursor: each block opener with the blank
+ * lines after it, and each closer with the blank lines before it. The blank
+ * line on the outer side stays as the paragraph break, so the text around a
+ * block keeps its normal spacing.
+ */
+function collapsibleRanges(state: EditorState): Array<{ from: number; to: number }> {
+  const { doc } = state;
+  const r = state.field(parseField);
+  const out: Array<{ from: number; to: number }> = [];
+  const blank = (n: number) => BLANK.test(doc.line(n).text);
+  for (const b of r.blocks) {
+    const open = b.openLine + 1;
+    const limit = b.closeLine !== null ? b.closeLine + 1 : b.lastLine + 1;
+    let end = open;
+    while (end + 1 < limit && blank(end + 1)) end++;
+    out.push({ from: doc.line(open).from, to: doc.line(end).to });
+    if (b.closeLine !== null) {
+      const close = b.closeLine + 1;
+      let start = close;
+      while (start - 1 > end && blank(start - 1)) start--;
+      out.push({ from: doc.line(start).from, to: doc.line(close).to });
+    }
+  }
+  // Merge ranges that touch (an empty block collapses as one piece).
+  out.sort((a, b) => a.from - b.from);
+  const merged: typeof out = [];
+  for (const x of out) {
+    const last = merged[merged.length - 1];
+    if (last && x.from <= last.to + 1) last.to = Math.max(last.to, x.to);
+    else merged.push({ ...x });
+  }
+  return merged;
+}
+
+const collapsedCache = new WeakMap<EditorState, DecorationSet>();
+
+function collapsedAt(state: EditorState, pos: number): boolean {
+  const set = collapsedCache.get(state);
+  if (!set) return false;
+  let hit = false;
+  set.between(pos, pos, () => {
+    hit = true;
+    return false;
+  });
+  return hit;
+}
+
+function collapseField(cfg: RakkanEditorConfig) {
+  const compute = (state: EditorState): DecorationSet => {
+    let set = Decoration.none;
+    if (cfg.hideMarkers(state)) {
+      const ranges = collapsibleRanges(state).filter((x) => !touches(state, x.from, x.to));
+      set = Decoration.set(ranges.map((x) => Decoration.replace({ block: true }).range(x.from, x.to)));
+    }
+    collapsedCache.set(state, set);
+    return set;
+  };
+  return StateField.define<DecorationSet>({
+    create: compute,
+    update: (_v, tr) => compute(tr.state),
+    provide: (f) => EditorView.decorations.from(f),
+  });
+}
+
 export function rakkanEditor(cfg: RakkanEditorConfig): Extension {
   return [
     parseField,
+    collapseField(cfg),
     decorations(cfg),
     EditorView.domEventHandlers({
       copy: copyHandler(cfg, false),
