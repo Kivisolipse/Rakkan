@@ -12,7 +12,8 @@ import {
   type Signature,
 } from "../core";
 
-export const STYLES = ["gradient", "solid", "rainbow", "underline", "leftline", "none"] as const;
+/** How AI and quoted text is shown. The text itself is coloured; nothing is highlighted. */
+export const STYLES = ["color", "gradient", "rainbow", "underline", "none"] as const;
 export type StyleName = (typeof STYLES)[number];
 
 export interface StyleSettings {
@@ -96,12 +97,3 @@ export function resolve(
   return out;
 }
 
-/** Classes for a block's signature badge. */
-export function resolveBlock(sig: Signature, s: StyleSettings): Resolved {
-  const fam = signatureFamily(sig, s.extraPrefixes);
-  const famId = s.familyColors && fam ? fam.id : "generic";
-  const out: Resolved = { cls: `rk-sig rk-fam-${famId}`, label: signatureLabel(sig, s.extraPrefixes) };
-  if (sig.id) out.id = sig.id;
-  if (fam) out.family = fam.id;
-  return out;
-}

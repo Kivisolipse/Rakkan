@@ -1,13 +1,11 @@
-// Live preview: colour by author, hide markers away from the cursor, turn
-// block lines into small signature badges, and keep attribution through
-// copy and paste. Depends only on @codemirror/* so other CM6 hosts can reuse it.
+// Live preview: colour the text by author, hide markers and block lines away
+// from the cursor, and keep attribution through copy and paste. Depends only on @codemirror/* so other CM6 hosts can reuse it.
 
 import { ChangeSet, StateEffect, StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import {
   Decoration,
   EditorView,
   ViewPlugin,
-  WidgetType,
   type DecorationSet,
   type ViewUpdate,
 } from "@codemirror/view";
@@ -22,7 +20,7 @@ import {
   type ParseResult,
   type Segment,
 } from "../core";
-import { resolve, resolveBlock, type Resolved, type StyleSettings } from "./resolve";
+import { resolve, type Resolved, type StyleSettings } from "./resolve";
 
 export interface RakkanEditorConfig {
   styles(): StyleSettings;
@@ -86,42 +84,6 @@ function firstSegment(segs: Segment[], pos: number): number {
   return lo;
 }
 
-// ── Widgets ─────────────────────────────────────────────────────────────
-
-class SignatureWidget extends WidgetType {
-  constructor(
-    readonly res: Resolved,
-    readonly end: boolean,
-  ) {
-    super();
-  }
-  override eq(o: SignatureWidget) {
-    return o.res.cls === this.res.cls && o.res.label === this.res.label && o.res.id === this.res.id && o.end === this.end;
-  }
-  toDOM() {
-    const el = document.createElement("span");
-    el.className = `${this.res.cls} ${this.end ? "rk-sig-end" : "rk-sig-start"}`;
-    if (this.end) {
-      el.setAttribute("aria-label", `${this.res.label} 结束`);
-    } else {
-      const name = document.createElement("span");
-      name.className = "rk-sig-name";
-      name.textContent = this.res.label;
-      el.appendChild(name);
-      if (this.res.id && this.res.id !== this.res.label) {
-        const id = document.createElement("span");
-        id.className = "rk-sig-id";
-        id.textContent = this.res.id;
-        el.appendChild(id);
-      }
-    }
-    return el;
-  }
-  override ignoreEvent() {
-    return false;
-  }
-}
-
 // ── Decorations ─────────────────────────────────────────────────────────
 
 const markCache = new Map<string, Decoration>();
@@ -174,13 +136,8 @@ function build(view: EditorView, cfg: RakkanEditorConfig): DecorationSet {
         case "block-open":
         case "block-close": {
           const line = state.doc.lineAt(s.from);
-          const b = s.attr.block !== undefined ? r.blocks[s.attr.block] : undefined;
-          if (hide && b && !touches(state, line.from, line.to)) {
-            const res = resolveBlock(b.signature, styles);
-            out.push(
-              Decoration.replace({ widget: new SignatureWidget(res, s.mark === "block-close") }).range(s.from, s.to),
-            );
-          } else out.push(markDeco("rk-mark rk-mark-block").range(s.from, s.to));
+          const hideLine = hide && !touches(state, line.from, line.to);
+          out.push((hideLine ? hidden : markDeco("rk-mark rk-mark-block")).range(s.from, s.to));
           break;
         }
         case "decl":

@@ -10,8 +10,8 @@ import type { StyleSettings } from "../src/cm6/resolve";
 
 const styles: StyleSettings = {
   familyColors: true,
-  aiStyle: "gradient",
-  quoteStyle: "underline",
+  aiStyle: "color",
+  quoteStyle: "color",
   familyStyle: {},
   modelStyle: {},
   forceStyle: "",

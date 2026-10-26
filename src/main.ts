@@ -2,7 +2,7 @@ import { editorLivePreviewField, MarkdownView, Notice, Plugin, type Editor } fro
 import type { EditorView } from "@codemirror/view";
 import { Parser, type ParseResult } from "./core";
 import { parseField, rakkanEditor, refreshEffect } from "./cm6/editor";
-import type { StyleSettings } from "./cm6/resolve";
+import { STYLES, type StyleSettings } from "./cm6/resolve";
 import { processSection } from "./obsidian/reading";
 import { DEFAULT_SETTINGS, RakkanSettingTab, type RakkanSettings } from "./obsidian/settings";
 import { colorCss } from "./cm6/colors";
@@ -184,6 +184,13 @@ export default class RakkanPlugin extends Plugin {
 
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    // Drop style names that no longer exist (the old background styles).
+    const s = this.settings;
+    const ok = (v: string) => (STYLES as readonly string[]).includes(v);
+    if (!ok(s.aiStyle)) s.aiStyle = DEFAULT_SETTINGS.aiStyle;
+    if (!ok(s.quoteStyle)) s.quoteStyle = DEFAULT_SETTINGS.quoteStyle;
+    if (s.forceStyle && !ok(s.forceStyle)) s.forceStyle = "";
+    for (const m of [s.familyStyle, s.modelStyle]) for (const k of Object.keys(m)) if (!ok(m[k])) delete m[k];
   }
 
   async saveSettings() {

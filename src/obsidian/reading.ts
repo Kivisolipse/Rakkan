@@ -4,12 +4,12 @@
 
 import type { MarkdownPostProcessorContext } from "obsidian";
 import { Parser, parseLine, scanInline, type Attr, type LineContext, type ParseResult } from "../core";
-import { resolve, resolveBlock, type StyleSettings } from "../cm6/resolve";
+import { resolve, type StyleSettings } from "../cm6/resolve";
 
 const HUMAN: Attr = { kind: "human", explicit: false };
 const PLACEHOLDER = "￼";
 const LEAF = "p, li, h1, h2, h3, h4, h5, h6, td, th, dt, dd, .callout-title-inner, figcaption";
-const SKIP = "pre, .math, mjx-container, .frontmatter, .rk-sig, .internal-embed, .markdown-embed, .rk-done";
+const SKIP = "pre, .math, mjx-container, .frontmatter, .internal-embed, .markdown-embed, .rk-done";
 const ATOMIC = "code, .math, mjx-container, img, .internal-embed";
 
 const parser = new Parser();
@@ -133,21 +133,11 @@ export function processSection(el: HTMLElement, ctx: MarkdownPostProcessorContex
     const { lineStart, lineEnd } = info;
     sectionSource = info.text.split("\n").slice(lineStart, lineEnd + 1);
 
-    // Block lines become badges.
+    // Block lines are syntax only: hide them.
     const first = doc.segments.find((s) => s.from >= doc!.lines[lineStart].from && s.to <= doc!.lines[lineStart].to + 1);
     if (first?.role === "mark" && (first.mark === "block-open" || first.mark === "block-close") && lineStart === lineEnd) {
-      const b = first.attr.block !== undefined ? doc.blocks[first.attr.block] : undefined;
-      if (b) {
-        const res = resolveBlock(b.signature, styles);
-        el.empty();
-        el.addClass("rk-sig-section", "rk-done");
-        const badge = el.createSpan({ cls: `${res.cls} ${first.mark === "block-close" ? "rk-sig-end" : "rk-sig-start"}` });
-        if (first.mark === "block-open") {
-          badge.createSpan({ cls: "rk-sig-name", text: res.label });
-          if (res.id && res.id !== res.label) badge.createSpan({ cls: "rk-sig-id", text: res.id });
-        }
-        return;
-      }
+      el.addClass("rk-block-line", "rk-done");
+      return;
     }
 
     for (let l = lineStart; l <= lineEnd; l++) {

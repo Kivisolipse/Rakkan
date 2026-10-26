@@ -1,4 +1,5 @@
 /* Rakkan — every character, signed.
+ * The text itself is coloured, the way iA Writer's Authorship colours AI text.
  * Colours come from --rk-c / --rk-c2, set per family by the plugin
  * (.rk-fam-claude, .rk-quote, …). Override them in a CSS snippet if you like.
  */
@@ -8,6 +9,7 @@ body {
   --rk-mark-opacity: 0.55;
 }
 
+/* Writing mode: colours fade towards the normal text colour. */
 body.rk-mode-writing {
   --rk-strength: 0.35;
   --rk-mark-opacity: 0.2;
@@ -15,26 +17,13 @@ body.rk-mode-writing {
 
 /* ── Text styles ─────────────────────────────────────────────── */
 
-.rk-style-gradient {
-  background-image: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--rk-c, #8b5cf6) calc(28% * var(--rk-strength)), transparent),
-    color-mix(in srgb, var(--rk-c2, var(--rk-c, #8b5cf6)) calc(8% * var(--rk-strength)), transparent)
-  );
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
-  border-radius: 3px;
+.rk-style-color {
+  color: color-mix(in srgb, var(--rk-c, #8b5cf6) calc(100% * var(--rk-strength)), currentColor);
 }
 
-.rk-style-solid {
-  background-color: color-mix(in srgb, var(--rk-c, #8b5cf6) calc(18% * var(--rk-strength)), transparent);
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
-  border-radius: 3px;
-}
-
+/* Text filled with a gradient between the family's two colours. */
+.rk-style-gradient,
 .rk-style-rainbow {
-  background-image: linear-gradient(90deg, #e8505b, #f4a340, #3bb273, #3b82f6, #8b5cf6);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -42,9 +31,19 @@ body.rk-mode-writing {
   box-decoration-break: clone;
 }
 
+.rk-style-gradient {
+  background-image: linear-gradient(90deg, var(--rk-c, #8b5cf6), var(--rk-c2, var(--rk-c, #8b5cf6)));
+}
+
+.rk-style-rainbow {
+  background-image: linear-gradient(90deg, #e8505b, #f4a340, #3bb273, #3b82f6, #8b5cf6);
+}
+
+body.rk-mode-writing .rk-style-gradient,
 body.rk-mode-writing .rk-style-rainbow {
   -webkit-text-fill-color: currentColor;
   background-image: none;
+  color: color-mix(in srgb, var(--rk-c, #8b5cf6) 35%, currentColor);
 }
 
 .rk-style-underline {
@@ -54,14 +53,7 @@ body.rk-mode-writing .rk-style-rainbow {
   text-decoration-color: color-mix(in srgb, var(--rk-c, #8b5cf6) calc(75% * var(--rk-strength)), transparent);
 }
 
-.rk-style-leftline {
-  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--rk-c, #8b5cf6) calc(85% * var(--rk-strength)), transparent);
-  padding-left: 3px;
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
-}
-
-/* A one-character human island is easy to miss inside a coloured run. */
+/* A one-character human island is easy to miss inside coloured text. */
 .rk-island-dot {
   position: relative;
 }
@@ -83,10 +75,12 @@ body.rk-mode-writing .rk-style-rainbow {
 
 .rk-mark {
   color: var(--text-faint, #999);
+  -webkit-text-fill-color: var(--text-faint, #999);
   opacity: var(--rk-mark-opacity);
 }
 
-.markdown-rendered .rk-mark {
+.markdown-rendered .rk-mark,
+.markdown-rendered .rk-block-line {
   display: none;
 }
 
@@ -103,59 +97,9 @@ body.rk-mode-writing .rk-style-rainbow {
   text-underline-offset: 3px;
 }
 
-/* ── Signature badges (block lines) ──────────────────────────── */
-
-.rk-sig {
-  --rk-c-local: var(--rk-c, #8b5cf6);
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45em;
-  font-family: var(--font-interface, sans-serif);
-  font-size: var(--font-ui-smaller, 0.8em);
-  line-height: 1.7;
-  vertical-align: middle;
-}
-
-.rk-sig-start {
-  padding: 0 0.7em 0 0.55em;
-  border-radius: 999px;
-  color: var(--rk-c-local);
-  background: color-mix(in srgb, var(--rk-c-local) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--rk-c-local) 35%, transparent);
-}
-
-/* A small square seal, like the stamp next to a painter's signature. */
-.rk-sig-start::before {
-  content: "";
-  width: 0.6em;
-  height: 0.6em;
-  border-radius: 2px;
-  background: var(--rk-c-local);
-}
-
-.rk-sig-id {
-  font-family: var(--font-monospace, monospace);
-  opacity: 0.7;
-}
-
-.rk-sig-end {
-  width: 2.5em;
-  height: 2px;
-  border-radius: 1px;
-  background: color-mix(in srgb, var(--rk-c-local) 45%, transparent);
-}
-
-.markdown-rendered .rk-sig-section {
-  margin: 0.4em 0;
-}
-
-.markdown-rendered .rk-sig-section > .rk-sig-end {
-  display: block;
-}
-
-/* Code inside an AI block. */
+/* Code inside an AI block: the code text keeps its syntax colours, so mark the edge. */
 pre.rk-code {
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--rk-c, #8b5cf6) calc(60% * var(--rk-strength)), transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--rk-c, #8b5cf6) calc(60% * var(--rk-strength)), transparent);
 }
 
 /* ── Status bar and lists ────────────────────────────────────── */

@@ -21,8 +21,8 @@ export interface RakkanSettings extends StyleSettings {
 
 export const DEFAULT_SETTINGS: RakkanSettings = {
   familyColors: true,
-  aiStyle: "gradient",
-  quoteStyle: "underline",
+  aiStyle: "color",
+  quoteStyle: "color",
   familyStyle: {},
   modelStyle: {},
   forceStyle: "",
@@ -37,11 +37,10 @@ export const DEFAULT_SETTINGS: RakkanSettings = {
 };
 
 const STYLE_LABELS: Record<StyleName, string> = {
-  gradient: "渐变底色",
-  solid: "纯色底色",
+  color: "彩色字",
+  gradient: "渐变字",
   rainbow: "彩虹字",
   underline: "下划线",
-  leftline: "左边一条线",
   none: "关闭",
 };
 
@@ -89,7 +88,7 @@ export class RakkanSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("实时预览里藏起标记")
-      .setDesc("光标不在那一段时，藏起 && @@ 和 [@key]，块的开合行显示成署名签。")
+      .setDesc("光标不在那一段时，藏起 && @@ 和 [@key]，块的开合行也藏起来。")
       .addToggle((t) =>
         t.setValue(s.hideMarkers).onChange(async (v) => {
           s.hideMarkers = v;
@@ -214,7 +213,7 @@ export class RakkanSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("按具体模型换样式")
-      .setDesc("一行一个：模型 ID 或 @key = 样式（gradient、solid、rainbow、underline、leftline、none）。")
+      .setDesc("一行一个：模型 ID 或 @key = 样式（color、gradient、rainbow、underline、none）。")
       .addTextArea((t) => {
         t.setPlaceholder("claude-opus-5-5 = rainbow\n@gpt = underline")
           .setValue(
