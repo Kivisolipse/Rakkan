@@ -97,9 +97,23 @@ export interface LineInfo {
   to: number; // exclusive, without the line break
 }
 
+/** How a line was parsed; enough to re-parse or rewrite it in isolation. */
+export interface LineContext {
+  /** prose / code: inline markers apply; other: structural or skipped line. */
+  mode: "prose" | "code" | "other";
+  base: Attr;
+  pair: "human" | "ai-block" | "quote";
+  /** Characters at the start of the line that are not inline content (`> `). */
+  prefix: number;
+  inComment: boolean;
+  ampLen: number;
+  atLen: number;
+}
+
 export interface ParseResult {
   text: string;
   lines: LineInfo[];
+  lineContexts: LineContext[];
   segments: Segment[];
   spans: InlineSpan[];
   blocks: Block[];

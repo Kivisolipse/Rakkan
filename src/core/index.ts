@@ -6,3 +6,5 @@ export { stripMarkers } from "./strip";
 export type { Stripped } from "./strip";
 export { looseRegex, looseRegexSource, GAP } from "./search";
 export { scanInline, parseLine } from "./inline";
+export { setOwner, rewriteLine, minimalChange, atomicRanges } from "./rewrite";
+export type { Owner } from "./rewrite";

@@ -4,6 +4,7 @@ import type {
   Attr,
   Block,
   Diagnostic,
+  LineContext,
   LineInfo,
   MarkType,
   ParseResult,
@@ -346,11 +347,22 @@ export class Parser {
       segments.push(s);
     };
 
+    const lineContexts: LineContext[] = new Array(N);
     for (let i = 0; i < N; i++) {
       const st = structs[i];
       const { from, to } = lines[i];
       const t = lineText[i];
       const base = st.block !== null ? blockAttr[st.block] : HUMAN;
+      const blockPair = st.block !== null ? "ai-block" : "human";
+      lineContexts[i] = {
+        mode: st.type === "prose" && !st.citeLine ? "prose" : st.type === "code" && (st.amp || st.at) ? "code" : "other",
+        base: st.type === "meta" ? HUMAN : base,
+        pair: blockPair,
+        prefix: 0,
+        inComment: st.inComment,
+        ampLen: st.type === "code" ? st.amp : 2,
+        atLen: st.type === "code" ? st.at : 2,
+      };
       switch (st.type) {
         case "meta":
           push(from, to, "meta", HUMAN);
@@ -400,6 +412,9 @@ export class Parser {
             pair = "quote";
           }
           const pre = st.inComment ? 0 : st.prefix;
+          lineContexts[i].base = lineBase;
+          lineContexts[i].pair = pair;
+          lineContexts[i].prefix = pre;
           push(from, from + pre, "syntax", lineBase);
           if (st.citeLine) {
             push(from + st.citeLine[0], from + st.citeLine[1], "mark", lineBase, "cite");
@@ -447,7 +462,7 @@ export class Parser {
     }
 
     diagnostics.sort((a, b) => a.from - b.from);
-    return { text, lines, segments, spans, blocks, diagnostics, definitions, stats };
+    return { text, lines, lineContexts, segments, spans, blocks, diagnostics, definitions, stats };
   }
 }
 
