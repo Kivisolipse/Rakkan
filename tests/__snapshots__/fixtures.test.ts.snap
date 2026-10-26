@@ -1,0 +1,37 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`fixtures > sample.md 1`] = `
+[
+  "H:# 分页人写的开头。",
+  "A@gpt:这句是 AI 补的",
+  "H:，然后又回到人。书上说「",
+  "Q@fakebook:纸短情长",
+  "H:」，我深以为然。",
+  "A:分页把地址空间切成固定大小的页，",
+  "h:很好理解。",
+  "A:if (a && b) return &&&fallback()&&&;再引一句 "",
+  "Q@mies:less is more",
+  "A:"。",
+  "Q@fakebook:整段的引用用引用块。最后一行注明出处。",
+  "H:预算约 $3.8 万，",
+  "A:按汇率粗算",
+  "H: ¥156/\\$。",
+]
+`;
+
+exports[`fixtures > sample.md 2`] = `
+{
+  "ai": 66,
+  "aiByAuthor": {
+    "@gpt": 7,
+    "AI": 5,
+    "Claude": 54,
+  },
+  "human": 51,
+  "quote": 33,
+  "quoteByKey": {
+    "fakebook": 23,
+    "mies": 10,
+  },
+}
+`;
