@@ -1,0 +1,249 @@
+// Reading view: colour rendered sections. Block membership comes from the
+// source (getSectionInfo); inline markers are found in the rendered text, with
+// code and math elements standing in as single placeholder characters.
+
+import type { MarkdownPostProcessorContext } from "obsidian";
+import { Parser, parseLine, scanInline, type Attr, type LineContext, type ParseResult } from "../core";
+import { resolve, resolveBlock, type StyleSettings } from "../cm6/resolve";
+
+const HUMAN: Attr = { kind: "human", explicit: false };
+const PLACEHOLDER = "￼";
+const LEAF = "p, li, h1, h2, h3, h4, h5, h6, td, th, dt, dd, .callout-title-inner, figcaption";
+const SKIP = "pre, .math, mjx-container, .frontmatter, .rk-sig, .internal-embed, .markdown-embed, .rk-done";
+const ATOMIC = "code, .math, mjx-container, img, .internal-embed";
+
+const parser = new Parser();
+let lastText = "";
+let lastResult: ParseResult | null = null;
+
+function parseCached(text: string): ParseResult {
+  if (text !== lastText || !lastResult) {
+    lastText = text;
+    lastResult = parser.parse(text);
+  }
+  return lastResult;
+}
+
+interface Item {
+  node: Node;
+  start: number;
+  len: number;
+}
+
+interface Group {
+  root: Element;
+  items: Item[];
+  text: string;
+}
+
+function collectGroups(el: HTMLElement): Group[] {
+  const groups = new Map<Element, Group>();
+  const order: Group[] = [];
+  const groupFor = (n: Node): Group => {
+    const parent = n.parentElement!;
+    const root = (parent.closest(LEAF) && el.contains(parent.closest(LEAF)) ? parent.closest(LEAF) : el) as Element;
+    let g = groups.get(root);
+    if (!g) {
+      g = { root, items: [], text: "" };
+      groups.set(root, g);
+      order.push(g);
+    }
+    return g;
+  };
+  const walk = (node: Node) => {
+    for (let child = node.firstChild; child; child = child.nextSibling) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        const t = child.textContent ?? "";
+        if (!t) continue;
+        const g = groupFor(child);
+        g.items.push({ node: child, start: g.text.length, len: t.length });
+        g.text += t;
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
+        const e = child as Element;
+        if (e.matches(SKIP)) continue;
+        if (e.matches(ATOMIC)) {
+          const g = groupFor(e);
+          g.items.push({ node: e, start: g.text.length, len: 1 });
+          g.text += PLACEHOLDER;
+          continue;
+        }
+        walk(e);
+      }
+    }
+  };
+  walk(el);
+  return order;
+}
+
+/** Wrap `[a, b)` of a text node in a span; pieces must be sorted and disjoint. */
+function wrapText(node: Text, pieces: Array<{ a: number; b: number; cls: string; title?: string }>) {
+  for (let k = pieces.length - 1; k >= 0; k--) {
+    const { a, b, cls, title } = pieces[k];
+    if (b < node.length) node.splitText(b);
+    const mid = a > 0 ? node.splitText(a) : node;
+    const span = document.createElement("span");
+    span.className = cls;
+    if (title) span.setAttribute("aria-label", title);
+    mid.parentNode!.insertBefore(span, mid);
+    span.appendChild(mid);
+  }
+}
+
+/**
+ * Runs of `&` / `@` in the section source that were escaped with a backslash;
+ * rendering consumes the backslash, so the DOM alone cannot tell.
+ */
+function escapedRunFlags(source: string[]): boolean[] | null {
+  if (!source.some((l) => /\\[&@]/.test(l))) return null;
+  const flags: boolean[] = [];
+  for (const line of source) {
+    const scan = scanInline(line, { ampLen: 2, atLen: 2, prose: true });
+    const runs = [...scan.tokens, ...scan.literals].sort((x, y) => x.from - y.from);
+    for (const r of runs) flags.push(line[r.from - 1] === "\\");
+  }
+  return flags;
+}
+
+function domRuns(text: string): number[] {
+  const out: number[] = [];
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === "&" || c === "@") {
+      out.push(i);
+      while (i < text.length && text[i] === c) i++;
+    } else i++;
+  }
+  return out;
+}
+
+export interface ReadingDeps {
+  styles(): StyleSettings;
+}
+
+export function processSection(el: HTMLElement, ctx: MarkdownPostProcessorContext, deps: ReadingDeps) {
+  const styles = deps.styles();
+  const info = ctx.getSectionInfo(el);
+  let doc: ParseResult | null = null;
+  let lc: LineContext | null = null;
+  let sectionSource: string[] = [];
+
+  if (info) {
+    doc = parseCached(info.text);
+    const { lineStart, lineEnd } = info;
+    sectionSource = info.text.split("\n").slice(lineStart, lineEnd + 1);
+
+    // Block lines become badges.
+    const first = doc.segments.find((s) => s.from >= doc!.lines[lineStart].from && s.to <= doc!.lines[lineStart].to + 1);
+    if (first?.role === "mark" && (first.mark === "block-open" || first.mark === "block-close") && lineStart === lineEnd) {
+      const b = first.attr.block !== undefined ? doc.blocks[first.attr.block] : undefined;
+      if (b) {
+        const res = resolveBlock(b.signature, styles);
+        el.empty();
+        el.addClass("rk-sig-section", "rk-done");
+        const badge = el.createSpan({ cls: `${res.cls} ${first.mark === "block-close" ? "rk-sig-end" : "rk-sig-start"}` });
+        if (first.mark === "block-open") {
+          badge.createSpan({ cls: "rk-sig-name", text: res.label });
+          if (res.id && res.id !== res.label) badge.createSpan({ cls: "rk-sig-id", text: res.id });
+        }
+        return;
+      }
+    }
+
+    for (let l = lineStart; l <= lineEnd; l++) {
+      const c = doc.lineContexts[l];
+      if (c && c.mode === "prose") {
+        lc = c;
+        break;
+      }
+    }
+    lc ??= doc.lineContexts[lineStart] ?? null;
+  }
+
+  const base = lc?.base ?? HUMAN;
+  const pair = lc?.pair ?? "human";
+  const blockRes =
+    doc && base.block !== undefined && doc.blocks[base.block] ? resolve({ kind: "ai", block: base.block, explicit: false }, doc, styles) : null;
+
+  if (blockRes) {
+    el.addClass("rk-in-block");
+    el.querySelectorAll("pre").forEach((pre) => pre.addClass(...blockRes.cls.split(" "), "rk-code"));
+  }
+
+  const docLike = doc ?? { blocks: [], definitions: {} };
+  const groups = collectGroups(el);
+
+  // Escapes: map source runs onto rendered runs when the counts agree.
+  const flags = escapedRunFlags(sectionSource);
+  const literalByGroup = new Map<Group, Set<number>>();
+  if (flags) {
+    const all: Array<[Group, number]> = [];
+    for (const g of groups) for (const p of domRuns(g.text)) all.push([g, p]);
+    if (all.length === flags.length) {
+      all.forEach(([g, p], k) => {
+        if (!flags[k]) return;
+        let set = literalByGroup.get(g);
+        if (!set) literalByGroup.set(g, (set = new Set()));
+        set.add(p);
+      });
+    }
+  }
+
+  for (const g of groups) {
+    if (!g.text) continue;
+    const r = parseLine(g.text, {
+      base,
+      pair,
+      mode: "prose",
+      ampLen: 2,
+      atLen: 2,
+      inComment: false,
+      rendered: true,
+      literalRuns: literalByGroup.get(g),
+    });
+
+    // A cited blockquote ends with a bare `[@key]` line.
+    const ranges: Array<{ from: number; to: number; cls: string; title?: string }> = [];
+    if (base.kind === "quote" && base.key) {
+      const m = new RegExp(`\\[@${base.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\]\\s*$`).exec(g.text);
+      if (m) ranges.push({ from: m.index, to: m.index + m[0].length, cls: "rk-mark" });
+    }
+    for (const s of r.segments) {
+      if (ranges.some((x) => s.from >= x.from && s.to <= x.to)) continue;
+      if (s.role === "mark") {
+        ranges.push({ from: s.from, to: s.to, cls: "rk-mark" });
+      } else if (s.role === "text") {
+        const res = resolve(s.attr, docLike, styles);
+        if (res) {
+          let cls = res.cls;
+          if (s.attr.kind === "human" && s.to - s.from === 1) cls += " rk-island-dot";
+          ranges.push({ from: s.from, to: s.to, cls, title: res.label });
+        }
+      }
+    }
+    if (!ranges.length) continue;
+    ranges.sort((a, b) => a.from - b.from);
+
+    // Distribute ranges over the group's nodes.
+    const perNode = new Map<Text, Array<{ a: number; b: number; cls: string; title?: string }>>();
+    for (const it of g.items) {
+      const itEnd = it.start + it.len;
+      for (const rg of ranges) {
+        if (rg.to <= it.start || rg.from >= itEnd) continue;
+        if (it.node.nodeType !== Node.TEXT_NODE) {
+          (it.node as Element).addClasses(rg.cls.split(" "));
+          continue;
+        }
+        let list = perNode.get(it.node as Text);
+        if (!list) perNode.set(it.node as Text, (list = []));
+        list.push({
+          a: Math.max(rg.from, it.start) - it.start,
+          b: Math.min(rg.to, itEnd) - it.start,
+          cls: rg.cls,
+          title: rg.title,
+        });
+      }
+    }
+    for (const [node, pieces] of perNode) wrapText(node, pieces);
+  }
+}
