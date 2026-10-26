@@ -12,7 +12,6 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "stats": "esbuild scripts/stats.ts --bundle --platform=node --format=esm --log-level=warning --outfile=dist/stats.mjs && node dist/stats.mjs",
-    "harness": "esbuild dev/harness.ts --bundle --format=iife --outfile=dev/out/harness.js --log-level=warning",
     "demo": "npm run build && node scripts/install-demo.mjs"
   },
   "keywords": [

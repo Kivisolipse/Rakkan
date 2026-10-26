@@ -69,7 +69,6 @@ npm test          # core 单元测试
 npm run build     # 生成 main.js
 npm run demo      # 构建并装进 demo-vault/，用 Obsidian 打开这个文件夹试用
 npm run stats -- path/to/notes   # 统计每篇的亲笔、代笔、引文比例
-npm run harness   # 构建 dev/ 下的最小 CodeMirror 页面，不开 Obsidian 也能看实时预览效果
 ```
 
 代码分三层：`src/core`（纯 TypeScript 解析器）、`src/cm6`（只依赖 CodeMirror 6）、`src/obsidian`（设置、命令、阅读视图）。计划见 [docs/PLAN.md](docs/PLAN.md)。
