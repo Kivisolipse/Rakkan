@@ -48,3 +48,6 @@ desktop.ini
 npm-debug.log*
 playwright-report/
 test-results/
+
+# Browser harness build output
+/dev/out/
