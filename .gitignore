@@ -1,0 +1,50 @@
+# ── Private notes ────────────────────────────────────────────────
+# The design notes in the repo root come from a personal vault and
+# contain private material. Every root-level Markdown file is ignored
+# unless explicitly whitelisted below.
+/*.md
+!/README.md
+!/SPEC.md
+!/CHANGELOG.md
+
+# Never touch the private journal folder, wherever it shows up.
+00 日乘/
+**/00 日乘/
+
+# Local Obsidian vaults used for manual testing (the demo vault is
+# committed separately under demo-vault/ and holds only fake data).
+/vault/
+/test-vault/
+.obsidian/
+!/demo-vault/.obsidian/
+/demo-vault/.obsidian/workspace*.json
+/demo-vault/.obsidian/plugins/rakkan/
+
+# ── Build output ────────────────────────────────────────────────
+node_modules/
+/main.js
+*.js.map
+/dist/
+/coverage/
+*.tsbuildinfo
+
+# Obsidian writes plugin settings here when the repo is symlinked
+# into a vault.
+/data.json
+
+# ── Editors / OS ────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+
+# ── Tooling ─────────────────────────────────────────────────────
+.claude/
+.env
+.env.*
+npm-debug.log*
+playwright-report/
+test-results/
