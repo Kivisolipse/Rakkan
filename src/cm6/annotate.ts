@@ -21,6 +21,7 @@ import {
   StateEffect,
   StateField,
   Transaction,
+  type ChangeDesc,
   type Extension,
   type TransactionSpec,
 } from "@codemirror/state";
@@ -137,7 +138,8 @@ export const pendingField = StateField.define<readonly Range[]>({
     if (!tr.docChanged) return out;
     out = out.map((p) => ({ from: tr.changes.mapPos(p.from, 1), to: tr.changes.mapPos(p.to, -1) }));
     const ev = tr.annotation(Transaction.userEvent);
-    if (ev && ev.startsWith("input.type.compose")) {
+    // Redo puts back composed text that the wrap step (outside the history) never covered.
+    if (ev && (ev.startsWith("input.type.compose") || ev === "redo")) {
       const r = tr.startState.field(parseField, false);
       if (r) {
         tr.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
@@ -185,6 +187,37 @@ export function flushSpec(state: EditorState, cfg: AnnotateConfig): TransactionS
     // Kept out of the undo history: undo takes back the typed text, and the
     // leftover empty island is cleaned up like any other.
     annotations: [Transaction.addToHistory.of(false), Transaction.userEvent.of("input.rakkan.wrap")],
+  };
+}
+
+/**
+ * After an undo: the wrap step is not in the undo history, so undoing composed
+ * text takes back the characters and leaves their markers behind as `@@@@`.
+ * Remove such empty pairs next to the changed ranges, in AI regions only.
+ */
+export function cleanupSpec(state: EditorState, changes: ChangeDesc): TransactionSpec | null {
+  const r = state.field(parseField, false);
+  if (!r) return null;
+  const { doc } = state;
+  const found = new Map<number, { from: number; to: number; insert: string }>();
+  changes.iterChangedRanges((_fromA, _toA, fromB, toB) => {
+    const line = doc.lineAt(fromB);
+    if (doc.lineAt(toB).number !== line.number) return;
+    const a = fromB - line.from;
+    const b = toB - line.from;
+    const re = /@+/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(line.text))) {
+      if (m[0].length !== 4 || m.index > b || m.index + 4 < a) continue;
+      if (!needsWrap(r, line.number - 1, line.from + m.index + 2)) continue;
+      const from = line.from + m.index;
+      found.set(from, { from, to: from + 4, insert: "" });
+    }
+  });
+  if (!found.size) return null;
+  return {
+    changes: [...found.values()],
+    annotations: [Transaction.addToHistory.of(false), Transaction.userEvent.of("input.rakkan.cleanup")],
   };
 }
 

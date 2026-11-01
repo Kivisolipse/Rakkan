@@ -1,6 +1,6 @@
 import { EditorSelection, EditorState, Transaction } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
-import { annotate, flushSpec, pendingField } from "../src/cm6/annotate";
+import { annotate, cleanupSpec, flushSpec, pendingField } from "../src/cm6/annotate";
 import { diffChanges } from "../src/core";
 
 const cfg = { enabled: () => true };
@@ -259,6 +259,77 @@ describe("IME composition", () => {
     const next = s.update(spec).state;
     expect(next.doc.toString()).toBe(BLOCK("AI你"));
     expect(next.field(pendingField)).toEqual([]);
+  });
+});
+
+describe("undo after IME text was wrapped", () => {
+  /** Type with the IME, let the pause wrap it, then undo the typed text the way history does. */
+  function composeWrapUndo(body: string, typed: string) {
+    let s = make(BLOCK(body));
+    const at = s.selection.main.head;
+    s = s.update({ changes: { from: at, insert: typed }, userEvent: "input.type.compose" }).state;
+    s = s.update(flushSpec(s, cfg)!).state;
+    const t = s.doc.toString();
+    const a = t.indexOf(typed);
+    const undo = s.update({ changes: { from: a, to: a + typed.length }, userEvent: "undo", filter: false });
+    return { undo, state: undo.state };
+  }
+
+  it("leaves an empty pair behind without the cleanup (the bug)", () => {
+    const { state } = composeWrapUndo("AI|", "你好");
+    expect(state.doc.toString()).toBe(BLOCK("AI@@@@"));
+  });
+
+  it("removes the empty pair", () => {
+    const { undo, state } = composeWrapUndo("AI|", "你好");
+    const spec = cleanupSpec(state, undo.changes)!;
+    expect(spec).toBeTruthy();
+    const next = state.update(spec);
+    expect(next.state.doc.toString()).toBe(BLOCK("AI"));
+    expect(next.annotation(Transaction.addToHistory)).toBe(false);
+  });
+
+  it("removes it in the middle of an island that has other text", () => {
+    const { undo, state } = composeWrapUndo("AI @@我@@|", "你好");
+    // The IME text joined the existing island, so nothing is left over.
+    expect(state.doc.toString()).toBe(BLOCK("AI @@我@@"));
+    expect(cleanupSpec(state, undo.changes)).toBeNull();
+  });
+
+  it("needs no cleanup inside an inline AI span, and the AI text keeps its owner", () => {
+    // The typed character becomes plain human text between two AI spans: no `@@` is involved.
+    let s = make("人 &&AI |写的&&");
+    const at = s.selection.main.head;
+    s = s.update({ changes: { from: at, insert: "你" }, userEvent: "input.type.compose" }).state;
+    s = s.update(flushSpec(s, cfg)!).state;
+    const a = s.doc.toString().indexOf("你");
+    const undo = s.update({ changes: { from: a, to: a + 1 }, userEvent: "undo", filter: false });
+    expect(cleanupSpec(undo.state, undo.changes)).toBeNull();
+    const kinds = visible(parse(undo.state.doc.toString())).map((c) => c.ch + c.kind);
+    expect(kinds).toEqual(["人human", "Aai", "Iai", "写ai", "的ai"]);
+  });
+
+  it("leaves a literal @@@@ in human text alone", () => {
+    const s = make("人写的 @@@@ 字|");
+    const tr = s.update({ changes: { from: 5, to: 6 }, userEvent: "undo", filter: false });
+    expect(cleanupSpec(tr.state, tr.changes)).toBeNull();
+  });
+
+  it("leaves a literal @@@@ far from the change alone", () => {
+    const s = make(BLOCK("甲 @@@@ 乙 AI 丙|"));
+    const t = s.doc.toString();
+    const a = t.indexOf("丙");
+    const tr = s.update({ changes: { from: a, to: a + 1 }, userEvent: "undo", filter: false });
+    expect(cleanupSpec(tr.state, tr.changes)).toBeNull();
+  });
+
+  it("wraps text that redo puts back", () => {
+    let s = make(BLOCK("AI|"));
+    const at = s.selection.main.head;
+    s = s.update({ changes: { from: at, insert: "你好" }, userEvent: "redo", filter: false }).state;
+    expect(s.field(pendingField)).toEqual([{ from: at, to: at + 2 }]);
+    s = s.update(flushSpec(s, cfg)!).state;
+    expect(s.doc.toString()).toBe(BLOCK("AI@@你好@@"));
   });
 });
 

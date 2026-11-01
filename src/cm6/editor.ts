@@ -19,7 +19,7 @@ import {
   type ParseResult,
   type Segment,
 } from "../core";
-import { annotate, flushSpec, IME_PAUSE_MS, pendingField } from "./annotate";
+import { annotate, cleanupSpec, flushSpec, IME_PAUSE_MS, pendingField } from "./annotate";
 import { parseField } from "./parsefield";
 import { resolve, type Resolved, type StyleSettings } from "./resolve";
 
@@ -377,6 +377,16 @@ function imeFlush(cfg: RakkanEditorConfig) {
       }
       update(u: ViewUpdate) {
         if (u.docChanged && u.state.field(pendingField, false)?.length) this.schedule();
+        // Undo does not pass through the transaction filter; tidy up afterwards.
+        if (cfg.autoAnnotate() && u.transactions.some((t) => t.isUserEvent("undo"))) {
+          const spec = cleanupSpec(u.state, u.changes);
+          if (spec) {
+            const { view } = this;
+            queueMicrotask(() => {
+              if (view.state === u.state) view.dispatch(spec);
+            });
+          }
+        }
       }
       destroy() {
         window.clearTimeout(this.timer);
