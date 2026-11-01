@@ -61,6 +61,7 @@ interface ElectronLike {
   remote?: {
     dialog: { showSaveDialog(o: object): Promise<{ canceled: boolean; filePath?: string }> };
     getCurrentWindow?(): { show(): void; focus(): void };
+    BrowserWindow?: { getAllWindows(): Array<{ getTitle(): string; show(): void; focus(): void }> };
   };
 }
 
@@ -180,6 +181,32 @@ function installHelpers(win: Window) {
   }
 }
 
+/** The app opens such windows hidden. Show this one, by whichever route the app allows. */
+function showWindow(win: Window, title: string) {
+  const tries: Array<() => void> = [
+    () => {
+      const own = electronOf(win)?.remote?.getCurrentWindow?.();
+      if (!own) throw new Error("the new window has no remote");
+      own.show();
+    },
+    () => {
+      const found = electronOf(window)?.remote?.BrowserWindow?.getAllWindows().find((w) => w.getTitle() === title);
+      if (!found) throw new Error("no window titled " + title);
+      found.show();
+      found.focus();
+    },
+    () => win.focus(),
+  ];
+  for (const t of tries) {
+    try {
+      t();
+      return;
+    } catch (e) {
+      console.debug("Rakkan: could not show the preview window this way", e);
+    }
+  }
+}
+
 /** A window that looks like the app, in light theme; hidden unless it is a preview. */
 function openPrintWindow(title: string, visible = false, width = 900): Window | null {
   // The app creates every such window hidden and leaves showing it to whoever asked for it.
@@ -194,14 +221,7 @@ function openPrintWindow(title: string, visible = false, width = 900): Window | 
   for (const a of Array.from(document.body.attributes)) doc.body.setAttribute(a.name, a.value);
   doc.body.classList.remove("theme-dark");
   doc.body.classList.add("theme-light");
-  if (visible) {
-    try {
-      electronOf(win)?.remote?.getCurrentWindow?.().show();
-    } catch (e) {
-      console.error(e);
-    }
-    win.focus();
-  }
+  if (visible) showWindow(win, title);
   return win;
 }
 
