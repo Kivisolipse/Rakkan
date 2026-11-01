@@ -143,47 +143,14 @@ function takeOverCopyButton(pre: HTMLElement, doc: ParseResult, fenceLine: numbe
   );
 }
 
-/**
- * Rendered code shows its source, markers included. Take the declared markers
- * out of the text and colour what they enclose.
- */
-function renderCodeIslands(pre: HTMLElement, doc: ParseResult, fenceLine: number, styles: StyleSettings, blockCls: string, blockStyle?: string) {
-  const codeEl = pre.querySelector("code");
-  if (!codeEl) return;
-  let first = -1;
-  let last = -1;
-  for (let i = fenceLine + 1; i < doc.lineContexts.length && doc.lineContexts[i].codeFence === fenceLine; i++) {
-    if (first < 0) first = i;
-    last = i;
-  }
-  if (first < 0) return;
-  const base = doc.lines[first].from;
-  const end = doc.lines[last].to;
+interface Cut {
+  from: number;
+  to: number;
+  drop: boolean;
+}
 
-  const cuts: Array<{ from: number; to: number; drop: boolean; cls?: string; style?: string; title?: string }> = [];
-  for (const seg of doc.segments) {
-    if (seg.to <= base) continue;
-    if (seg.from >= end) break;
-    if (seg.role === "mark" && (seg.mark === "open" || seg.mark === "close")) {
-      cuts.push({ from: seg.from - base, to: seg.to - base, drop: true });
-    } else if (seg.role === "text" && seg.attr.kind === "human") {
-      cuts.push({ from: seg.from - base, to: seg.to - base, drop: false, cls: "rk rk-island", title: "亲笔" });
-    }
-  }
-  if (!cuts.some((c) => c.drop)) return;
-  // The block's AI colour covers the code, and the user's islands stand out in the normal text colour.
-  codeEl.addClasses([...blockCls.split(" "), "rk-code-text"]);
-  if (blockStyle) codeEl.setAttribute("style", blockStyle);
-
-  const nodes: Text[] = [];
-  const walker = document.createTreeWalker(codeEl, NodeFilter.SHOW_TEXT);
-  let joined = "";
-  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-    nodes.push(n as Text);
-    joined += (n as Text).data;
-  }
-  if (!joined.startsWith(doc.text.slice(base, end))) return;
-
+/** Cut the dropped ranges out of the text nodes and wrap the others (coordinates of the joined text). */
+function wrapCuts(codeEl: Element, nodes: Text[], cuts: Cut[]) {
   let start = 0;
   for (const node of nodes) {
     const len = node.data.length;
@@ -198,9 +165,8 @@ function renderCodeIslands(pre: HTMLElement, doc: ParseResult, fenceLine: number
         if (a > cur) frag.append(node.data.slice(cur - start, a - start));
         if (!c.drop && b > a) {
           const span = document.createElement("span");
-          span.className = (c.cls ?? "") + " rk-code-island";
-          if (c.style) span.setAttribute("style", c.style);
-          if (c.title) span.title = c.title;
+          span.className = "rk rk-island rk-code-island";
+          span.title = "亲笔";
           span.textContent = node.data.slice(a - start, b - start);
           frag.append(span);
         }
@@ -211,6 +177,67 @@ function renderCodeIslands(pre: HTMLElement, doc: ParseResult, fenceLine: number
     }
     start = stop;
   }
+}
+
+/**
+ * Rendered code shows its source, markers included. Take the declared markers
+ * out of the text and colour what they enclose. Obsidian highlights code after
+ * this runs (and at start-up, only once the language has loaded), replacing the
+ * element's classes and children, so watch the element and redo it when that happens.
+ */
+function renderCodeIslands(pre: HTMLElement, doc: ParseResult, fenceLine: number, blockCls: string, blockStyle?: string) {
+  const codeEl = pre.querySelector("code");
+  if (!codeEl) return;
+  let first = -1;
+  let last = -1;
+  for (let i = fenceLine + 1; i < doc.lineContexts.length && doc.lineContexts[i].codeFence === fenceLine; i++) {
+    if (first < 0) first = i;
+    last = i;
+  }
+  if (first < 0) return;
+  const base = doc.lines[first].from;
+  const end = doc.lines[last].to;
+  const raw = doc.text.slice(base, end);
+
+  const rawCuts: Cut[] = [];
+  for (const seg of doc.segments) {
+    if (seg.to <= base) continue;
+    if (seg.from >= end) break;
+    if (seg.role === "mark" && (seg.mark === "open" || seg.mark === "close")) rawCuts.push({ from: seg.from - base, to: seg.to - base, drop: true });
+    else if (seg.role === "text" && seg.attr.kind === "human") rawCuts.push({ from: seg.from - base, to: seg.to - base, drop: false });
+  }
+  if (!rawCuts.some((c) => c.drop)) return;
+
+  // The same islands in the text once the markers are gone.
+  const dropped = rawCuts.filter((c) => c.drop);
+  const shift = (x: number) => dropped.reduce((n, c) => (c.to <= x ? n + (c.to - c.from) : n), 0);
+  const plainCuts: Cut[] = rawCuts.filter((c) => !c.drop).map((c) => ({ from: c.from - shift(c.from), to: c.to - shift(c.from), drop: false }));
+  let plain = "";
+  for (let k = 0; k < raw.length; k++) if (!dropped.some((c) => k >= c.from && k < c.to)) plain += raw[k];
+
+  const apply = () => {
+    // The block's AI colour covers the code, and the user's islands stand out in the normal text colour.
+    codeEl.addClasses([...blockCls.split(" "), "rk-code-text"]);
+    if (blockStyle) codeEl.setAttribute("style", blockStyle);
+    const nodes: Text[] = [];
+    const walker = document.createTreeWalker(codeEl, NodeFilter.SHOW_TEXT);
+    let joined = "";
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      nodes.push(n as Text);
+      joined += (n as Text).data;
+    }
+    if (joined.startsWith(raw)) wrapCuts(codeEl, nodes, rawCuts);
+    else if (joined.startsWith(plain) && !codeEl.querySelector(".rk-code-island")) wrapCuts(codeEl, nodes, plainCuts);
+  };
+
+  const observer = new MutationObserver(() => {
+    observer.disconnect();
+    apply();
+    watch();
+  });
+  const watch = () => observer.observe(codeEl, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+  apply();
+  watch();
 }
 
 export function processSection(el: HTMLElement, ctx: MarkdownPostProcessorContext, deps: ReadingDeps) {
@@ -258,7 +285,7 @@ export function processSection(el: HTMLElement, ctx: MarkdownPostProcessorContex
   if (blockRes) {
     el.addClass("rk-in-block");
     el.querySelectorAll("pre").forEach((pre) => pre.addClass(...blockRes.cls.split(" "), "rk-code"));
-    if (codePre && doc) renderCodeIslands(codePre, doc, fenceLine, styles, blockRes.cls, blockRes.style);
+    if (codePre && doc) renderCodeIslands(codePre, doc, fenceLine, blockRes.cls, blockRes.style);
   }
 
   const docLike = doc ?? { blocks: [], definitions: {} };

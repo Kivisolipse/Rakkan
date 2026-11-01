@@ -73,7 +73,11 @@ export default class RakkanPlugin extends Plugin {
         timer = window.setTimeout(refreshStatus, 250);
       }),
     );
-    this.app.workspace.onLayoutReady(refreshStatus);
+    this.app.workspace.onLayoutReady(() => {
+      refreshStatus();
+      // Reading views restored before the plugin loaded were rendered without it.
+      this.refresh();
+    });
 
     // Re-read the author book when its note changes.
     const bookEvent = (file: { path: string }) => {
