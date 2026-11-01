@@ -1,6 +1,6 @@
 import { editorLivePreviewField, MarkdownView, Notice, Plugin, type Editor } from "obsidian";
 import type { EditorView } from "@codemirror/view";
-import { Parser, type ParseResult } from "./core";
+import { Parser, parseAuthor, quoteText, type Author, type ParseResult } from "./core";
 import { parseField, rakkanEditor, refreshEffect } from "./cm6/editor";
 import { STYLES, type StyleSettings } from "./cm6/resolve";
 import { processSection } from "./obsidian/reading";
@@ -8,6 +8,7 @@ import { DEFAULT_SETTINGS, RakkanSettingTab, type RakkanSettings } from "./obsid
 import { colorCss } from "./cm6/colors";
 import { DiagnosticsModal, statusText } from "./obsidian/statusbar";
 import { LooseSearchModal } from "./obsidian/search";
+import { AuthorPickerModal, AuthorSuggest, createBook, loadBook } from "./obsidian/authors";
 import { fixBlankLines, insertBlock, markSelection, pasteAsAI, stripSelection } from "./obsidian/commands";
 
 const cmOf = (editor: Editor) => (editor as unknown as { cm?: EditorView }).cm ?? null;
@@ -15,7 +16,9 @@ const cmOf = (editor: Editor) => (editor as unknown as { cm?: EditorView }).cm ?
 export default class RakkanPlugin extends Plugin {
   settings: RakkanSettings = { ...DEFAULT_SETTINGS };
   /** Immutable snapshot handed to renderers; replaced on every settings change. */
-  private styleSnapshot: StyleSettings = { ...DEFAULT_SETTINGS };
+  private styleSnapshot: StyleSettings = { ...DEFAULT_SETTINGS, authors: {} };
+  /** The author book. */
+  authors: Record<string, Author> = {};
   private styleEl: HTMLStyleElement | null = null;
   private statusEl: HTMLElement | null = null;
   private lastResult: ParseResult | null = null;
@@ -23,6 +26,7 @@ export default class RakkanPlugin extends Plugin {
 
   override async onload() {
     await this.loadSettings();
+    await this.reloadBook();
 
     this.styleEl = document.head.createEl("style", { attr: { id: "rakkan-colors" } });
     this.register(() => this.styleEl?.remove());
@@ -56,6 +60,20 @@ export default class RakkanPlugin extends Plugin {
       }),
     );
     this.app.workspace.onLayoutReady(refreshStatus);
+
+    // Re-read the author book when its note changes.
+    const bookEvent = (file: { path: string }) => {
+      if (file.path === this.settings.bookPath) void this.reloadBook().then(() => this.refresh());
+    };
+    this.registerEvent(this.app.vault.on("modify", bookEvent));
+    this.registerEvent(this.app.vault.on("create", bookEvent));
+    this.registerEvent(this.app.vault.on("delete", bookEvent));
+    this.registerEvent(this.app.vault.on("rename", (file, old) => {
+      bookEvent(file);
+      bookEvent({ path: old });
+    }));
+
+    this.registerEditorSuggest(new AuthorSuggest(this.app, { authors: () => Object.values(this.allAuthors()) }));
 
     this.addSettingTab(new RakkanSettingTab(this.app, this));
     this.addCommands();
@@ -100,6 +118,30 @@ export default class RakkanPlugin extends Plugin {
         const n = fixBlankLines(view);
         new Notice(n ? `补了 ${n} 个空行` : "开合行前后都已经空行了");
       }),
+    });
+    this.addCommand({
+      id: "paste-as-quote",
+      name: "粘贴为引文",
+      editorCallback: (editor) => {
+        void navigator.clipboard
+          .readText()
+          .then((text) => {
+            if (!text.trim()) return;
+            new AuthorPickerModal(this.app, { authors: () => Object.values(this.allAuthors()) }, (key) => {
+              const quoted = quoteText(text, key);
+              const multi = quoted.startsWith("> ");
+              const atStart = editor.getCursor().ch === 0;
+              const lead = atStart ? "" : "\n\n";
+              editor.replaceSelection(multi ? `${lead}${quoted}\n` : quoted);
+            }).open();
+          })
+          .catch(() => new Notice("读不到剪贴板"));
+      },
+    });
+    this.addCommand({
+      id: "create-book",
+      name: "新建署名簿",
+      callback: () => void this.createBookNote(),
     });
     this.addCommand({
       id: "paste-as-ai",
@@ -154,15 +196,36 @@ export default class RakkanPlugin extends Plugin {
     if (!this.statusEl) return;
     const r = this.settings.showStatusBar ? this.currentResult() : null;
     this.lastResult = r;
-    const { text, title } = r ? statusText(r) : { text: "", title: "" };
+    const { text, title } = r ? statusText(r, this.allAuthors(r)) : { text: "", title: "" };
     this.statusEl.setText(text);
     this.statusEl.setAttribute("aria-label", title);
     this.statusEl.toggleClass("rk-status-warn", !!r?.diagnostics.length);
     this.statusEl.toggle(!!text);
   }
 
+  /** The book, overlaid with the current note's own definitions. */
+  private authorMap(r: ParseResult | null): Record<string, Author> {
+    const out = { ...this.authors };
+    for (const [key, raw] of Object.entries(r?.definitions ?? {})) out[key] = parseAuthor(key, raw, this.settings.extraPrefixes);
+    return out;
+  }
+
+  allAuthors(r: ParseResult | null = this.currentResult()): Record<string, Author> {
+    return this.authorMap(r);
+  }
+
+  async reloadBook() {
+    this.authors = await loadBook(this.app, this.settings.bookPath, this.settings.extraPrefixes);
+    this.applyAppearance();
+  }
+
+  async createBookNote() {
+    const file = await createBook(this.app, this.settings.bookPath);
+    await this.app.workspace.getLeaf(false).openFile(file);
+  }
+
   private applyAppearance() {
-    this.styleSnapshot = JSON.parse(JSON.stringify(this.settings)) as StyleSettings;
+    this.styleSnapshot = { ...(JSON.parse(JSON.stringify(this.settings)) as Omit<StyleSettings, "authors">), authors: this.authors };
     if (this.styleEl) this.styleEl.textContent = colorCss(this.settings);
     document.body.toggleClass("rk-mode-writing", this.settings.mode === "writing");
     document.body.toggleClass("rk-mode-review", this.settings.mode === "review");

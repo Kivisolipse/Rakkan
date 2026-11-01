@@ -25,7 +25,14 @@ import {
   type Extension,
   type TransactionSpec,
 } from "@codemirror/state";
-import { diffChanges, rewriteLineDetailed, type InlineSpan, type ParseResult, type TextChange } from "../core";
+import {
+  diffChanges,
+  rewriteLineDetailed,
+  type InlineSpan,
+  type LineContext,
+  type ParseResult,
+  type TextChange,
+} from "../core";
 import { parseField } from "./parsefield";
 
 export interface AnnotateConfig {
@@ -70,27 +77,57 @@ function innermost(spans: InlineSpan[], pos: number): InlineSpan | null {
 
 const isIsland = (s: InlineSpan) => s.type === "marker" && s.attr.kind === "human";
 
+/** Where typed text lands, when it has to be wrapped. */
+export type Zone =
+  /** An AI block or an inline AI span: the whole line is rewritten. */
+  | { kind: "line" }
+  /** Inside `「…」[@key]` on this line: only the quote's content is rewritten. */
+  | { kind: "quote"; contentFrom: number; contentTo: number }
+  /** A line of a cited blockquote: everything after the `> ` prefix is quote content. */
+  | { kind: "quoteLine" };
+
 /**
- * True when text typed at `pos` is in an AI region and outside any island,
- * so it has to be wrapped. Quotes are left alone until M6.
+ * The zone text typed at `pos` belongs to when it must be wrapped in `@@…@@`,
+ * or null when it needs nothing (human text, or already inside an island).
  */
-export function needsWrap(r: ParseResult, lineIdx: number, pos: number): boolean {
+export function zoneAt(r: ParseResult, lineIdx: number, pos: number): Zone | null {
   const ctx = r.lineContexts[lineIdx];
-  if (!ctx || ctx.mode !== "prose" || ctx.pair === "quote") return false;
-  if (pos < r.lines[lineIdx].from + ctx.prefix) return false;
+  if (!ctx || ctx.mode !== "prose") return null;
+  if (pos < r.lines[lineIdx].from + ctx.prefix) return null;
   const span = innermost(spansOnLine(r, lineIdx), pos);
-  if (span) return span.type === "marker" && span.attr.kind === "ai";
-  return ctx.base.kind === "ai";
+  if (ctx.pair === "quote") {
+    // A cited blockquote line: quote text unless an island or AI span says otherwise.
+    return span && span.type === "marker" ? null : { kind: "quoteLine" };
+  }
+  if (span) {
+    if (span.type === "quote") return { kind: "quote", contentFrom: span.contentFrom, contentTo: span.contentTo };
+    return span.attr.kind === "ai" ? { kind: "line" } : null;
+  }
+  return ctx.base.kind === "ai" ? { kind: "line" } : null;
 }
+
+export const needsWrap = (r: ParseResult, lineIdx: number, pos: number): boolean => zoneAt(r, lineIdx, pos) !== null;
 
 /** Typed text that is a marker character is the user writing markers by hand. */
 const hasMarkerChar = (s: string) => s.includes("@") || s.includes("&");
 
 // ── Wrapping ────────────────────────────────────────────────────────────
 
+/** Inside a quote the unmarked text belongs to the quoted author and `@@` islands are the user's. */
+const QUOTE_CTX: LineContext = {
+  mode: "prose",
+  base: { kind: "ai", explicit: false },
+  pair: "ai-block",
+  prefix: 0,
+  inComment: false,
+  ampLen: 2,
+  atLen: 2,
+};
+
 /**
  * Rewrite one line so that the characters in `ranges` (line offsets) belong
- * to the user. Returns the text edits (line offsets), or null if the line
+ * to the user. `delta` is how much the line changed in length since `zone`
+ * was measured. Returns the text edits (line offsets), or null if the line
  * cannot be rewritten safely.
  */
 export function wrapRanges(
@@ -98,9 +135,38 @@ export function wrapRanges(
   lineIdx: number,
   lineText: string,
   ranges: Range[],
+  zone: Zone = { kind: "line" },
+  delta = 0,
 ): TextChange[] | null {
   const ctx = r.lineContexts[lineIdx];
   if (!ctx) return null;
+
+  // Rewrite only `[from, to)` of the line, as if it were a line of its own.
+  const inner = (from: number, to: number, sub: LineContext): TextChange[] | null => {
+    const text = lineText.slice(from, to);
+    const res = rewriteLineDetailed(text, sub, (chars) => {
+      for (const c of chars) {
+        const at = c.at + from;
+        if (ranges.some((x) => at >= x.from && at < x.to)) {
+          c.owner = "human";
+          delete c.key;
+        }
+      }
+    });
+    if (!res) return null;
+    return diffChanges(text, res.text).map((e) => ({ from: e.from + from, to: e.to + from, insert: e.insert }));
+  };
+
+  if (zone.kind === "quote") {
+    const line = r.lines[lineIdx];
+    const from = zone.contentFrom - line.from;
+    const to = zone.contentTo - line.from + delta;
+    // The change must sit inside the quote, or the quote's own marks are involved.
+    if (ranges.some((x) => x.from < from || x.to > to)) return null;
+    return inner(from, to, QUOTE_CTX);
+  }
+  if (zone.kind === "quoteLine") return inner(ctx.prefix, lineText.length, QUOTE_CTX);
+
   const res = rewriteLineDetailed(lineText, ctx, (chars) => {
     for (const c of chars) {
       const at = c.at + ctx.prefix;
@@ -178,7 +244,8 @@ export function flushSpec(state: EditorState, cfg: AnnotateConfig): TransactionS
   const changes: Array<{ from: number; to: number; insert: string }> = [];
   for (const [n, ranges] of byLine) {
     const line = doc.line(n);
-    const edits = wrapRanges(r, n - 1, line.text, ranges);
+    const zone = zoneAt(r, n - 1, line.from + ranges[0].from);
+    const edits = zone ? wrapRanges(r, n - 1, line.text, ranges, zone) : null;
     if (edits) for (const e of edits) changes.push({ from: line.from + e.from, to: line.from + e.to, insert: e.insert });
   }
   return {
@@ -289,10 +356,12 @@ function extrasFor(tr: Transaction, r: ParseResult, typing: boolean): TextChange
       const lineA = oldDoc.lineAt(fromA);
       if (oldDoc.lineAt(toA).number !== lineA.number) return;
       const idx = lineA.number - 1;
-      if (usedLines.has(idx) || !needsWrap(r, idx, fromA)) return;
+      const zone = usedLines.has(idx) ? null : zoneAt(r, idx, fromA);
+      if (!zone) return;
       usedLines.add(idx);
       const lineB = newDoc.lineAt(fromB);
-      const edits = wrapRanges(r, idx, lineB.text, [{ from: fromB - lineB.from, to: toB - lineB.from }]);
+      const delta = toB - fromB - (toA - fromA);
+      const edits = wrapRanges(r, idx, lineB.text, [{ from: fromB - lineB.from, to: toB - lineB.from }], zone, delta);
       if (edits) for (const e of edits) extras.push({ from: lineB.from + e.from, to: lineB.from + e.to, insert: e.insert });
     });
     return extras;
@@ -342,6 +411,29 @@ function extrasFor(tr: Transaction, r: ParseResult, typing: boolean): TextChange
   return extras;
 }
 
+/**
+ * Chinese input methods turn `[` into 「【」. Typing `@` right after one makes
+ * it `[@`, so author keys can be written without switching input method.
+ */
+export function bracketFix(): Extension {
+  return EditorState.transactionFilter.of((tr) => {
+    if (!tr.docChanged || tr.annotation(Transaction.userEvent) !== "input.type") return tr;
+    let at = -1;
+    let count = 0;
+    tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+      count++;
+      if (fromA === toA && inserted.toString() === "@") at = fromA;
+    });
+    if (count !== 1 || at < 1 || tr.startState.doc.sliceString(at - 1, at) !== "【") return tr;
+    return {
+      changes: { from: at - 1, to: at, insert: "[@" },
+      selection: EditorSelection.cursor(at + 1),
+      annotations: carry(tr),
+      scrollIntoView: tr.scrollIntoView,
+    };
+  });
+}
+
 export function annotateFilter(cfg: AnnotateConfig): Extension {
   return EditorState.transactionFilter.of((tr) => {
     if (!tr.docChanged || !cfg.enabled()) return tr;
@@ -378,5 +470,5 @@ export function annotateFilter(cfg: AnnotateConfig): Extension {
 }
 
 export function annotate(cfg: AnnotateConfig): Extension {
-  return [parseField, pendingField, annotateFilter(cfg)];
+  return [parseField, pendingField, bracketFix(), annotateFilter(cfg)];
 }

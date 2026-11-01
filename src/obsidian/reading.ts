@@ -76,13 +76,16 @@ function collectGroups(el: HTMLElement): Group[] {
 }
 
 /** Wrap `[a, b)` of a text node in a span; pieces must be sorted and disjoint. */
-function wrapText(node: Text, pieces: Array<{ a: number; b: number; cls: string; title?: string }>) {
+type Piece = { a: number; b: number; cls: string; title?: string; style?: string };
+
+function wrapText(node: Text, pieces: Piece[]) {
   for (let k = pieces.length - 1; k >= 0; k--) {
-    const { a, b, cls, title } = pieces[k];
+    const { a, b, cls, title, style } = pieces[k];
     if (b < node.length) node.splitText(b);
     const mid = a > 0 ? node.splitText(a) : node;
     const span = document.createElement("span");
     span.className = cls;
+    if (style) span.setAttribute("style", style);
     if (title) span.setAttribute("aria-label", title);
     mid.parentNode!.insertBefore(span, mid);
     span.appendChild(mid);
@@ -193,7 +196,7 @@ export function processSection(el: HTMLElement, ctx: MarkdownPostProcessorContex
     });
 
     // A cited blockquote ends with a bare `[@key]` line.
-    const ranges: Array<{ from: number; to: number; cls: string; title?: string }> = [];
+    const ranges: Array<{ from: number; to: number; cls: string; title?: string; style?: string }> = [];
     if (base.kind === "quote" && base.key) {
       const m = new RegExp(`\\[@${base.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\]\\s*$`).exec(g.text);
       if (m) ranges.push({ from: m.index, to: m.index + m[0].length, cls: "rk-mark" });
@@ -207,7 +210,7 @@ export function processSection(el: HTMLElement, ctx: MarkdownPostProcessorContex
         if (res) {
           let cls = res.cls;
           if (s.attr.kind === "human" && s.to - s.from === 1) cls += " rk-island-dot";
-          ranges.push({ from: s.from, to: s.to, cls, title: res.label });
+          ranges.push({ from: s.from, to: s.to, cls, title: res.label, style: res.style });
         }
       }
     }
@@ -215,7 +218,7 @@ export function processSection(el: HTMLElement, ctx: MarkdownPostProcessorContex
     ranges.sort((a, b) => a.from - b.from);
 
     // Distribute ranges over the group's nodes.
-    const perNode = new Map<Text, Array<{ a: number; b: number; cls: string; title?: string }>>();
+    const perNode = new Map<Text, Piece[]>();
     for (const it of g.items) {
       const itEnd = it.start + it.len;
       for (const rg of ranges) {
@@ -230,6 +233,7 @@ export function processSection(el: HTMLElement, ctx: MarkdownPostProcessorContex
           a: Math.max(rg.from, it.start) - it.start,
           b: Math.min(rg.to, itEnd) - it.start,
           cls: rg.cls,
+          style: rg.style,
           title: rg.title,
         });
       }

@@ -1,9 +1,10 @@
 import { App, MarkdownView, Modal, Notice } from "obsidian";
-import type { Diagnostic, ParseResult } from "../core";
+import type { Author, Diagnostic, ParseResult } from "../core";
 
 const pct = (n: number, total: number) => `${Math.round((n / total) * 100)}%`;
 
-export function statusText(r: ParseResult): { text: string; title: string } {
+export function statusText(r: ParseResult, authors: Record<string, Author> = {}): { text: string; title: string } {
+  const nameOf = (key: string) => (authors[key]?.name ?? (key ? "@" + key : ""));
   const { human, ai, quote, aiByAuthor, quoteByKey } = r.stats;
   const total = human + ai + quote;
   if (!total) return { text: "", title: "" };
@@ -11,9 +12,10 @@ export function statusText(r: ParseResult): { text: string; title: string } {
   if (quote) parts.push(`引文 ${pct(quote, total)}`);
   if (r.diagnostics.length) parts.push(`⚠ ${r.diagnostics.length}`);
   const lines = [`亲笔 ${human} 字`];
-  for (const [who, n] of Object.entries(aiByAuthor).sort((a, b) => b[1] - a[1])) lines.push(`${who} ${n} 字`);
+  for (const [who, n] of Object.entries(aiByAuthor).sort((a, b) => b[1] - a[1]))
+    lines.push(`${who.startsWith("@") ? nameOf(who.slice(1)) : who} ${n} 字`);
   for (const [key, n] of Object.entries(quoteByKey).sort((a, b) => b[1] - a[1]))
-    lines.push(`引文 ${key ? "@" + key : ""} ${n} 字`);
+    lines.push(`引文 ${nameOf(key)} ${n} 字`);
   if (r.diagnostics.length) lines.push(`${r.diagnostics.length} 处提醒，点击查看`);
   return { text: parts.join(" · "), title: lines.join("\n") };
 }

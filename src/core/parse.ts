@@ -40,7 +40,7 @@ interface LineStruct {
 }
 
 const FENCE_RE = /^(`{3,}|~{3,})(.*)$/;
-const DEF_RE = /^@([^\s:\[\]]+):\s+(.*)$/;
+const DEF_RE = /^(?:[-*+]\s+)?@([^\s:\[\]]+):\s+(.*)$/;
 const BLANK_RE = /^\s*$/;
 
 /** Leading whitespace and `>` markers (blockquotes, callouts, list indentation). */

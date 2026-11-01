@@ -5,7 +5,9 @@ import type RakkanPlugin from "../main";
 import { DEFAULT_COLORS, type ColorPair } from "../cm6/colors";
 
 
-export interface RakkanSettings extends StyleSettings {
+export interface RakkanSettings extends Omit<StyleSettings, "authors"> {
+  /** Path of the author book note. */
+  bookPath: string;
   /** Hide markers away from the cursor in live preview. */
   hideMarkers: boolean;
   mode: "writing" | "review";
@@ -37,6 +39,7 @@ export const DEFAULT_SETTINGS: RakkanSettings = {
   showStatusBar: true,
   defaultSignature: "AI",
   colors: {},
+  bookPath: "署名簿.md",
 };
 
 const STYLE_LABELS: Record<StyleName, string> = {
@@ -278,6 +281,24 @@ export class RakkanSettingTab extends PluginSettingTab {
         t.setValue(s.searchIgnoreFormat).onChange(async (v) => {
           s.searchIgnoreFormat = v;
           await save();
+        }),
+      );
+
+    new Setting(containerEl).setName("署名簿").setHeading();
+
+    new Setting(containerEl)
+      .setName("署名簿的位置")
+      .setDesc("库里的一篇笔记，一行一个作者：- @key: 名字 (标识) · 种类 · #颜色。修改后自动重新读取。")
+      .addText((t) =>
+        t.setValue(s.bookPath).onChange(async (v) => {
+          s.bookPath = v.trim() || DEFAULT_SETTINGS.bookPath;
+          await save();
+          await this.plugin.reloadBook();
+        }),
+      )
+      .addButton((b) =>
+        b.setButtonText("新建").onClick(async () => {
+          await this.plugin.createBookNote();
         }),
       );
 

@@ -85,11 +85,14 @@ function firstSegment(segs: Segment[], pos: number): number {
 // ── Decorations ─────────────────────────────────────────────────────────
 
 const markCache = new Map<string, Decoration>();
-const markDeco = (cls: string, title?: string) => {
-  const k = cls + "\u0000" + (title ?? "");
+const markDeco = (cls: string, title?: string, style?: string) => {
+  const k = cls + "\u0000" + (title ?? "") + "\u0000" + (style ?? "");
   let d = markCache.get(k);
   if (!d) {
-    d = Decoration.mark(title ? { class: cls, attributes: { title } } : { class: cls });
+    const attributes: Record<string, string> = {};
+    if (title) attributes.title = title;
+    if (style) attributes.style = style;
+    d = Decoration.mark({ class: cls, attributes });
     markCache.set(k, d);
   }
   return d;
@@ -118,7 +121,7 @@ function build(view: EditorView, cfg: RakkanEditorConfig): DecorationSet {
         if (!res) continue;
         let cls = res.cls;
         if (s.attr.kind === "human" && s.to - s.from === 1) cls += " rk-island-dot";
-        out.push(markDeco(cls).range(s.from, s.to));
+        out.push(markDeco(cls, undefined, res.style).range(s.from, s.to));
         continue;
       }
       if (s.role !== "mark") continue;

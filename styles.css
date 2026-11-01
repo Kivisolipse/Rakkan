@@ -111,3 +111,10 @@ pre.rk-code {
 .rk-diagnostics li {
   margin-bottom: 0.3em;
 }
+
+/* ── Quoted sources ──────────────────────────────────────────── */
+
+/* A source without a known author (a book, a web page) is shown dimmer. */
+.rk-source {
+  opacity: 0.72;
+}

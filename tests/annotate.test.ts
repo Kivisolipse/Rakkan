@@ -85,8 +85,33 @@ describe("typing in AI regions", () => {
     expect(show(type(make("人写的|"), "我"))).toBe("人写的我|");
   });
 
-  it("leaves a quote alone for now", () => {
+  it("leaves text outside a quote alone", () => {
     expect(show(type(make("「引」[@a] 外|"), "我"))).toBe("「引」[@a] 外我|");
+  });
+
+  it("wraps text typed inside a quote and keeps the cite", () => {
+    expect(show(type(make("书上说「纸短|」[@a]，好。"), "我"))).toBe("书上说「纸短@@我|@@」[@a]，好。");
+    expect(show(type(make('书上说"less|"[@a]。'), "x"))).toBe('书上说"less@@x|@@"[@a]。');
+  });
+
+  it("types inside an island in a quote without touching it", () => {
+    expect(show(type(make("「纸@@我|@@短」[@a]"), "们"))).toBe("「纸@@我们|@@短」[@a]");
+  });
+
+  it("wraps in the middle of a quote and joins with a neighbouring island", () => {
+    expect(show(type(make("「纸短|@@我@@长」[@a]"), "们"))).toBe("「纸短@@们|我@@长」[@a]");
+  });
+
+  it("wraps in a quote inside an AI block", () => {
+    expect(show(type(make(BLOCK('AI 引 "less|"[@x]。')), "m"))).toBe(BLOCK('AI 引 "less@@m|@@"[@x]。'));
+  });
+
+  it("wraps in a cited blockquote", () => {
+    expect(show(type(make("> 引用|\n> [@a]\n\n后"), "我"))).toBe("> 引用@@我|@@\n> [@a]\n\n后");
+  });
+
+  it("leaves the cite line of a blockquote alone", () => {
+    expect(show(type(make("> 引用\n> [@a|]\n\n后"), "b"))).toBe("> 引用\n> [@ab|]\n\n后");
   });
 
   it("leaves marker characters the user types by hand", () => {
@@ -131,6 +156,25 @@ describe("typing in AI regions", () => {
   it("keeps working in a blockquote inside an AI block", () => {
     const s = type(make(BLOCK("> AI|")), "我");
     expect(show(s)).toBe(BLOCK("> AI@@我|@@"));
+  });
+});
+
+describe("【@ from a Chinese input method", () => {
+  it("becomes [@", () => {
+    expect(show(type(make("见【|"), "@"))).toBe("见[@|");
+  });
+
+  it("only applies right after 【", () => {
+    expect(show(type(make("见|"), "@"))).toBe("见@|");
+    expect(show(type(make("见[|"), "@"))).toBe("见[@|");
+  });
+
+  it("works while the author menu is open: the key can follow", () => {
+    let s = make("「引」|");
+    s = type(s, "【");
+    s = type(s, "@");
+    s = type(s, "a");
+    expect(show(s)).toBe("「引」[@a|");
   });
 });
 
@@ -393,6 +437,8 @@ describe("random typing and deleting", () => {
     BLOCK("第一行 AI\n\n第二行 @@我@@ AI\n\n- 列表 @@项@@"),
     "人写的 &&AI 写的&& 人写的 &&又一段 @@人@@ AI&&",
     BLOCK("> 引用里的 AI @@人@@") + "\n\n人写的",
+    "人写的 「引用的话 @@人@@ 在里面」[@a] 之后",
+    "> 引用的话 @@人@@ 在里面\n> [@a]\n\n之后",
     BLOCK("见 [[笔记]] 和 **加粗** 以及 `code` 的 AI @@我@@"),
   ];
   const ALPHABET = "abc你好我的 ";
@@ -433,7 +479,10 @@ describe("random typing and deleting", () => {
         const before = parse(s.doc.toString());
         const chars = visible(before);
         if (!chars.length) break;
-        const i = Math.floor(rand() * chars.length);
+        // Letters only: deleting a delimiter (a quote mark, `*`) changes the structure on purpose.
+        const letters = chars.map((c, k) => (/[\p{L}\p{N}]/u.test(c.ch) ? k : -1)).filter((k) => k >= 0);
+        if (!letters.length) break;
+        const i = letters[Math.floor(rand() * letters.length)];
         const at = chars[i].at;
         s = s.update({ changes: { from: at, to: at + 1 }, userEvent: "delete.backward" }).state;
         const after = parse(s.doc.toString());
