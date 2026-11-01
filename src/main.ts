@@ -10,7 +10,7 @@ import { colorCss } from "./cm6/colors";
 import { DiagnosticsModal, statusText } from "./obsidian/statusbar";
 import { LooseSearchModal } from "./obsidian/search";
 import { AuthorPickerModal, AuthorSuggest, createBook, loadBook } from "./obsidian/authors";
-import { exportPdf, PdfModal, previewPdf } from "./obsidian/pdf";
+import { exportPdf, PdfModal, previewPdf, type PdfOptions } from "./obsidian/pdf";
 import { exportNote, importIA, type ExportKind } from "./obsidian/export";
 import { fixBlankLines, insertBlock, markSelection, pasteAsAI, stripSelection } from "./obsidian/commands";
 
@@ -267,6 +267,10 @@ export default class RakkanPlugin extends Plugin {
   openPdfExport(file: TFile) {
     const pdfDeps = () => ({ styles: () => this.styleSnapshot, nameOf: (key: string) => this.allAuthors()[key]?.name });
     const read = () => this.readNote(file);
+    const run = async (o: PdfOptions) => {
+      const css = await this.app.vault.adapter.read(normalizePath(`${this.manifest.dir}/styles.css`)).catch(() => "");
+      await exportPdf(this.app, file, await read(), o, pdfDeps(), css);
+    };
     new PdfModal(
       this.app,
       file,
@@ -275,11 +279,8 @@ export default class RakkanPlugin extends Plugin {
         this.settings.pdf = o;
         void this.saveSettings();
       },
-      async (o) => {
-        const css = await this.app.vault.adapter.read(normalizePath(`${this.manifest.dir}/styles.css`)).catch(() => "");
-        await exportPdf(this.app, file, await read(), o, pdfDeps(), css);
-      },
-      async (o) => previewPdf(this.app, file, await read(), o, pdfDeps()),
+      run,
+      async (o) => previewPdf(this.app, file, await read(), o, pdfDeps(), () => void run(o)),
     ).open();
   }
 

@@ -431,7 +431,8 @@ async function layoutPage(
   owner: Component,
   deps: PdfDeps,
   notice: Notice | null,
-  preview = false,
+  /** Set for a preview: what the preview's export button does. */
+  preview?: () => void,
 ) {
   await sleep(200);
   const [pw, ph] = PAGES[o.pageSize];
@@ -460,7 +461,7 @@ async function layoutPage(
   await renderNote(app, file, text, o, view, owner, deps);
   await sleep(400);
   if (o.content === "color") await paintGradients(view, (d, t) => notice?.setMessage(`正在给彩虹字上色… ${d} / ${t}`));
-  if (preview) addPreviewBar(win, file.basename, Math.max(1, Math.ceil(print.scrollHeight / (pagePx + 2 * Math.round((margin * 96) / scale)))));
+  if (preview) addPreviewBar(win, file.basename, Math.max(1, Math.ceil(print.scrollHeight / (pagePx + 2 * Math.round((margin * 96) / scale)))), preview);
   return { view, margin, scale, contentPx };
 }
 
@@ -533,7 +534,7 @@ export async function exportPdf(app: App, file: TFile, text: string, o: PdfOptio
 }
 
 /** The preview window has no frame of its own to close it by: a bar to drag it by, and a close button. */
-function addPreviewBar(win: Window, name: string, pages: number) {
+function addPreviewBar(win: Window, name: string, pages: number, onExport: () => void) {
   const doc = win.document;
   const style = doc.head.appendChild(doc.createElement("style"));
   style.textContent = [
@@ -542,12 +543,20 @@ function addPreviewBar(win: Window, name: string, pages: number) {
     ".rk-bar .rk-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }",
     ".rk-bar button { -webkit-app-region: no-drag; background: #444; color: #eee; border: 0; border-radius: 4px; padding: 4px 12px; cursor: pointer; font: inherit; }",
     ".rk-bar button:hover { background: #d33; }",
+    ".rk-bar button.rk-primary { background: #7c5cff; } .rk-bar button.rk-primary:hover { background: #8f75ff; }",
   ].join(String.fromCharCode(10));
   const bar = doc.body.appendChild(doc.createElement("div"));
   bar.className = "rk-bar";
   const title = bar.appendChild(doc.createElement("span"));
   title.className = "rk-title";
   title.textContent = `${name} · 预览 · 约 ${pages} 页（红线是每页结束的位置）`;
+  const exportButton = bar.appendChild(doc.createElement("button"));
+  exportButton.textContent = "导出";
+  exportButton.className = "rk-primary";
+  exportButton.addEventListener("click", () => {
+    win.close();
+    onExport();
+  });
   const close = bar.appendChild(doc.createElement("button"));
   close.textContent = "关闭（Esc）";
   close.addEventListener("click", () => win.close());
@@ -557,7 +566,7 @@ function addPreviewBar(win: Window, name: string, pages: number) {
 }
 
 /** Show the pages in a window of their own, the red lines where one ends, before saving anything. */
-export async function previewPdf(app: App, file: TFile, text: string, o: PdfOptions, deps: PdfDeps) {
+export async function previewPdf(app: App, file: TFile, text: string, o: PdfOptions, deps: PdfDeps, onExport: () => void) {
   if (!Platform.isDesktopApp) {
     new Notice("预览只能在桌面端用");
     return;
@@ -574,7 +583,7 @@ export async function previewPdf(app: App, file: TFile, text: string, o: PdfOpti
   owner.load();
   win.addEventListener("pagehide", () => owner.unload());
   try {
-    await layoutPage(win, app, file, text, o, owner, deps, notice, true);
+    await layoutPage(win, app, file, text, o, owner, deps, notice, onExport);
   } catch (e) {
     console.error(e);
     new Notice("预览失败，详情见开发者工具的控制台");
