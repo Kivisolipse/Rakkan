@@ -145,10 +145,43 @@ export class PdfModal extends Modal {
   }
 }
 
+/**
+ * The app adds helpers (createDiv, addClass, …) to the DOM of its own window; a
+ * window opened here has none, so copy over what the app added: whatever the
+ * prototypes of this window have that the new window's lack.
+ */
+function installHelpers(win: Window) {
+  const here = window as unknown as Record<string, { prototype?: object } & object>;
+  const there = win as unknown as Record<string, { prototype?: object } & object>;
+  const copy = (from: object | undefined, to: object | undefined) => {
+    if (!from || !to) return;
+    for (const name of Object.getOwnPropertyNames(from)) {
+      if (name in to) continue;
+      const d = Object.getOwnPropertyDescriptor(from, name);
+      if (d) {
+        try {
+          Object.defineProperty(to, name, d);
+        } catch {
+          /* a property that cannot be defined is not one of the app's */
+        }
+      }
+    }
+  };
+  for (const n of ["Node", "Element", "HTMLElement", "SVGElement", "DocumentFragment", "Document", "String", "Array", "Number"]) {
+    copy(here[n]?.prototype, there[n]?.prototype);
+  }
+  copy(here.Math, there.Math);
+  for (const n of ["createEl", "createDiv", "createSpan", "createSvg", "createFragment", "sleep", "nextFrame"]) {
+    const f = (window as unknown as Record<string, unknown>)[n];
+    if (typeof f === "function" && !((win as unknown as Record<string, unknown>)[n])) (win as unknown as Record<string, unknown>)[n] = f;
+  }
+}
+
 /** A window that looks like the app, in light theme; hidden unless it is a preview. */
 function openPrintWindow(title: string, visible = false): Window | null {
   const win = window.open("about:blank", "_blank", visible ? "popup" : "popup,hide=true");
   if (!win) return null;
+  installHelpers(win);
   const doc = win.document;
   doc.title = title;
   doc.head.appendChild(doc.createElement("base")).setAttribute("href", location.href);
@@ -388,8 +421,10 @@ async function layoutPage(
       ? `body { background: #888 !important; } .print { margin: 16px auto !important; background: #fff; padding: ${Math.round(margin * 96 / scale)}px !important; box-sizing: content-box; background-origin: content-box; background-image: repeating-linear-gradient(to bottom, transparent 0, transparent ${pagePx - 2}px, #d33 ${pagePx - 2}px, #d33 ${pagePx}px); }`
       : "",
   ].join("\n");
-  const print = win.document.body.createDiv("print");
-  const view = print.createDiv("markdown-preview-view markdown-rendered");
+  const print = win.document.body.appendChild(win.document.createElement("div"));
+  print.className = "print";
+  const view = print.appendChild(win.document.createElement("div"));
+  view.className = "markdown-preview-view markdown-rendered";
   await renderNote(app, file, text, o, view, owner, deps);
   await sleep(400);
   if (o.content === "color") await paintGradients(view, (d, t) => notice?.setMessage(`正在给彩虹字上色… ${d} / ${t}`));
