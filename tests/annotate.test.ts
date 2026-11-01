@@ -159,6 +159,77 @@ describe("typing in AI regions", () => {
   });
 });
 
+describe("typing in code blocks of an AI block", () => {
+  const FENCE = "```";
+  const code = (info: string, ...lines: string[]) => BLOCK([FENCE + info, ...lines, FENCE].join("\n"));
+
+  it("declares @@ on the fence and wraps the typed text", () => {
+    const s = type(make(code("ts", "let count = |")), "0");
+    expect(show(s)).toBe(code("ts @@", "let count = @@0|@@"));
+  });
+
+  it("wraps with the declared marker when the fence already has one", () => {
+    const s = type(make(code("ts @@", "return x|")), "y");
+    expect(show(s)).toBe(code("ts @@", "return x@@y|@@"));
+  });
+
+  it("declares a longer marker when the code already has @@ in it", () => {
+    const s = type(make(code("diff", "@@ -1 +1 @@", "line|")), "x");
+    expect(show(s)).toBe(code("diff @@@", "@@ -1 +1 @@", "line@@@x|@@@"));
+  });
+
+  it("wraps & like any other code character, but leaves a typed @ alone", () => {
+    expect(show(type(make(code("js", "if (a |")), "&"))).toBe(code("js @@", "if (a @@&|@@"));
+    expect(show(type(make(code("js", "x|")), "@"))).toBe(code("js", "x@|"));
+  });
+
+  it("types inside an island without touching it", () => {
+    const s = type(make(code("ts @@", "let @@a|c@@")), "b");
+    expect(show(s)).toBe(code("ts @@", "let @@ab|c@@"));
+  });
+
+  it("leaves code in human text alone", () => {
+    expect(show(type(make([FENCE + "js", "let a|", FENCE].join("\n")), "b"))).toBe([FENCE + "js", "let ab|", FENCE].join("\n"));
+  });
+
+  it("does not touch the fence line itself", () => {
+    expect(show(type(make(code("ts|", "x")), "x"))).toBe(code("tsx|", "x"));
+  });
+
+  it("closes a code island at the end of the line on Enter", () => {
+    const s = type(make(code("ts @@", "let @@ab|@@")), "\n", "input");
+    expect(show(s)).toBe(code("ts @@", "let @@ab@@", "|"));
+  });
+
+  it("removes the markers of an emptied code island, whatever their length", () => {
+    const del = (state: EditorState) => {
+      const h = state.selection.main.head;
+      return state.update({ changes: { from: h - 1, to: h }, selection: EditorSelection.cursor(h - 1), userEvent: "delete.backward" }).state;
+    };
+    // Keep another island in the block so the declaration stays and only the markers go.
+    expect(show(del(make(code("ts @@", "let @@a|@@", "x @@y@@"))))).toBe(code("ts @@", "let |", "x @@y@@"));
+    expect(show(del(make(code("ts @@@", "let @@@a|@@@", "x @@@y@@@"))))).toBe(code("ts @@@", "let |", "x @@@y@@@"));
+  });
+
+  it("removes the declaration when the last island of the block is emptied", () => {
+    const del = (state: EditorState) => {
+      const h = state.selection.main.head;
+      return state.update({ changes: { from: h - 1, to: h }, selection: EditorSelection.cursor(h - 1), userEvent: "delete.backward" }).state;
+    };
+    expect(show(del(make(code("ts @@", "let @@a|@@", "return x"))))).toBe(code("ts", "let |", "return x"));
+    // Another island keeps it.
+    expect(show(del(make(code("ts @@", "let @@a|@@", "return @@x@@"))))).toBe(code("ts @@", "let |", "return @@x@@"));
+  });
+
+  it("joins two code islands when the text between them is deleted", () => {
+    const s = make(code("ts @@", "@@a@@xy@@b@@"));
+    const t = s.doc.toString();
+    const a = t.indexOf("xy");
+    const next = s.update({ changes: { from: a, to: a + 2 }, userEvent: "delete.selection" }).state;
+    expect(next.doc.toString()).toBe(code("ts @@", "@@ab@@"));
+  });
+});
+
 describe("【@ from a Chinese input method", () => {
   it("becomes [@", () => {
     expect(show(type(make("见【|"), "@"))).toBe("见[@|");

@@ -1,5 +1,6 @@
 import { App, MarkdownView, Modal, Notice } from "obsidian";
-import type { Author, Diagnostic, ParseResult } from "../core";
+import type { EditorView } from "@codemirror/view";
+import { escapeMathDelimiters, type Author, type Diagnostic, type ParseResult } from "../core";
 
 const pct = (n: number, total: number) => `${Math.round((n / total) * 100)}%`;
 
@@ -52,6 +53,19 @@ export class DiagnosticsModal extends Modal {
         editor.scrollIntoView({ from: { line: d.line, ch: 0 }, to: { line: d.line, ch: 0 } }, true);
         this.close();
       });
+      if (d.code === "math-swallow") {
+        const fix = li.createEl("button", { text: "改成 \\$", cls: "rk-fix" });
+        fix.addEventListener("click", () => {
+          const cm = (this.view?.editor as unknown as { cm?: EditorView } | undefined)?.cm;
+          if (!cm) {
+            new Notice("在编辑模式下才能修复");
+            return;
+          }
+          const changes = escapeMathDelimiters(cm.state.doc.toString(), d);
+          if (changes.length) cm.dispatch({ changes, userEvent: "input.rakkan" });
+          this.close();
+        });
+      }
     }
   }
 

@@ -10,6 +10,7 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 import {
+  codeBlockText,
   minimalChange,
   rewriteLine,
   stripMarkers,
@@ -451,9 +452,47 @@ function columnAnchor() {
   );
 }
 
+/**
+ * In live preview the code block's copy button copies the source, markers
+ * included. Catch the click before the button's own handler and copy the code
+ * without them. (The capture phase on the editor runs before the button's listener.)
+ */
+function copyButtonTakeover() {
+  return ViewPlugin.fromClass(
+    class {
+      handler: (e: MouseEvent) => void;
+      constructor(readonly view: EditorView) {
+        this.handler = (e) => {
+          const button = (e.target as HTMLElement | null)?.closest?.(".copy-code-button");
+          if (!button || !view.dom.contains(button)) return;
+          let line: number;
+          try {
+            line = view.state.doc.lineAt(view.posAtDOM(button)).number - 1;
+          } catch {
+            return;
+          }
+          const r = view.state.field(parseField);
+          // The button sits on the opening fence or on a line of the code.
+          const fence = r.lineContexts[line]?.codeFence ?? line;
+          const code = codeBlockText(r, fence);
+          if (!code || code.plain === code.raw) return;
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          void navigator.clipboard.writeText(code.plain);
+        };
+        view.dom.addEventListener("click", this.handler, true);
+      }
+      destroy() {
+        this.view.dom.removeEventListener("click", this.handler, true);
+      }
+    },
+  );
+}
+
 export function rakkanEditor(cfg: RakkanEditorConfig): Extension {
   return [
     parseField,
+    copyButtonTakeover(),
     columnAnchor(),
     annotate({ enabled: cfg.autoAnnotate }),
     imeFlush(cfg),

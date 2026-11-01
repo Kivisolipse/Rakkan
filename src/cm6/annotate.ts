@@ -27,6 +27,7 @@ import {
 } from "@codemirror/state";
 import {
   diffChanges,
+  rewriteCodeLine,
   rewriteLineDetailed,
   type InlineSpan,
   type LineContext,
@@ -75,6 +76,10 @@ function innermost(spans: InlineSpan[], pos: number): InlineSpan | null {
   return best;
 }
 
+/** A marker pair with the same opener and closer length and no cite after it. */
+const plainSpan = (s: InlineSpan) =>
+  s.type === "marker" && !s.attr.key && s.contentFrom - s.from === s.to - s.contentTo && s.contentFrom - s.from >= 2;
+
 const isIsland = (s: InlineSpan) => s.type === "marker" && s.attr.kind === "human";
 
 /** Where typed text lands, when it has to be wrapped. */
@@ -84,7 +89,11 @@ export type Zone =
   /** Inside `「…」[@key]` on this line: only the quote's content is rewritten. */
   | { kind: "quote"; contentFrom: number; contentTo: number }
   /** A line of a cited blockquote: everything after the `> ` prefix is quote content. */
-  | { kind: "quoteLine" };
+  | { kind: "quoteLine" }
+  /** A line of a code block whose fence already declares `@@`. */
+  | { kind: "code" }
+  /** A line of a code block in an AI block that does not declare `@@` yet: declare it, then wrap. */
+  | { kind: "codeDeclare"; fenceLine: number; len: number };
 
 /**
  * The zone text typed at `pos` belongs to when it must be wrapped in `@@…@@`,
@@ -92,7 +101,17 @@ export type Zone =
  */
 export function zoneAt(r: ParseResult, lineIdx: number, pos: number): Zone | null {
   const ctx = r.lineContexts[lineIdx];
-  if (!ctx || ctx.mode !== "prose") return null;
+  if (!ctx) return null;
+  if (ctx.codeFence !== undefined) {
+    // Code inside an AI block: the typed text is the user's, written with the block's declared marker.
+    if (ctx.base.kind !== "ai" || ctx.pair !== "ai-block") return null;
+    if (ctx.mode === "code") {
+      if (ctx.atLen < 2 || innermost(spansOnLine(r, lineIdx), pos)) return null;
+      return { kind: "code" };
+    }
+    return { kind: "codeDeclare", fenceLine: ctx.codeFence, len: declaredLength(r, ctx.codeFence) };
+  }
+  if (ctx.mode !== "prose") return null;
   if (pos < r.lines[lineIdx].from + ctx.prefix) return null;
   const span = innermost(spansOnLine(r, lineIdx), pos);
   if (ctx.pair === "quote") {
@@ -104,6 +123,16 @@ export function zoneAt(r: ParseResult, lineIdx: number, pos: number): Zone | nul
     return span.attr.kind === "ai" ? { kind: "line" } : null;
   }
   return ctx.base.kind === "ai" ? { kind: "line" } : null;
+}
+
+/** The marker length to declare for a code block: one more than the longest run of `@` in it (at least 2). */
+function declaredLength(r: ParseResult, fenceLine: number): number {
+  let longest = 0;
+  for (let i = fenceLine + 1; i < r.lineContexts.length && r.lineContexts[i].codeFence === fenceLine; i++) {
+    const line = r.lines[i];
+    for (const m of r.text.slice(line.from, line.to).matchAll(/@+/g)) longest = Math.max(longest, m[0].length);
+  }
+  return Math.max(2, longest + 1);
 }
 
 export const needsWrap = (r: ParseResult, lineIdx: number, pos: number): boolean => zoneAt(r, lineIdx, pos) !== null;
@@ -166,6 +195,19 @@ export function wrapRanges(
     return inner(from, to, QUOTE_CTX);
   }
   if (zone.kind === "quoteLine") return inner(ctx.prefix, lineText.length, QUOTE_CTX);
+
+  if (zone.kind === "code" || zone.kind === "codeDeclare") {
+    const sub: LineContext = zone.kind === "code" ? ctx : { ...ctx, mode: "code", pair: "ai-block", ampLen: 0, atLen: zone.len };
+    const res = rewriteCodeLine(lineText, sub, (chars) => {
+      for (const c of chars) {
+        if (ranges.some((x) => c.at >= x.from && c.at < x.to)) {
+          c.owner = "human";
+          delete c.key;
+        }
+      }
+    });
+    return res ? diffChanges(lineText, res.text) : null;
+  }
 
   const res = rewriteLineDetailed(lineText, ctx, (chars) => {
     for (const c of chars) {
@@ -272,13 +314,15 @@ export function cleanupSpec(state: EditorState, changes: ChangeDesc): Transactio
     if (doc.lineAt(toB).number !== line.number) return;
     const a = fromB - line.from;
     const b = toB - line.from;
+    const ctx = r.lineContexts[line.number - 1];
+    const len = ctx?.mode === "code" ? ctx.atLen : 2;
     const re = /@+/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(line.text))) {
-      if (m[0].length !== 4 || m.index > b || m.index + 4 < a) continue;
-      if (!needsWrap(r, line.number - 1, line.from + m.index + 2)) continue;
+      if (m[0].length !== 2 * len || m.index > b || m.index + 2 * len < a) continue;
+      if (!needsWrap(r, line.number - 1, line.from + m.index + len)) continue;
       const from = line.from + m.index;
-      found.set(from, { from, to: from + 4, insert: "" });
+      found.set(from, { from, to: from + 2 * len, insert: "" });
     }
   });
   if (!found.size) return null;
@@ -323,16 +367,17 @@ function splitIsland(tr: Transaction, r: ParseResult): TransactionSpec | null {
 
   const idx = tr.startState.doc.lineAt(from).number - 1;
   const ctx = r.lineContexts[idx];
-  if (!ctx || ctx.mode !== "prose") return null;
+  if (!ctx || (ctx.mode !== "prose" && ctx.mode !== "code")) return null;
   const span = innermost(spansOnLine(r, idx), from);
-  if (!span || !isIsland(span) || span.attr.key || span.to !== span.contentTo + 2) return null;
+  if (!span || !isIsland(span) || span.attr.key || !plainSpan(span)) return null;
 
   const doc = tr.startState.doc;
+  const mark = "@".repeat(span.contentFrom - span.from);
   const content = doc.sliceString(span.contentFrom, span.contentTo);
   const before = content.slice(0, from - span.contentFrom);
   const after = content.slice(from - span.contentFrom);
-  const head = before ? `@@${before}@@` : "";
-  const tail = after ? `@@${after}@@` : "";
+  const head = before ? mark + before + mark : "";
+  const tail = after ? mark + after + mark : "";
   return {
     changes: { from: span.from, to: span.to, insert: head + text + tail },
     selection: EditorSelection.cursor(span.from + head.length + text.length),
@@ -352,17 +397,26 @@ function extrasFor(tr: Transaction, r: ParseResult, typing: boolean): TextChange
   if (typing) {
     tr.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
       const text = inserted.toString();
-      if (!text || text.includes("\n") || !text.trim() || hasMarkerChar(text)) return;
+      if (!text || text.includes("\n") || !text.trim()) return;
       const lineA = oldDoc.lineAt(fromA);
       if (oldDoc.lineAt(toA).number !== lineA.number) return;
       const idx = lineA.number - 1;
       const zone = usedLines.has(idx) ? null : zoneAt(r, idx, fromA);
       if (!zone) return;
+      // Typed marker characters are the user writing markers by hand. In code only the human marker is one.
+      const isCode = zone.kind === "code" || zone.kind === "codeDeclare";
+      if (isCode ? text.includes("@") : hasMarkerChar(text)) return;
       usedLines.add(idx);
       const lineB = newDoc.lineAt(fromB);
       const delta = toB - fromB - (toA - fromA);
       const edits = wrapRanges(r, idx, lineB.text, [{ from: fromB - lineB.from, to: toB - lineB.from }], zone, delta);
-      if (edits) for (const e of edits) extras.push({ from: lineB.from + e.from, to: lineB.from + e.to, insert: e.insert });
+      if (!edits) return;
+      for (const e of edits) extras.push({ from: lineB.from + e.from, to: lineB.from + e.to, insert: e.insert });
+      if (zone.kind === "codeDeclare" && edits.length) {
+        // The fence now says which marker the block uses.
+        const fence = newDoc.line(zone.fenceLine + 1);
+        extras.push({ from: fence.to, to: fence.to, insert: " " + "@".repeat(zone.len) });
+      }
     });
     return extras;
   }
@@ -375,11 +429,16 @@ function extrasFor(tr: Transaction, r: ParseResult, typing: boolean): TextChange
     for (let n = Math.max(0, a - 1); n <= Math.min(r.lines.length - 1, b + 1); n++) lines.add(n);
   });
   const spans: InlineSpan[] = [];
-  for (const n of [...lines].sort((x, y) => x - y)) spans.push(...spansOnLine(r, n));
+  const spanLine = new Map<InlineSpan, number>();
+  for (const n of [...lines].sort((x, y) => x - y)) {
+    for (const sp of spansOnLine(r, n)) {
+      spans.push(sp);
+      spanLine.set(sp, n);
+    }
+  }
 
   const handled = new Set<InlineSpan>();
-  const plain = (s: InlineSpan) =>
-    s.type === "marker" && !s.attr.key && s.to === s.contentTo + 2 && s.contentFrom === s.from + 2;
+  const plain = plainSpan;
   const markerChar = (s: InlineSpan) => (s.attr.kind === "ai" ? "&" : "@");
 
   // Islands whose content is gone, with both markers still there.
@@ -388,8 +447,34 @@ function extrasFor(tr: Transaction, r: ParseResult, typing: boolean): TextChange
     if (overlaps(tr.changes, s.from, s.contentFrom) || overlaps(tr.changes, s.contentTo, s.to)) continue;
     const cf = tr.changes.mapPos(s.contentFrom, 1);
     if (cf !== tr.changes.mapPos(s.contentTo, -1)) continue;
-    extras.push({ from: cf - 2, to: cf + 2, insert: "" });
+    const len = s.contentFrom - s.from;
+    extras.push({ from: cf - len, to: cf + len, insert: "" });
     handled.add(s);
+  }
+
+  // The last island of a code block is gone: the fence no longer needs its declaration.
+  const emptied = [...handled];
+  const fences = new Set<number>();
+  for (const s of emptied) {
+    const fence = r.lineContexts[spanLine.get(s)!]?.codeFence;
+    if (fence !== undefined) fences.add(fence);
+  }
+  for (const fence of fences) {
+    let others = false;
+    let atLen = 0;
+    for (let i = fence + 1; i < r.lineContexts.length && r.lineContexts[i].codeFence === fence; i++) {
+      atLen = r.lineContexts[i].atLen;
+      if (spansOnLine(r, i).some((sp) => isIsland(sp) && !handled.has(sp))) others = true;
+    }
+    if (others || atLen < 2) continue;
+    const fl = r.lines[fence];
+    const m = new RegExp("\\s@{" + atLen + "}(?=\\s|$)").exec(r.text.slice(fl.from, fl.to));
+    if (!m) continue;
+    extras.push({
+      from: tr.changes.mapPos(fl.from + m.index, 1),
+      to: tr.changes.mapPos(fl.from + m.index + m[0].length, -1),
+      insert: "",
+    });
   }
 
   // The text between two spans of the same kind is gone: join them.
@@ -400,11 +485,13 @@ function extrasFor(tr: Transaction, r: ParseResult, typing: boolean): TextChange
     if (a.type !== b.type || a.attr.kind !== b.attr.kind || markerChar(a) !== markerChar(b)) continue;
     if (b.from < a.to || a.contentTo === a.contentFrom || b.contentTo === b.contentFrom) continue;
     if (overlaps(tr.changes, a.contentTo, a.to) || overlaps(tr.changes, b.from, b.contentFrom)) continue;
+    const len = a.to - a.contentTo;
+    if (b.contentFrom - b.from !== len) continue;
     const p = tr.changes.mapPos(a.contentTo, -1);
-    if (tr.changes.mapPos(a.to, -1) !== p + 2 || tr.changes.mapPos(b.from, 1) !== p + 2) continue;
+    if (tr.changes.mapPos(a.to, -1) !== p + len || tr.changes.mapPos(b.from, 1) !== p + len) continue;
     // Only when something between them was deleted; spans that already touch are literal.
     if (b.from === a.to) continue;
-    extras.push({ from: p, to: p + 4, insert: "" });
+    extras.push({ from: p, to: p + 2 * len, insert: "" });
     handled.add(a);
     handled.add(b);
   }

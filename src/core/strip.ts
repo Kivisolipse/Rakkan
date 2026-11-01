@@ -45,3 +45,20 @@ export function stripMarkers(r: ParseResult, from = 0, to = r.text.length): Stri
   }
   return { text: out, map };
 }
+
+/**
+ * The content of the fenced code block opened on `fenceLine`: as written, and
+ * with the markers a declaration turned on removed. Null for an empty block.
+ */
+export function codeBlockText(r: ParseResult, fenceLine: number): { plain: string; raw: string } | null {
+  let first = -1;
+  let last = -1;
+  for (let i = fenceLine + 1; i < r.lineContexts.length && r.lineContexts[i].codeFence === fenceLine; i++) {
+    if (first < 0) first = i;
+    last = i;
+  }
+  if (first < 0) return null;
+  const from = r.lines[first].from;
+  const to = r.lines[last].to;
+  return { plain: stripMarkers(r, from, to).text, raw: r.text.slice(from, to) };
+}

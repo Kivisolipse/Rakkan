@@ -108,6 +108,8 @@ export interface LineContext {
   inComment: boolean;
   ampLen: number;
   atLen: number;
+  /** For the content lines of a fenced code block: the line of the opening fence. */
+  codeFence?: number;
 }
 
 export interface ParseResult {

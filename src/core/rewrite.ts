@@ -47,14 +47,32 @@ export function atomicRanges(content: string): Range[] {
   return out;
 }
 
-function ownersOf(content: string, ctx: LineContext): Char[] | null {
+/** Whitespace between two spans of the same owner joins them: `@@a@@ @@b@@` → `@@a b@@`. */
+function joinWhitespace(chars: Char[], baseOwner: Owner) {
+  for (let i = 0; i < chars.length; i++) {
+    if (!/\s/.test(chars[i].ch)) continue;
+    let j = i;
+    while (j < chars.length && /\s/.test(chars[j].ch)) j++;
+    const prev = chars[i - 1];
+    const next = chars[j];
+    if (prev && next && prev.owner !== baseOwner && prev.owner === next.owner && prev.key === next.key) {
+      for (let k = i; k < j; k++) {
+        chars[k].owner = prev.owner;
+        chars[k].key = prev.key;
+      }
+    }
+    i = j - 1;
+  }
+}
+
+function ownersOf(content: string, ctx: LineContext, code = false): Char[] | null {
   const r = parseLine(content, {
     base: ctx.base,
     pair: ctx.pair,
-    mode: "prose",
-    ampLen: 2,
-    atLen: 2,
-    inComment: ctx.inComment,
+    mode: code ? "code" : "prose",
+    ampLen: code ? 0 : 2,
+    atLen: code ? ctx.atLen : 2,
+    inComment: code ? false : ctx.inComment,
   });
   if (r.spans.some((s) => s.type === "quote")) return null;
   const chars: Char[] = [];
@@ -71,8 +89,12 @@ function ownersOf(content: string, ctx: LineContext): Char[] | null {
   return chars;
 }
 
-function serialize(chars: Char[], baseOwner: Owner, escape: boolean): string {
-  const marker = baseOwner === "human" ? "&&" : "@@";
+function serialize(
+  chars: Char[],
+  baseOwner: Owner,
+  escape: boolean,
+  marker = baseOwner === "human" ? "&&" : "@@",
+): string {
   let out = "";
   let i = 0;
   const esc = (s: string) => (escape ? s.replace(/(^|[^&@\\])(&&|@@)(?![&@])/g, "$1\\$2") : s);
@@ -169,21 +191,7 @@ export function rewriteLineDetailed(line: string, ctx: LineContext, edit: (chars
 
   const baseOwner: Owner = ctx.pair === "ai-block" ? "ai" : "human";
 
-  // Whitespace between two spans of the same owner joins them: `@@a@@ @@b@@` → `@@a b@@`.
-  for (let i = 0; i < chars.length; i++) {
-    if (!/\s/.test(chars[i].ch)) continue;
-    let j = i;
-    while (j < chars.length && /\s/.test(chars[j].ch)) j++;
-    const prev = chars[i - 1];
-    const next = chars[j];
-    if (prev && next && prev.owner !== baseOwner && prev.owner === next.owner && prev.key === next.key) {
-      for (let k = i; k < j; k++) {
-        chars[k].owner = prev.owner;
-        chars[k].key = prev.key;
-      }
-    }
-    i = j - 1;
-  }
+  joinWhitespace(chars, baseOwner);
 
   const want = signature(chars);
   for (const escape of [false, true]) {
@@ -272,4 +280,23 @@ export function diffChanges(a: string, b: string): TextChange[] {
   }
   if (cur) out.push(cur);
   return out;
+}
+
+/**
+ * Rewrite a line of a code block whose fence declares `@@` (any length), inside
+ * an AI block. Code has no escapes and no links, so the declared run length is
+ * the only thing that makes a marker.
+ */
+export function rewriteCodeLine(line: string, ctx: LineContext, edit: (chars: Char[]) => void): Rewritten | null {
+  if (ctx.mode !== "code" || ctx.pair !== "ai-block" || ctx.atLen < 2) return null;
+  const chars = ownersOf(line, ctx, true);
+  if (!chars) return null;
+  edit(chars);
+  joinWhitespace(chars, "ai");
+  const out = serialize(chars, "ai", false, "@".repeat(ctx.atLen));
+  const check = ownersOf(out, ctx, true);
+  if (!check || signature(check) !== signature(chars)) return null;
+  const map = new Map<number, number>();
+  chars.forEach((c, i) => map.set(c.at, check[i].at));
+  return { text: out, map };
 }

@@ -2,8 +2,8 @@
 // source (getSectionInfo); inline markers are found in the rendered text, with
 // code and math elements standing in as single placeholder characters.
 
-import type { MarkdownPostProcessorContext } from "obsidian";
-import { Parser, parseLine, scanInline, type Attr, type LineContext, type ParseResult } from "../core";
+import { Notice, type MarkdownPostProcessorContext } from "obsidian";
+import { Parser, codeBlockText, parseLine, scanInline, type Attr, type LineContext, type ParseResult } from "../core";
 import { resolve, type StyleSettings } from "../cm6/resolve";
 
 const HUMAN: Attr = { kind: "human", explicit: false };
@@ -124,6 +124,25 @@ export interface ReadingDeps {
   styles(): StyleSettings;
 }
 
+/**
+ * A code block that declares markers has them in its source, and Obsidian's
+ * copy button would copy them too. Copy the code without them instead.
+ */
+function takeOverCopyButton(pre: HTMLElement, doc: ParseResult, fenceLine: number) {
+  const code = codeBlockText(doc, fenceLine);
+  if (!code || code.plain === code.raw) return;
+  pre.addEventListener(
+    "click",
+    (e) => {
+      if (!(e.target as HTMLElement).closest(".copy-code-button")) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      void navigator.clipboard.writeText(code.plain).then(() => new Notice("已复制（去掉了标记）"));
+    },
+    true,
+  );
+}
+
 export function processSection(el: HTMLElement, ctx: MarkdownPostProcessorContext, deps: ReadingDeps) {
   const styles = deps.styles();
   const info = ctx.getSectionInfo(el);
@@ -135,6 +154,8 @@ export function processSection(el: HTMLElement, ctx: MarkdownPostProcessorContex
     doc = parseCached(info.text);
     const { lineStart, lineEnd } = info;
     sectionSource = info.text.split("\n").slice(lineStart, lineEnd + 1);
+    const pre = el.querySelector("pre");
+    if (pre) takeOverCopyButton(pre, doc, lineStart);
 
     // Block lines are syntax only: hide them.
     const first = doc.segments.find((s) => s.from >= doc!.lines[lineStart].from && s.to <= doc!.lines[lineStart].to + 1);

@@ -30,6 +30,8 @@ interface LineStruct {
   inComment: boolean;
   amp: number; // declared marker lengths inside code
   at: number;
+  /** For code lines: the line of the opening fence. */
+  fenceLine?: number;
   /** For fence lines: [from, to) ranges of declaration words. */
   decls?: Array<[number, number]>;
   quoteKey?: string;
@@ -213,7 +215,7 @@ export class Parser {
           structs[i] = { ...base, type: "fence" };
           fence = null;
         } else {
-          structs[i] = { ...base, type: "code", amp: fence.amp, at: fence.at };
+          structs[i] = { ...base, type: "code", amp: fence.amp, at: fence.at, fenceLine: fence.line };
         }
         continue;
       }
@@ -362,6 +364,7 @@ export class Parser {
         inComment: st.inComment,
         ampLen: st.type === "code" ? st.amp : 2,
         atLen: st.type === "code" ? st.at : 2,
+        ...(st.fenceLine !== undefined ? { codeFence: st.fenceLine } : {}),
       };
       switch (st.type) {
         case "meta":
