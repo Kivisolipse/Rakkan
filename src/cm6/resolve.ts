@@ -3,7 +3,7 @@
 
 import {
   familyOf,
-  hueOf,
+  hueHex,
   parseAuthor,
   signatureFamily,
   signatureLabel,
@@ -97,8 +97,9 @@ export function resolve(attr: Attr, doc: Doc, s: StyleSettings): Resolved | null
     if (!author) return out;
     if (author.id) out.id = author.id;
     if (author.kind === "source") out.cls += " rk-source";
-    else if (author.color) out.style = colorStyle(author.color);
-    else if (author.kind === "human") out.style = colorStyle(`hsl(${hueOf(key)} 52% 48%)`);
+    if (author.color) out.style = colorStyle(author.color);
+    else if (author.kind === "source") out.style = undefined;
+    else if (author.kind === "human") out.style = colorStyle(hueHex(key));
     else {
       // An AI being quoted: its family colour.
       const fam = signatureFamily({ raw: "", ...(author.name ? { name: author.name } : {}), ...(author.id ? { id: author.id } : {}) }, s.extraPrefixes);

@@ -24,7 +24,14 @@ export const DEFAULT_COLORS: Record<string, ColorPair & { light2?: string; dark2
 };
 
 /** CSS for the colour variables; regenerated whenever settings change. */
-export function colorCss(s: { colors: Record<string, ColorPair>; extraPrefixes: ExtraPrefix[] }): string {
+export function colorCss(s: {
+  colors: Record<string, ColorPair>;
+  extraPrefixes: ExtraPrefix[];
+  /** How strong colours are in writing mode (0–1). */
+  writingStrength?: number;
+  /** Opacity of quoted sources (0–1). */
+  sourceOpacity?: number;
+}): string {
   const light: string[] = [];
   const dark: string[] = [];
   const rules: string[] = [];
@@ -40,6 +47,9 @@ export function colorCss(s: { colors: Record<string, ColorPair>; extraPrefixes: 
   return [
     `body { ${light.join(" ")} }`,
     `body.theme-dark { ${dark.join(" ")} }`,
+    // Higher specificity than the stylesheet's own defaults, whatever order they load in.
+    `body.rk-mode-writing:not(#rk) { --rk-strength: ${s.writingStrength ?? 0.35}; }`,
+    `body:not(#rk) { --rk-source-opacity: ${s.sourceOpacity ?? 0.72}; }`,
     ...rules,
   ].join("\n");
 }

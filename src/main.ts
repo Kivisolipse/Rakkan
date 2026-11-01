@@ -1,6 +1,6 @@
-import { editorLivePreviewField, MarkdownView, Notice, Plugin, type Editor } from "obsidian";
+import { editorLivePreviewField, MarkdownView, Notice, Plugin, TFile, type Editor } from "obsidian";
 import type { EditorView } from "@codemirror/view";
-import { Parser, parseAuthor, quoteText, type Author, type ParseResult } from "./core";
+import { Parser, parseAuthor, quoteText, setBookColor, type Author, type ParseResult } from "./core";
 import { parseField, rakkanEditor, refreshEffect } from "./cm6/editor";
 import { STYLES, type StyleSettings } from "./cm6/resolve";
 import { processSection } from "./obsidian/reading";
@@ -217,6 +217,16 @@ export default class RakkanPlugin extends Plugin {
   async reloadBook() {
     this.authors = await loadBook(this.app, this.settings.bookPath, this.settings.extraPrefixes);
     this.applyAppearance();
+  }
+
+  /** Write an author's colour into its line of the book (the note stays the source of truth). */
+  async setAuthorColor(key: string, color: string | null) {
+    const file = this.app.vault.getAbstractFileByPath(this.settings.bookPath);
+    if (!(file instanceof TFile)) {
+      new Notice("先新建署名簿");
+      return;
+    }
+    await this.app.vault.process(file, (text) => setBookColor(text, key, color));
   }
 
   async createBookNote() {

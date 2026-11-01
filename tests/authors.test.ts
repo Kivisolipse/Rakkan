@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOOK_TEMPLATE, parse, parseAuthor, parseBook, quoteText } from "../src/core";
+import { BOOK_TEMPLATE, hueHex, parse, parseAuthor, parseBook, quoteText, setBookColor } from "../src/core";
 import { authorOf, resolve, type StyleSettings } from "../src/cm6/resolve";
 
 const styles = (authors = {}): StyleSettings => ({
@@ -92,7 +92,7 @@ describe("author colours", () => {
     const a = resolve(quotes[0].attr, r, styles(book))!;
     const b = resolve(quotes[1].attr, r, styles(book))!;
     expect(a.style).toBe("--rk-c: #3b82f6; --rk-c2: #3b82f6;");
-    expect(b.style).toMatch(/^--rk-c: hsl\(\d+ 52% 48%\)/);
+    expect(b.style).toMatch(/^--rk-c: #[0-9a-f]{6}; --rk-c2: #[0-9a-f]{6};$/);
     expect(resolve(quotes[1].attr, r, styles(book))!.style).toBe(b.style);
     expect(a.label).toBe("Ada");
   });
@@ -132,5 +132,32 @@ describe("author colours", () => {
     const r = doc("&&x&&[@m]");
     const t = r.segments.find((s) => s.role === "text" && s.attr.kind === "ai")!;
     expect(resolve(t.attr, r, styles(book))!.style).toBe("--rk-c: #ff0000; --rk-c2: #ff0000;");
+  });
+});
+
+describe("setBookColor", () => {
+  const book = "# 署名簿\n\n- @ada: Ada · 人 · #3b82f6\n- @bob: Bob (id) · 人\r\n- @c: 《书》 · 来源\n";
+
+  it("replaces, adds and removes a colour on one line only", () => {
+    expect(setBookColor(book, "ada", "#ff0000")).toBe(book.replace("#3b82f6", "#ff0000"));
+    expect(setBookColor(book, "ada", null)).toBe(book.replace(" · #3b82f6", ""));
+    expect(setBookColor(book, "c", "#00ff00")).toBe(book.replace("来源", "来源 · #00ff00"));
+  });
+
+  it("keeps line endings and leaves unknown keys alone", () => {
+    expect(setBookColor(book, "bob", "#111111")).toContain("- @bob: Bob (id) · 人 · #111111\r\n");
+    expect(setBookColor(book, "nobody", "#111111")).toBe(book);
+  });
+
+  it("produces something parseBook reads back", () => {
+    expect(parseBook(setBookColor(book, "c", "#00ff00")).c).toMatchObject({ kind: "source", color: "#00ff00" });
+  });
+});
+
+describe("hueHex", () => {
+  it("is a stable #rrggbb", () => {
+    expect(hueHex("ada")).toMatch(/^#[0-9a-f]{6}$/);
+    expect(hueHex("ada")).toBe(hueHex("ada"));
+    expect(hueHex("ada")).not.toBe(hueHex("bob"));
   });
 });

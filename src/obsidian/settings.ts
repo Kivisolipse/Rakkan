@@ -1,5 +1,6 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
-import { BUILTIN_FAMILIES, type ExtraPrefix } from "../core";
+import { BUILTIN_FAMILIES, hueHex, signatureFamily, type ExtraPrefix } from "../core";
+import { KIND_LABEL } from "./authors";
 import { STYLES, type StyleName, type StyleSettings } from "../cm6/resolve";
 import type RakkanPlugin from "../main";
 import { DEFAULT_COLORS, type ColorPair } from "../cm6/colors";
@@ -20,6 +21,10 @@ export interface RakkanSettings extends Omit<StyleSettings, "authors"> {
   defaultSignature: string;
   /** Per family id, plus "generic" and "quote". Missing entries use the defaults. */
   colors: Record<string, ColorPair>;
+  /** How strong colours are in writing mode (0–1). */
+  writingStrength: number;
+  /** Opacity of quoted sources (0–1). */
+  sourceOpacity: number;
 }
 
 
@@ -39,6 +44,8 @@ export const DEFAULT_SETTINGS: RakkanSettings = {
   showStatusBar: true,
   defaultSignature: "AI",
   colors: {},
+  writingStrength: 0.35,
+  sourceOpacity: 0.72,
   bookPath: "署名簿.md",
 };
 
@@ -176,22 +183,18 @@ export class RakkanSettingTab extends PluginSettingTab {
       const d = DEFAULT_COLORS[f.id] ?? DEFAULT_COLORS.generic;
       const cur = () => s.colors[f.id] ?? { light: d.light, dark: d.dark };
       const row = new Setting(containerEl).setName(f.label);
-      row.addColorPicker((c) =>
-        c
-          .setValue(cur().light)
-          .onChange(async (v) => {
-            s.colors[f.id] = { ...cur(), light: v };
-            await save();
-          }),
-      );
-      row.addColorPicker((c) =>
-        c
-          .setValue(cur().dark)
-          .onChange(async (v) => {
-            s.colors[f.id] = { ...cur(), dark: v };
-            await save();
-          }),
-      );
+      row.addColorPicker((c) => {
+        c.setValue(cur().light).onChange(async (v) => {
+          s.colors[f.id] = { ...cur(), light: v };
+          await save();
+        });
+      });
+      row.addColorPicker((c) => {
+        c.setValue(cur().dark).onChange(async (v) => {
+          s.colors[f.id] = { ...cur(), dark: v };
+          await save();
+        });
+      });
       if (f.id !== "quote" && f.id !== "generic") {
         row.addDropdown((dd) =>
           dd
@@ -214,8 +217,72 @@ export class RakkanSettingTab extends PluginSettingTab {
             this.display();
           }),
       );
-      row.descEl.setText("浅色 · 深色" + (f.id !== "quote" && f.id !== "generic" ? " · 样式" : ""));
+      row.descEl.setText("左：浅色主题的颜色，右：深色主题的颜色" + (f.id !== "quote" && f.id !== "generic" ? "，再右：这个家族的样式" : ""));
     }
+
+    new Setting(containerEl).setName("作者").setHeading();
+
+    const authors = Object.values(this.plugin.authors);
+    if (!authors.length) {
+      new Setting(containerEl)
+        .setName("署名簿里还没有作者")
+        .setDesc("在署名簿里加上作者（- @key: 名字 · 种类），这里就能给每个人调颜色。")
+        .addButton((b) => b.setButtonText("新建署名簿").onClick(() => void this.plugin.createBookNote()));
+    }
+    for (const a of authors) {
+      const fam = signatureFamily({ raw: "", ...(a.name ? { name: a.name } : {}), ...(a.id ? { id: a.id } : {}) }, s.extraPrefixes);
+      const fallback =
+        a.kind === "human" ? hueHex(a.key) : a.kind === "ai" ? (DEFAULT_COLORS[fam?.id ?? "generic"] ?? DEFAULT_COLORS.generic).light : DEFAULT_COLORS.quote.light;
+      let timer: number | undefined;
+      new Setting(containerEl)
+        .setName(a.name ?? `@${a.key}`)
+        .setDesc(`@${a.key} · ${KIND_LABEL[a.kind]}${a.color ? "" : "（现在用的是自动配的颜色）"}。颜色写在署名簿那一行里。`)
+        .addColorPicker((c) => {
+          c.setValue(a.color ?? fallback).onChange((v) => {
+            window.clearTimeout(timer);
+            timer = window.setTimeout(() => void this.plugin.setAuthorColor(a.key, v), 400);
+          });
+        })
+        .addExtraButton((b) =>
+          b
+            .setIcon("rotate-ccw")
+            .setTooltip("去掉颜色，用自动配的")
+            .onClick(async () => {
+              await this.plugin.setAuthorColor(a.key, null);
+              this.display();
+            }),
+        );
+    }
+
+    new Setting(containerEl).setName("浓淡").setHeading();
+
+    new Setting(containerEl)
+      .setName("写作模式下颜色的浓度")
+      .setDesc("0 是完全不上色，1 和审阅模式一样。")
+      .addSlider((sl) =>
+        sl
+          .setLimits(0, 1, 0.05)
+          .setValue(s.writingStrength)
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            s.writingStrength = v;
+            await save();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("来源的透明度")
+      .setDesc("没有作者的出处（书、网页）显示得多淡，1 是不调暗。")
+      .addSlider((sl) =>
+        sl
+          .setLimits(0.2, 1, 0.05)
+          .setValue(s.sourceOpacity)
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            s.sourceOpacity = v;
+            await save();
+          }),
+      );
 
     new Setting(containerEl)
       .setName("按具体模型换样式")

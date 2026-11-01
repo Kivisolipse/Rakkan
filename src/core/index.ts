@@ -8,6 +8,6 @@ export { looseRegex, looseRegexSource, GAP } from "./search";
 export { scanInline, parseLine } from "./inline";
 export { setOwner, rewriteLine, rewriteLineDetailed, minimalChange, diffChanges, atomicRanges } from "./rewrite";
 export type { Owner, Rewritten, TextChange, Char } from "./rewrite";
-export { parseAuthor, parseBook, hueOf, BOOK_TEMPLATE } from "./authors";
+export { parseAuthor, parseBook, hueOf, hueHex, setBookColor, BOOK_TEMPLATE } from "./authors";
 export type { Author, AuthorKind } from "./authors";
 export { quoteText } from "./quote";

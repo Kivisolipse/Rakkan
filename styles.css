@@ -116,5 +116,5 @@ pre.rk-code {
 
 /* A source without a known author (a book, a web page) is shown dimmer. */
 .rk-source {
-  opacity: 0.72;
+  opacity: var(--rk-source-opacity, 0.72);
 }
