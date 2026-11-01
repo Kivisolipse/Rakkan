@@ -10,6 +10,7 @@ import { colorCss } from "./cm6/colors";
 import { DiagnosticsModal, statusText } from "./obsidian/statusbar";
 import { LooseSearchModal } from "./obsidian/search";
 import { AuthorPickerModal, AuthorSuggest, createBook, loadBook } from "./obsidian/authors";
+import { exportNote, importIA, type ExportKind } from "./obsidian/export";
 import { fixBlankLines, insertBlock, markSelection, pasteAsAI, stripSelection } from "./obsidian/commands";
 
 const cmOf = (editor: Editor) => (editor as unknown as { cm?: EditorView }).cm ?? null;
@@ -149,6 +150,25 @@ export default class RakkanPlugin extends Plugin {
       id: "paste-as-ai",
       name: "粘贴为代笔",
       editorCallback: withView((view) => void this.pasteAsAIFromClipboard(view)),
+    });
+    const exports: Array<[ExportKind, string]> = [
+      ["plain", "导出为新笔记：去掉标记"],
+      ["pandoc", "导出为新笔记：Pandoc 格式"],
+      ["ia", "导出为新笔记：iA 标注格式"],
+    ];
+    for (const [kind, name] of exports) {
+      this.addCommand({
+        id: "export-" + kind,
+        name,
+        editorCallback: (editor, ctx) => {
+          if (ctx.file) void exportNote(this.app, ctx.file, editor.getValue(), kind, this.allAuthors(), this.settings.extraPrefixes);
+        },
+      });
+    }
+    this.addCommand({
+      id: "import-ia",
+      name: "从 iA 标注转换（当前笔记）",
+      editorCallback: (editor) => importIA(editor),
     });
     this.addCommand({
       id: "toggle-mode",

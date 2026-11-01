@@ -14,3 +14,7 @@ export { quoteText } from "./quote";
 export { pasteEdits } from "./pasteedits";
 export type { PasteEdits } from "./pasteedits";
 export { escapeMathDelimiters } from "./fixes";
+export { toIA, fromIA, splitIA, parseIA, applyOwners, sha256Hex } from "./ia";
+export type { IAAuthor, IAParsed, IASplit, FromIA, ToIAOptions } from "./ia";
+export { exportPlain, exportPandoc } from "./export";
+export type { PandocOptions } from "./export";
