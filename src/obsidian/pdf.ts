@@ -460,6 +460,7 @@ async function layoutPage(
   await renderNote(app, file, text, o, view, owner, deps);
   await sleep(400);
   if (o.content === "color") await paintGradients(view, (d, t) => notice?.setMessage(`正在给彩虹字上色… ${d} / ${t}`));
+  if (preview) addPreviewBar(win, file.basename, Math.max(1, Math.ceil(print.scrollHeight / (pagePx + 2 * Math.round((margin * 96) / scale)))));
   return { view, margin, scale, contentPx };
 }
 
@@ -529,6 +530,30 @@ export async function exportPdf(app: App, file: TFile, text: string, o: PdfOptio
     owner.unload();
     win.close();
   }
+}
+
+/** The preview window has no frame of its own to close it by: a bar to drag it by, and a close button. */
+function addPreviewBar(win: Window, name: string, pages: number) {
+  const doc = win.document;
+  const style = doc.head.appendChild(doc.createElement("style"));
+  style.textContent = [
+    "body { padding-top: 40px !important; }",
+    ".rk-bar { position: fixed; top: 0; left: 0; right: 0; height: 40px; z-index: 1000; display: flex; align-items: center; gap: 12px; padding: 0 12px; box-sizing: border-box; background: #2b2b2b; color: #eee; font: 13px system-ui, sans-serif; -webkit-app-region: drag; }",
+    ".rk-bar .rk-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }",
+    ".rk-bar button { -webkit-app-region: no-drag; background: #444; color: #eee; border: 0; border-radius: 4px; padding: 4px 12px; cursor: pointer; font: inherit; }",
+    ".rk-bar button:hover { background: #d33; }",
+  ].join(String.fromCharCode(10));
+  const bar = doc.body.appendChild(doc.createElement("div"));
+  bar.className = "rk-bar";
+  const title = bar.appendChild(doc.createElement("span"));
+  title.className = "rk-title";
+  title.textContent = `${name} · 预览 · 约 ${pages} 页（红线是每页结束的位置）`;
+  const close = bar.appendChild(doc.createElement("button"));
+  close.textContent = "关闭（Esc）";
+  close.addEventListener("click", () => win.close());
+  win.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") win.close();
+  });
 }
 
 /** Show the pages in a window of their own, the red lines where one ends, before saving anything. */
