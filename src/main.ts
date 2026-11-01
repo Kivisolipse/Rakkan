@@ -10,7 +10,7 @@ import { colorCss } from "./cm6/colors";
 import { DiagnosticsModal, statusText } from "./obsidian/statusbar";
 import { LooseSearchModal } from "./obsidian/search";
 import { AuthorPickerModal, AuthorSuggest, createBook, loadBook } from "./obsidian/authors";
-import { exportPdf, PdfModal } from "./obsidian/pdf";
+import { exportPdf, PdfModal, previewPdf } from "./obsidian/pdf";
 import { exportNote, importIA, type ExportKind } from "./obsidian/export";
 import { fixBlankLines, insertBlock, markSelection, pasteAsAI, stripSelection } from "./obsidian/commands";
 
@@ -178,6 +178,7 @@ export default class RakkanPlugin extends Plugin {
       editorCallback: (editor, ctx) => {
         const file = ctx.file;
         if (!file) return;
+        const pdfDeps = () => ({ styles: () => this.styleSnapshot, nameOf: (key: string) => this.allAuthors()[key]?.name });
         new PdfModal(
           this.app,
           file,
@@ -188,8 +189,9 @@ export default class RakkanPlugin extends Plugin {
           },
           async (o) => {
             const css = await this.app.vault.adapter.read(normalizePath(`${this.manifest.dir}/styles.css`)).catch(() => "");
-            await exportPdf(this.app, file, editor.getValue(), o, { styles: () => this.styleSnapshot, nameOf: (key) => this.allAuthors()[key]?.name }, css);
+            await exportPdf(this.app, file, editor.getValue(), o, pdfDeps(), css);
           },
+          (o) => previewPdf(this.app, file, editor.getValue(), o, pdfDeps()),
         ).open();
       },
     });
@@ -197,15 +199,6 @@ export default class RakkanPlugin extends Plugin {
       id: "import-ia",
       name: "从 iA 标注转换（当前笔记）",
       editorCallback: (editor) => importIA(editor),
-    });
-    this.addCommand({
-      id: "toggle-pdf-colors",
-      name: "切换导出 PDF 的颜色（带颜色 / 纯文字）",
-      callback: async () => {
-        this.settings.pdfColors = this.settings.pdfColors === "plain" ? "color" : "plain";
-        await this.saveSettings();
-        new Notice(this.settings.pdfColors === "plain" ? "导出 PDF：纯文字" : "导出 PDF：带颜色");
-      },
     });
     this.addCommand({
       id: "toggle-mode",
@@ -416,7 +409,6 @@ export default class RakkanPlugin extends Plugin {
     if (this.styleEl) this.styleEl.textContent = colorCss(this.settings);
     document.body.toggleClass("rk-mode-writing", this.settings.mode === "writing");
     document.body.toggleClass("rk-mode-review", this.settings.mode === "review");
-    document.body.toggleClass("rk-pdf-plain", this.settings.pdfColors === "plain");
   }
 
   /** Redraw editors and reading views after a settings change. */
@@ -431,7 +423,7 @@ export default class RakkanPlugin extends Plugin {
   }
 
   override onunload() {
-    document.body.removeClass("rk-mode-writing", "rk-mode-review", "rk-pdf-plain");
+    document.body.removeClass("rk-mode-writing", "rk-mode-review");
   }
 
   async loadSettings() {

@@ -8,7 +8,7 @@
 //   - ask the app's main process to print that window to a file.
 
 import { Component, MarkdownRenderer, Modal, normalizePath, Notice, Platform, Setting, type App, type MarkdownPostProcessorContext, type TFile } from "obsidian";
-import { exportPlain, parse, splitSections } from "../core";
+import { exportPlain, parse, splitSections, type ParseResult } from "../core";
 import { processSection, type ReadingDeps } from "./reading";
 
 export interface PdfOptions {
@@ -75,6 +75,7 @@ export class PdfModal extends Modal {
     initial: PdfOptions,
     private save: (o: PdfOptions) => void,
     private run: (o: PdfOptions) => Promise<void>,
+    private preview: (o: PdfOptions) => Promise<void>,
   ) {
     super(app);
     this.o = { ...DEFAULT_PDF, ...initial };
@@ -121,6 +122,12 @@ export class PdfModal extends Modal {
 
     new Setting(contentEl)
       .addButton((b) =>
+        b.setButtonText("预览").onClick(async () => {
+          this.save(this.o);
+          await this.preview(this.o);
+        }),
+      )
+      .addButton((b) =>
         b
           .setButtonText("导出")
           .setCta()
@@ -138,9 +145,9 @@ export class PdfModal extends Modal {
   }
 }
 
-/** A hidden window that looks like the app, in light theme. */
-function openPrintWindow(title: string): Window | null {
-  const win = window.open("about:blank", "_blank", "popup,hide=true");
+/** A window that looks like the app, in light theme; hidden unless it is a preview. */
+function openPrintWindow(title: string, visible = false): Window | null {
+  const win = window.open("about:blank", "_blank", visible ? "popup" : "popup,hide=true");
   if (!win) return null;
   const doc = win.document;
   doc.title = title;
@@ -166,17 +173,56 @@ async function renderNote(app: App, file: TFile, text: string, o: PdfOptions, in
   }
   const r = parse(text);
   const lines = text.split("\n");
+  const notes = footnotesOf(lines, r);
   for (const s of splitSections(r)) {
+    if (notes.defLines.has(s.lineStart)) continue;
     // `rk-export` keeps the reading view's own post-processor out of it: it would not know the lines.
     const holder = into.createDiv("rk-export");
-    await MarkdownRenderer.render(app, lines.slice(s.lineStart, s.lineEnd + 1).join("\n"), holder, file.path, owner);
+    const chunk = lines.slice(s.lineStart, s.lineEnd + 1).map((l, k) => (r.lineContexts[s.lineStart + k]?.codeFence === undefined ? notes.refer(l) : l));
+    await MarkdownRenderer.render(app, chunk.join("\n"), holder, file.path, owner);
     const ctx = {
       sourcePath: file.path,
       getSectionInfo: () => ({ text, lineStart: s.lineStart, lineEnd: s.lineEnd }),
     } as unknown as MarkdownPostProcessorContext;
     processSection(holder, ctx, deps);
   }
+  // Footnotes are numbered across the whole note and collected at the end, since each piece was rendered alone.
+  if (notes.order.length) {
+    const holder = into.createDiv("rk-export rk-footnotes");
+    holder.createEl("hr");
+    await MarkdownRenderer.render(app, notes.order.map((label, i) => `${i + 1}. ${notes.defs.get(label)}`).join("\n"), holder, file.path, owner);
+  }
   if (o.summary) addSummary(into, text, deps);
+}
+
+const FOOTNOTE_DEF = /^\[\^([^\]\s]+)\]:[ \t]*(.*)$/;
+
+/** The note's footnotes: their texts, the lines that define them, and a function that numbers references in a line. */
+function footnotesOf(lines: string[], r: ParseResult) {
+  const defs = new Map<string, string>();
+  const defLines = new Set<number>();
+  let current: string | null = null;
+  lines.forEach((line, i) => {
+    if (r.lineContexts[i]?.codeFence !== undefined) return;
+    const m = FOOTNOTE_DEF.exec(line);
+    if (m) {
+      current = m[1];
+      defs.set(current, m[2]);
+      defLines.add(i);
+    } else if (current && /^(?: {4}|\t)\S/.test(line)) {
+      defs.set(current, defs.get(current) + " " + line.trim());
+      defLines.add(i);
+    } else if (line.trim() !== "") current = null;
+  });
+  const order: string[] = [];
+  const refer = (line: string) =>
+    line.replace(/\[\^([^\]\s]+)\](?!:)/g, (all, label: string) => {
+      if (!defs.has(label)) return all;
+      let n = order.indexOf(label);
+      if (n < 0) n = order.push(label) - 1;
+      return `<sup>${n + 1}</sup>`;
+    });
+  return { defs, defLines, order, refer };
 }
 
 /** Who wrote how much, as a small table after the text. */
@@ -236,14 +282,21 @@ function sample(stops: Array<[number, string]>, t: number): string {
  * by where the character sits across the page, a gradient by how far along its
  * phrase it is. The colours end up as plain text colour, which stays text in the PDF.
  */
-function paintGradients(view: HTMLElement) {
+async function paintGradients(view: HTMLElement, progress?: (done: number, total: number) => void) {
   const doc = view.ownerDocument;
   const box = view.getBoundingClientRect();
   const left = box.left;
   const width = box.width || 1;
   const range = doc.createRange();
   const isSpace = (c: string) => c.trim() === "";
-  for (const el of Array.from(view.querySelectorAll<HTMLElement>(".rk-style-rainbow, .rk-style-gradient"))) {
+  const elements = Array.from(view.querySelectorAll<HTMLElement>(".rk-style-rainbow, .rk-style-gradient"));
+  let handled = 0;
+  for (const el of elements) {
+    // Long notes take a while: let the app breathe and say how far along it is.
+    if (handled++ % 20 === 0) {
+      progress?.(handled - 1, elements.length);
+      await sleep(0);
+    }
     const rainbow = el.classList.contains("rk-style-rainbow");
     const css = doc.defaultView!.getComputedStyle(el);
     const c1 = css.getPropertyValue("--rk-c").trim() || "#8b5cf6";
@@ -300,6 +353,49 @@ function paintGradients(view: HTMLElement) {
   }
 }
 
+/**
+ * Lay the note out in `win` exactly as wide as the printed page, so the
+ * positions measured here are the printed ones. `preview` draws where the pages end.
+ */
+async function layoutPage(
+  win: Window,
+  app: App,
+  file: TFile,
+  text: string,
+  o: PdfOptions,
+  owner: Component,
+  deps: PdfDeps,
+  notice: Notice | null,
+  preview = false,
+) {
+  await sleep(200);
+  const [pw, ph] = PAGES[o.pageSize];
+  const margin = MARGINS[o.margin];
+  const scale = Math.min(2, Math.max(0.1, o.scale / 100));
+  const [pageW, pageH] = o.landscape ? [ph, pw] : [pw, ph];
+  const contentPx = Math.floor(((pageW - 2 * margin) * 96) / scale);
+  const pagePx = Math.floor(((pageH - 2 * margin) * 96) / scale);
+  const fit = win.document.head.appendChild(win.document.createElement("style"));
+  fit.textContent = [
+    "html, body { margin: 0 !important; background: #fff; }",
+    `.print { position: static !important; width: ${contentPx}px !important; max-width: none !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }`,
+    `.print .markdown-preview-view { width: ${contentPx}px !important; max-width: none !important; margin: 0 !important; padding: 0 !important; }`,
+    // Keep a heading with what follows, and a code block, table or quote on one page when it fits.
+    "h1, h2, h3, h4, h5, h6 { break-after: avoid; }",
+    "pre, table, blockquote, img, .callout { break-inside: avoid; }",
+    ".rk-summary { margin-top: 2em; break-inside: avoid; } .rk-summary td { padding: 0.1em 1em 0.1em 0; }",
+    preview
+      ? `body { background: #888 !important; } .print { margin: 16px auto !important; background: #fff; padding: ${Math.round(margin * 96 / scale)}px !important; box-sizing: content-box; background-origin: content-box; background-image: repeating-linear-gradient(to bottom, transparent 0, transparent ${pagePx - 2}px, #d33 ${pagePx - 2}px, #d33 ${pagePx}px); }`
+      : "",
+  ].join("\n");
+  const print = win.document.body.createDiv("print");
+  const view = print.createDiv("markdown-preview-view markdown-rendered");
+  await renderNote(app, file, text, o, view, owner, deps);
+  await sleep(400);
+  if (o.content === "color") await paintGradients(view, (d, t) => notice?.setMessage(`正在给彩虹字上色… ${d} / ${t}`));
+  return { view, margin, scale, contentPx };
+}
+
 /** Ask for a place to save the file, render, and print. */
 export async function exportPdf(app: App, file: TFile, text: string, o: PdfOptions, deps: PdfDeps, css: string) {
   if (!Platform.isDesktopApp) {
@@ -330,28 +426,7 @@ export async function exportPdf(app: App, file: TFile, text: string, o: PdfOptio
   const owner = new Component();
   owner.load();
   try {
-    await sleep(200);
-    // Lay the text out exactly as wide as the printed page, so the positions measured here are the printed ones.
-    const [pw, ph] = PAGES[o.pageSize];
-    const margin = MARGINS[o.margin];
-    const scale = Math.min(2, Math.max(0.1, o.scale / 100));
-    const pageW = o.landscape ? ph : pw;
-    const contentPx = Math.floor(((pageW - 2 * margin) * 96) / scale);
-    const fit = win.document.head.appendChild(win.document.createElement("style"));
-    fit.textContent = [
-      "html, body { margin: 0 !important; background: #fff; }",
-      `.print { position: static !important; width: ${contentPx}px !important; max-width: none !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }`,
-      `.print .markdown-preview-view { width: ${contentPx}px !important; max-width: none !important; margin: 0 !important; padding: 0 !important; }`,
-      // Keep a heading with what follows, and a code block, table or quote on one page when it fits.
-      "h1, h2, h3, h4, h5, h6 { break-after: avoid; }",
-      "pre, table, blockquote, img, .callout { break-inside: avoid; }",
-      ".rk-summary { margin-top: 2em; break-inside: avoid; } .rk-summary td { padding: 0.1em 1em 0.1em 0; }",
-    ].join("\n");
-    const print = win.document.body.createDiv("print");
-    const view = print.createDiv("markdown-preview-view markdown-rendered");
-    await renderNote(app, file, text, o, view, owner, deps);
-    await sleep(400);
-    if (o.content === "color") paintGradients(view);
+    const { margin, scale } = await layoutPage(win, app, file, text, o, owner, deps, notice);
 
     const electron = electronOf(win);
     if (!electron) throw new Error("no electron in the print window");
@@ -389,6 +464,32 @@ export async function exportPdf(app: App, file: TFile, text: string, o: PdfOptio
   }
 }
 
+/** Show the pages in a window of their own, the red lines where one ends, before saving anything. */
+export async function previewPdf(app: App, file: TFile, text: string, o: PdfOptions, deps: PdfDeps) {
+  if (!Platform.isDesktopApp) {
+    new Notice("预览只能在桌面端用");
+    return;
+  }
+  const win = openPrintWindow(`${file.basename}（预览）`, true);
+  if (!win) {
+    new Notice("打不开预览窗口");
+    return;
+  }
+  const notice = new Notice("正在准备预览…", 0);
+  const owner = new Component();
+  owner.load();
+  win.addEventListener("pagehide", () => owner.unload());
+  try {
+    await layoutPage(win, app, file, text, o, owner, deps, notice, true);
+  } catch (e) {
+    console.error(e);
+    new Notice("预览失败，详情见开发者工具的控制台");
+    win.close();
+  } finally {
+    notice.hide();
+  }
+}
+
 /**
  * Where there is no way to print to a file (phones), write a page that opens in
  * any browser, which can print or save it as a PDF from there.
@@ -418,7 +519,7 @@ async function exportHtml(app: App, file: TFile, text: string, o: PdfOptions, de
       "/* Fixed backgrounds do not print: a rainbow runs across its own phrase. */",
       ".rk-style-rainbow { background-attachment: scroll !important; background-size: 100% 100% !important; background-position: 0 0 !important; }",
       "</style></head>",
-      `<body class="theme-light${o.content === "plain" ? " rk-pdf-plain" : ""}"><div class="markdown-rendered">${holder.innerHTML}</div></body></html>`,
+      `<body class="theme-light"><div class="markdown-rendered">${holder.innerHTML}</div></body></html>`,
     ].join("\n");
     const dir = file.parent && file.parent.path !== "/" ? file.parent.path + "/" : "";
     let path = normalizePath(`${dir}${file.basename}.html`);

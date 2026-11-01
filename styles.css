@@ -170,28 +170,4 @@ pre.rk-code {
   .rk-source {
     opacity: 1;
   }
-
-  /* Without colours: the text as it is. */
-  body.rk-pdf-plain .rk[class*="rk-style-"],
-  body.rk-pdf-plain .rk-code-text,
-  body.rk-pdf-plain .rk-code-text span,
-  body.rk-pdf-plain .rk-code-island {
-    color: inherit !important;
-    -webkit-text-fill-color: currentcolor;
-    background: none;
-    text-decoration: none;
-  }
-
-  body.rk-pdf-plain pre.rk-code {
-    box-shadow: none;
-  }
-}
-
-@media print {
-  body.rk-pdf-plain .markdown-rendered pre code.rk-code-text,
-  body.rk-pdf-plain .markdown-rendered pre code.rk-code-text.rk-style-color,
-  body.rk-pdf-plain .markdown-rendered pre code.rk-code-text span:not(.rk-code-island),
-  body.rk-pdf-plain .markdown-rendered pre code.rk-code-text .rk-code-island {
-    color: inherit !important;
-  }
 }
