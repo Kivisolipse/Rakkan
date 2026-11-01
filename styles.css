@@ -139,3 +139,19 @@ pre.rk-code {
 .rk-source {
   opacity: var(--rk-source-opacity, 0.72);
 }
+
+/* Themes colour code with selectors of their own; these have to win over them. */
+.markdown-rendered pre code.rk-code-text.rk-style-color {
+  color: color-mix(in srgb, var(--rk-c, #8b5cf6) calc(100% * var(--rk-strength)), var(--text-normal)) !important;
+}
+
+.markdown-rendered pre code.rk-code-text span:not(.rk-code-island) {
+  color: inherit !important;
+}
+
+/* An island the user typed in AI code: plain text colour, whatever style the block uses. */
+.markdown-rendered pre code.rk-code-text .rk-code-island {
+  color: var(--text-normal) !important;
+  -webkit-text-fill-color: currentcolor;
+  background: none;
+}

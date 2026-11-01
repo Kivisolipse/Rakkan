@@ -221,6 +221,22 @@ describe("typing in code blocks of an AI block", () => {
     expect(show(del(make(code("ts @@", "let @@a|@@", "return @@x@@"))))).toBe(code("ts @@", "let |", "return @@x@@"));
   });
 
+  it("removes the declaration when the last island is deleted whole, markers and all", () => {
+    const s = make(code("ts @@", "let @@abc@@", "return x"));
+    const t = s.doc.toString();
+    const a = t.indexOf("@@abc@@");
+    const next = s.update({ changes: { from: a, to: a + 7 }, userEvent: "delete.selection" }).state;
+    expect(next.doc.toString()).toBe(code("ts", "let ", "return x"));
+    // A whole line with the island goes too.
+    const l = t.indexOf("let @@abc@@\n");
+    const gone = s.update({ changes: { from: l, to: l + 12 }, userEvent: "delete.selection" }).state;
+    expect(gone.doc.toString()).toBe(code("ts", "return x"));
+    // Another island keeps it.
+    const k = make(code("ts @@", "let @@abc@@", "return @@x@@"));
+    const kept = k.update({ changes: { from: a, to: a + 7 }, userEvent: "delete.selection" }).state;
+    expect(kept.doc.toString()).toBe(code("ts @@", "let ", "return @@x@@"));
+  });
+
   it("joins two code islands when the text between them is deleted", () => {
     const s = make(code("ts @@", "@@a@@xy@@b@@"));
     const t = s.doc.toString();

@@ -452,10 +452,16 @@ function extrasFor(tr: Transaction, r: ParseResult, typing: boolean): TextChange
     handled.add(s);
   }
 
+  // Islands that were deleted whole, markers and all.
+  const dead = new Set(handled);
+  for (const s of spans) {
+    if (dead.has(s) || !isIsland(s) || s.to <= s.from) continue;
+    if (tr.changes.mapPos(s.from, 1) === tr.changes.mapPos(s.to, -1)) dead.add(s);
+  }
+
   // The last island of a code block is gone: the fence no longer needs its declaration.
-  const emptied = [...handled];
   const fences = new Set<number>();
-  for (const s of emptied) {
+  for (const s of dead) {
     const fence = r.lineContexts[spanLine.get(s)!]?.codeFence;
     if (fence !== undefined) fences.add(fence);
   }
@@ -463,11 +469,12 @@ function extrasFor(tr: Transaction, r: ParseResult, typing: boolean): TextChange
     let others = false;
     let atLen = 0;
     for (let i = fence + 1; i < r.lineContexts.length && r.lineContexts[i].codeFence === fence; i++) {
-      atLen = r.lineContexts[i].atLen;
-      if (spansOnLine(r, i).some((sp) => isIsland(sp) && !handled.has(sp))) others = true;
+      atLen = Math.max(atLen, r.lineContexts[i].atLen);
+      if (spansOnLine(r, i).some((sp) => isIsland(sp) && !dead.has(sp))) others = true;
     }
     if (others || atLen < 2) continue;
     const fl = r.lines[fence];
+    if (overlaps(tr.changes, fl.from, fl.to)) continue;
     const m = new RegExp("\\s@{" + atLen + "}(?=\\s|$)").exec(r.text.slice(fl.from, fl.to));
     if (!m) continue;
     extras.push({

@@ -143,19 +143,95 @@ function takeOverCopyButton(pre: HTMLElement, doc: ParseResult, fenceLine: numbe
   );
 }
 
+/**
+ * Rendered code shows its source, markers included. Take the declared markers
+ * out of the text and colour what they enclose.
+ */
+function renderCodeIslands(pre: HTMLElement, doc: ParseResult, fenceLine: number, styles: StyleSettings, blockCls: string, blockStyle?: string) {
+  const codeEl = pre.querySelector("code");
+  if (!codeEl) return;
+  let first = -1;
+  let last = -1;
+  for (let i = fenceLine + 1; i < doc.lineContexts.length && doc.lineContexts[i].codeFence === fenceLine; i++) {
+    if (first < 0) first = i;
+    last = i;
+  }
+  if (first < 0) return;
+  const base = doc.lines[first].from;
+  const end = doc.lines[last].to;
+
+  const cuts: Array<{ from: number; to: number; drop: boolean; cls?: string; style?: string; title?: string }> = [];
+  for (const seg of doc.segments) {
+    if (seg.to <= base) continue;
+    if (seg.from >= end) break;
+    if (seg.role === "mark" && (seg.mark === "open" || seg.mark === "close")) {
+      cuts.push({ from: seg.from - base, to: seg.to - base, drop: true });
+    } else if (seg.role === "text" && seg.attr.kind === "human") {
+      cuts.push({ from: seg.from - base, to: seg.to - base, drop: false, cls: "rk rk-island", title: "亲笔" });
+    }
+  }
+  if (!cuts.some((c) => c.drop)) return;
+  // The block's AI colour covers the code, and the user's islands stand out in the normal text colour.
+  codeEl.addClasses([...blockCls.split(" "), "rk-code-text"]);
+  if (blockStyle) codeEl.setAttribute("style", blockStyle);
+
+  const nodes: Text[] = [];
+  const walker = document.createTreeWalker(codeEl, NodeFilter.SHOW_TEXT);
+  let joined = "";
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    nodes.push(n as Text);
+    joined += (n as Text).data;
+  }
+  if (!joined.startsWith(doc.text.slice(base, end))) return;
+
+  let start = 0;
+  for (const node of nodes) {
+    const len = node.data.length;
+    const stop = start + len;
+    const mine = cuts.filter((c) => c.to > start && c.from < stop).sort((a, b) => a.from - b.from);
+    if (mine.length) {
+      const frag = document.createDocumentFragment();
+      let cur = start;
+      for (const c of mine) {
+        const a = Math.max(c.from, start);
+        const b = Math.min(c.to, stop);
+        if (a > cur) frag.append(node.data.slice(cur - start, a - start));
+        if (!c.drop && b > a) {
+          const span = document.createElement("span");
+          span.className = (c.cls ?? "") + " rk-code-island";
+          if (c.style) span.setAttribute("style", c.style);
+          if (c.title) span.title = c.title;
+          span.textContent = node.data.slice(a - start, b - start);
+          frag.append(span);
+        }
+        cur = Math.max(cur, b);
+      }
+      if (cur < stop) frag.append(node.data.slice(cur - start));
+      node.replaceWith(frag);
+    }
+    start = stop;
+  }
+}
+
 export function processSection(el: HTMLElement, ctx: MarkdownPostProcessorContext, deps: ReadingDeps) {
   const styles = deps.styles();
   const info = ctx.getSectionInfo(el);
   let doc: ParseResult | null = null;
   let lc: LineContext | null = null;
   let sectionSource: string[] = [];
+  let codePre: HTMLElement | null = null;
+  let fenceLine = -1;
 
   if (info) {
     doc = parseCached(info.text);
     const { lineStart, lineEnd } = info;
     sectionSource = info.text.split("\n").slice(lineStart, lineEnd + 1);
     const pre = el.querySelector("pre");
-    if (pre) takeOverCopyButton(pre, doc, lineStart);
+    if (pre) {
+      takeOverCopyButton(pre, doc, lineStart);
+      codePre = pre;
+      fenceLine = lineStart;
+    }
 
     // Block lines are syntax only: hide them.
     const first = doc.segments.find((s) => s.from >= doc!.lines[lineStart].from && s.to <= doc!.lines[lineStart].to + 1);
@@ -182,6 +258,7 @@ export function processSection(el: HTMLElement, ctx: MarkdownPostProcessorContex
   if (blockRes) {
     el.addClass("rk-in-block");
     el.querySelectorAll("pre").forEach((pre) => pre.addClass(...blockRes.cls.split(" "), "rk-code"));
+    if (codePre && doc) renderCodeIslands(codePre, doc, fenceLine, styles, blockRes.cls, blockRes.style);
   }
 
   const docLike = doc ?? { blocks: [], definitions: {} };
