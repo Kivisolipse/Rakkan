@@ -58,7 +58,10 @@ const MARGINS: Record<PdfOptions["margin"], number> = { "0": 0.6, "1": 0, "2": 0
 
 interface ElectronLike {
   ipcRenderer: { once(channel: string, fn: () => void): void; send(channel: string, data: unknown): void };
-  remote?: { dialog: { showSaveDialog(o: object): Promise<{ canceled: boolean; filePath?: string }> } };
+  remote?: {
+    dialog: { showSaveDialog(o: object): Promise<{ canceled: boolean; filePath?: string }> };
+    getCurrentWindow?(): { show(): void; focus(): void };
+  };
 }
 
 const electronOf = (win: Window): ElectronLike | null => {
@@ -178,8 +181,9 @@ function installHelpers(win: Window) {
 }
 
 /** A window that looks like the app, in light theme; hidden unless it is a preview. */
-function openPrintWindow(title: string, visible = false): Window | null {
-  const win = window.open("about:blank", "_blank", visible ? "popup" : "popup,hide=true");
+function openPrintWindow(title: string, visible = false, width = 900): Window | null {
+  // The app creates every such window hidden and leaves showing it to whoever asked for it.
+  const win = window.open("about:blank", "_blank", visible ? `popup,width=${width},height=900` : "popup,hide=true");
   if (!win) return null;
   installHelpers(win);
   const doc = win.document;
@@ -190,6 +194,14 @@ function openPrintWindow(title: string, visible = false): Window | null {
   for (const a of Array.from(document.body.attributes)) doc.body.setAttribute(a.name, a.value);
   doc.body.classList.remove("theme-dark");
   doc.body.classList.add("theme-light");
+  if (visible) {
+    try {
+      electronOf(win)?.remote?.getCurrentWindow?.().show();
+    } catch (e) {
+      console.error(e);
+    }
+    win.focus();
+  }
   return win;
 }
 
@@ -505,7 +517,9 @@ export async function previewPdf(app: App, file: TFile, text: string, o: PdfOpti
     new Notice("预览只能在桌面端用");
     return;
   }
-  const win = openPrintWindow(`${file.basename}（预览）`, true);
+  const [pw, ph] = PAGES[o.pageSize];
+  const pageW = (o.landscape ? ph : pw) * 96;
+  const win = openPrintWindow(`${file.basename}（预览）`, true, Math.round(Math.min(1400, Math.max(500, pageW + 60))));
   if (!win) {
     new Notice("打不开预览窗口");
     return;
