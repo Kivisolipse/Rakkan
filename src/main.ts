@@ -1,7 +1,8 @@
 import { editorLivePreviewField, MarkdownView, Notice, Plugin, TFile, type Editor } from "obsidian";
+import { EditorSelection } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import { Parser, parseAuthor, quoteText, setBookColor, type Author, type ParseResult } from "./core";
-import { parseField, rakkanEditor, refreshEffect } from "./cm6/editor";
+import { Parser, parseAuthor, pasteEdits, quoteText, setBookColor, type Author, type ParseResult } from "./core";
+import { parseField, pasteWithOwners, rakkanEditor, rangePayload, refreshEffect } from "./cm6/editor";
 import { STYLES, type StyleSettings } from "./cm6/resolve";
 import { processSection } from "./obsidian/reading";
 import { DEFAULT_SETTINGS, RakkanSettingTab, type RakkanSettings } from "./obsidian/settings";
@@ -41,7 +42,19 @@ export default class RakkanPlugin extends Plugin {
       }),
     );
 
-    this.registerMarkdownPostProcessor((el, ctx) => processSection(el, ctx, { styles: () => this.styleSnapshot }), 100);
+    // Colours that follow the horizontal position need to know where the reading column is.
+    let anchorFrame = 0;
+    const anchorSoon = () => {
+      window.cancelAnimationFrame(anchorFrame);
+      anchorFrame = window.requestAnimationFrame(() => this.anchorReading());
+    };
+    this.registerMarkdownPostProcessor((el, ctx) => {
+      processSection(el, ctx, { styles: () => this.styleSnapshot });
+      anchorSoon();
+    }, 100);
+    this.registerDomEvent(window, "resize", anchorSoon);
+    this.registerEvent(this.app.workspace.on("layout-change", anchorSoon));
+    this.registerEvent(this.app.workspace.on("resize", anchorSoon));
 
     this.statusEl = this.addStatusBarItem();
     this.statusEl.addClass("rk-status", "mod-clickable");
@@ -139,6 +152,14 @@ export default class RakkanPlugin extends Plugin {
       },
     });
     this.addCommand({
+      id: "paste-edits",
+      name: "粘贴修改（只把改动的地方标给模型）",
+      editorCallback: (editor) => {
+        const view = cmOf(editor);
+        if (view) this.pasteEdits(view);
+      },
+    });
+    this.addCommand({
       id: "create-book",
       name: "新建署名簿",
       callback: () => void this.createBookNote(),
@@ -182,6 +203,59 @@ export default class RakkanPlugin extends Plugin {
         new DiagnosticsModal(this.app, this.lastResult?.diagnostics ?? [], view).open();
       },
     });
+  }
+
+  /**
+   * The selection is the original text, the clipboard its edited version: only
+   * the words that changed are attributed to the AI (and the model, if chosen).
+   */
+  private pasteEdits(view: EditorView) {
+    const sel = view.state.selection.main;
+    if (sel.empty) {
+      new Notice("先选中被改的那段原文，再用这个命令");
+      return;
+    }
+    const { from, to } = sel;
+    const r = view.state.field(parseField);
+    const lineHit = (l: number | null) => l !== null && r.lines[l].from < to && r.lines[l].to > from;
+    if (r.blocks.some((b) => lineHit(b.openLine) || lineHit(b.closeLine))) {
+      new Notice("选区里有 AI 块的开头或结尾行，请只选正文");
+      return;
+    }
+    if (r.segments.some((s) => s.attr.kind === "quote" && s.from < to && s.to > from)) {
+      new Notice("选区里有引文，粘贴修改会弄丢出处，请避开引文");
+      return;
+    }
+    const original = view.state.sliceDoc(from, to);
+    void navigator.clipboard
+      .readText()
+      .then((text) => {
+        if (!text.trim()) {
+          new Notice("剪贴板是空的");
+          return;
+        }
+        new AuthorPickerModal(
+          this.app,
+          { authors: () => Object.values(this.allAuthors()).filter((a) => a.kind === "ai") },
+          (key) => {
+            if (view.state.sliceDoc(from, to) !== original) {
+              new Notice("原文在选作者的时候变了，请重新来一次");
+              return;
+            }
+            const now = rangePayload(view.state.field(parseField), from, to);
+            const res = pasteEdits(now.plain, now.owners, text);
+            if (!res.changed) {
+              new Notice("没有发现改动");
+              return;
+            }
+            view.dispatch({ selection: EditorSelection.range(from, to) });
+            pasteWithOwners(view, { plain: res.plain, owners: res.owners, ...(key ? { key } : {}) });
+            new Notice(`标了 ${res.changed} 处改动`);
+          },
+          "不注明模型",
+        ).open();
+      })
+      .catch(() => new Notice("读不到剪贴板"));
   }
 
   private currentResult(): ParseResult | null {
@@ -232,6 +306,14 @@ export default class RakkanPlugin extends Plugin {
   async createBookNote() {
     const file = await createBook(this.app, this.settings.bookPath);
     await this.app.workspace.getLeaf(false).openFile(file);
+  }
+
+  private anchorReading() {
+    document.querySelectorAll<HTMLElement>(".markdown-preview-sizer").forEach((el) => {
+      const r = el.getBoundingClientRect();
+      el.style.setProperty("--rk-x", `${r.left}px`);
+      el.style.setProperty("--rk-w", `${r.width}px`);
+    });
   }
 
   private applyAppearance() {

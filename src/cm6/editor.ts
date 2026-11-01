@@ -192,16 +192,26 @@ function decorations(cfg: RakkanEditorConfig) {
 
 const MIME = "application/x-rakkan";
 
-interface ClipPayload {
+export interface ClipPayload {
   plain: string;
   /** One character per plain character: A (AI) or H (human). */
   owners: string;
+  /** Author key for the AI characters (`[@key]`), when known. */
+  key?: string;
 }
 
 function ownerAt(r: ParseResult, pos: number): Owner {
   const i = firstSegment(r.segments, pos);
   const s = r.segments[i];
   return s && s.from <= pos && s.attr.kind === "ai" ? "ai" : "human";
+}
+
+/** The text of `[from, to)` without markers, and who owns each character. */
+export function rangePayload(r: ParseResult, from: number, to: number): ClipPayload {
+  const st = stripMarkers(r, from, to);
+  let owners = "";
+  for (const pos of st.map) owners += ownerAt(r, pos) === "ai" ? "A" : "H";
+  return { plain: st.text, owners };
 }
 
 function copyHandler(cfg: RakkanEditorConfig, cut: boolean) {
@@ -217,9 +227,9 @@ function copyHandler(cfg: RakkanEditorConfig, cut: boolean) {
         plain += "\n";
         owners += "H";
       }
-      const st = stripMarkers(r, rg.from, rg.to);
-      plain += st.text;
-      for (const pos of st.map) owners += ownerAt(r, pos) === "ai" ? "A" : "H";
+      const p = rangePayload(r, rg.from, rg.to);
+      plain += p.plain;
+      owners += p.owners;
     });
     const raw = ranges.map((rg) => view.state.sliceDoc(rg.from, rg.to)).join("\n");
     if (plain === raw && !owners.includes("A")) return false;
@@ -255,7 +265,9 @@ export function pasteWithOwners(view: EditorView, payload: ClipPayload) {
         const pos = line.from + ctx.prefix + c.at;
         if (pos < start || pos >= end) continue;
         c.owner = payload.owners[pos - start] === "A" ? "ai" : "human";
-        delete c.key;
+        // Text an AI edited can say which model did it: `&&x&&[@key]`.
+        if (c.owner === "ai" && payload.key) c.key = payload.key;
+        else delete c.key;
       }
     });
     if (next === null) continue;
@@ -408,9 +420,41 @@ function imeFlush(cfg: RakkanEditorConfig) {
   );
 }
 
+/**
+ * Tell the CSS where the text column is (its left edge and width in the
+ * viewport), for styles whose colour follows the horizontal position.
+ */
+function columnAnchor() {
+  return ViewPlugin.fromClass(
+    class {
+      constructor(readonly view: EditorView) {
+        this.measure();
+      }
+      update(u: ViewUpdate) {
+        if (u.geometryChanged || u.viewportChanged || u.docChanged) this.measure();
+      }
+      measure() {
+        const { view } = this;
+        view.requestMeasure({
+          key: this,
+          read: () => {
+            const r = view.contentDOM.getBoundingClientRect();
+            return { x: r.left, w: r.width };
+          },
+          write: (m) => {
+            view.dom.style.setProperty("--rk-x", `${m.x}px`);
+            view.dom.style.setProperty("--rk-w", `${m.w}px`);
+          },
+        });
+      }
+    },
+  );
+}
+
 export function rakkanEditor(cfg: RakkanEditorConfig): Extension {
   return [
     parseField,
+    columnAnchor(),
     annotate({ enabled: cfg.autoAnnotate }),
     imeFlush(cfg),
     collapseField(cfg),

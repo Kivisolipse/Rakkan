@@ -35,8 +35,29 @@ body.rk-mode-writing {
   background-image: linear-gradient(90deg, var(--rk-c, #8b5cf6), var(--rk-c2, var(--rk-c, #8b5cf6)));
 }
 
+/*
+ * Rainbow, the way iA Writer paints generated text: the colour belongs to the
+ * horizontal position in the text column, not to the phrase. Orange at the
+ * left edge, through coral, pink, orchid and violet, to periwinkle at the
+ * right, so a word gets a short slice of the spectrum and the same position
+ * always has the same colour. --rk-x / --rk-w are the column's left edge and
+ * width in the viewport, set by the editor and the reading view; where
+ * `fixed` backgrounds are unsupported (iOS) each line shows the whole range.
+ */
 .rk-style-rainbow {
-  background-image: linear-gradient(90deg, #e8505b, #f4a340, #3bb273, #3b82f6, #8b5cf6);
+  background-image: linear-gradient(
+    90deg,
+    #f0883a 0%,
+    #ec5f55 22%,
+    #dc3f77 42%,
+    #bd57cc 62%,
+    #8f6fe8 82%,
+    #6f86f2 100%
+  );
+  background-attachment: fixed;
+  background-size: var(--rk-w, 720px) 100%;
+  background-position: var(--rk-x, 0px) 0;
+  background-repeat: repeat-x;
 }
 
 body.rk-mode-writing .rk-style-gradient,

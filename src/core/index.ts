@@ -11,3 +11,5 @@ export type { Owner, Rewritten, TextChange, Char } from "./rewrite";
 export { parseAuthor, parseBook, hueOf, hueHex, setBookColor, BOOK_TEMPLATE } from "./authors";
 export type { Author, AuthorKind } from "./authors";
 export { quoteText } from "./quote";
+export { pasteEdits } from "./pasteedits";
+export type { PasteEdits } from "./pasteedits";
