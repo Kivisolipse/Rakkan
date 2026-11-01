@@ -10,6 +10,8 @@ export interface RakkanSettings extends StyleSettings {
   hideMarkers: boolean;
   mode: "writing" | "review";
   stripOnCopy: boolean;
+  /** Wrap what you type inside AI regions in `@@…@@`. */
+  autoAnnotate: boolean;
   searchIgnoreFormat: boolean;
   showStatusBar: boolean;
   /** Signature used when "mark as AI" creates a block. */
@@ -30,6 +32,7 @@ export const DEFAULT_SETTINGS: RakkanSettings = {
   hideMarkers: true,
   mode: "review",
   stripOnCopy: true,
+  autoAnnotate: true,
   searchIgnoreFormat: true,
   showStatusBar: true,
   defaultSignature: "AI",
@@ -247,6 +250,16 @@ export class RakkanSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl).setName("编辑").setHeading();
+
+    new Setting(containerEl)
+      .setName("自动标注亲笔")
+      .setDesc("在 AI 块和 &&…&&（以及里面）打的字，自动包进 @@…@@。中文输入法在停顿约 0.6 秒后才包，组字过程中不会改动文档。")
+      .addToggle((t) =>
+        t.setValue(s.autoAnnotate).onChange(async (v) => {
+          s.autoAnnotate = v;
+          await save();
+        }),
+      );
 
     new Setting(containerEl)
       .setName("复制时去掉标记")

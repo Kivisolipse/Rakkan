@@ -7,7 +7,7 @@ import type { LineContext } from "./types";
 
 export type Owner = "ai" | "human";
 
-interface Char {
+export interface Char {
   ch: string;
   owner: Owner;
   key?: string;
@@ -37,6 +37,13 @@ export function atomicRanges(content: string): Range[] {
       out.push({ from: m.index + lead, to: m.index + m[0].length });
     }
   }
+  // Markers always go outside bold / highlight / strike / italic: `**&&x&&**` breaks
+  // bold after CJK text (CommonMark flanking rules), `&&**x**&&` does not.
+  const emphasis = /(\*\*|__|==|~~)\S(?:.*?\S)?\1/g;
+  let e: RegExpExecArray | null;
+  while ((e = emphasis.exec(content))) out.push({ from: e.index, to: e.index + e[0].length });
+  const italic = /(^|[^*])(\*[^\s*](?:[^*]*[^\s*])?\*)(?!\*)/g;
+  while ((e = italic.exec(content))) out.push({ from: e.index + e[1].length, to: e.index + e[0].length });
   return out;
 }
 
@@ -107,9 +114,12 @@ function signature(chars: Char[]): string {
  * (quotes, code, cited blockquotes).
  */
 export function setOwner(line: string, ctx: LineContext, from: number, to: number, owner: Owner): string | null {
+  // `from` / `to` are line offsets; characters are indexed without the `> ` prefix.
+  const a = from - ctx.prefix;
+  const b = to - ctx.prefix;
   return rewriteLine(line, ctx, (chars) => {
     for (const c of chars) {
-      if (c.at >= from && c.at < to) {
+      if (c.at >= a && c.at < b) {
         c.owner = owner;
         delete c.key;
       }
@@ -122,6 +132,16 @@ export function setOwner(line: string, ctx: LineContext, from: number, to: numbe
  * by a change take the changed owner as a whole.
  */
 export function rewriteLine(line: string, ctx: LineContext, edit: (chars: Char[]) => void): string | null {
+  return rewriteLineDetailed(line, ctx, edit)?.text ?? null;
+}
+
+export interface Rewritten {
+  text: string;
+  /** Offset in the new line of every visible character, by its offset in the old line. */
+  map: Map<number, number>;
+}
+
+export function rewriteLineDetailed(line: string, ctx: LineContext, edit: (chars: Char[]) => void): Rewritten | null {
   if (ctx.mode !== "prose" || ctx.pair === "quote") return null;
   const prefix = line.slice(0, ctx.prefix);
   const content = line.slice(ctx.prefix);
@@ -171,8 +191,12 @@ export function rewriteLine(line: string, ctx: LineContext, edit: (chars: Char[]
     const check = ownersOf(out, ctx);
     if (!check) continue;
     // Escapes add backslashes; compare ignoring them only when escaping.
-    const got = signature(escape ? check.filter((c) => !(c.ch === "\\" && /[&@]/.test(out[c.at + 1] ?? ""))) : check);
-    if (got === want) return prefix + out;
+    const visible = escape ? check.filter((c) => !(c.ch === "\\" && /[&@]/.test(out[c.at + 1] ?? ""))) : check;
+    if (signature(visible) === want) {
+      const map = new Map<number, number>();
+      chars.forEach((c, i) => map.set(c.at + ctx.prefix, visible[i].at + ctx.prefix));
+      return { text: prefix + out, map };
+    }
   }
   return null;
 }
@@ -189,4 +213,63 @@ export function minimalChange(a: string, b: string): { from: number; to: number;
     endB--;
   }
   return { from: start, to: endA, insert: b.slice(start, endB) };
+}
+
+export interface TextChange {
+  from: number;
+  to: number;
+  insert: string;
+}
+
+/**
+ * Character-level diff between `a` and `b` as separate changes, so a cursor
+ * between two edits is not swallowed by one big replacement. Marker
+ * characters count less than other characters when matching, which keeps
+ * typed text in place and moves the markers around it.
+ */
+export function diffChanges(a: string, b: string): TextChange[] {
+  if (a === b) return [];
+  let s = 0;
+  while (s < a.length && s < b.length && a[s] === b[s]) s++;
+  let ea = a.length;
+  let eb = b.length;
+  while (ea > s && eb > s && a[ea - 1] === b[eb - 1]) {
+    ea--;
+    eb--;
+  }
+  const x = a.slice(s, ea);
+  const y = b.slice(s, eb);
+  const n = x.length;
+  const m = y.length;
+  if (n * m > 40000) return [{ from: s, to: ea, insert: y }];
+
+  const weight = (c: string) => (c === "&" || c === "@" || c === "\\" ? 1 : 4);
+  const dp = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] =
+        x[i] === y[j] ? dp[i + 1][j + 1] + weight(x[i]) : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+
+  const out: TextChange[] = [];
+  let cur: TextChange | null = null;
+  let i = 0;
+  let j = 0;
+  while (i < n || j < m) {
+    if (i < n && j < m && x[i] === y[j] && dp[i][j] === dp[i + 1][j + 1] + weight(x[i])) {
+      if (cur) out.push(cur);
+      cur = null;
+      i++;
+      j++;
+    } else if (j < m && (i === n || dp[i][j + 1] >= dp[i + 1][j])) {
+      cur ??= { from: s + i, to: s + i, insert: "" };
+      cur.insert += y[j++];
+    } else {
+      cur ??= { from: s + i, to: s + i, insert: "" };
+      cur.to = s + ++i;
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
 }

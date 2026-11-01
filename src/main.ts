@@ -33,6 +33,7 @@ export default class RakkanPlugin extends Plugin {
         styles: () => this.styleSnapshot,
         hideMarkers: (state) => this.settings.hideMarkers && (state.field(editorLivePreviewField, false) ?? false),
         stripOnCopy: () => this.settings.stripOnCopy,
+        autoAnnotate: () => this.settings.autoAnnotate,
       }),
     );
 

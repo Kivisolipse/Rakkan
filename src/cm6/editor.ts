@@ -10,7 +10,6 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 import {
-  Parser,
   minimalChange,
   rewriteLine,
   stripMarkers,
@@ -20,6 +19,8 @@ import {
   type ParseResult,
   type Segment,
 } from "../core";
+import { annotate, flushSpec, IME_PAUSE_MS, pendingField } from "./annotate";
+import { parseField } from "./parsefield";
 import { resolve, type Resolved, type StyleSettings } from "./resolve";
 
 export interface RakkanEditorConfig {
@@ -27,17 +28,14 @@ export interface RakkanEditorConfig {
   /** Hide markers away from the cursor (live preview). */
   hideMarkers(state: EditorState): boolean;
   stripOnCopy(): boolean;
+  /** Wrap what the user types inside AI regions in `@@…@@`. */
+  autoAnnotate(): boolean;
 }
 
 /** Dispatch to force a redraw after settings change. */
 export const refreshEffect = StateEffect.define<null>();
 
-const parser = new Parser();
-
-export const parseField = StateField.define<ParseResult>({
-  create: (s) => parser.parse(s.doc.toString()),
-  update: (v, tr) => (tr.docChanged ? parser.parse(tr.state.doc.toString()) : v),
-});
+export { parseField };
 
 // ── Lookups cached per parse result ────────────────────────────────────
 
@@ -355,9 +353,53 @@ function collapseField(cfg: RakkanEditorConfig) {
   });
 }
 
+/**
+ * Composed (IME) text is wrapped once the user pauses: the document is not
+ * touched while a composition is running. Also flushed when the editor loses focus.
+ */
+function imeFlush(cfg: RakkanEditorConfig) {
+  return ViewPlugin.fromClass(
+    class {
+      timer: number | undefined;
+      constructor(readonly view: EditorView) {}
+      schedule() {
+        window.clearTimeout(this.timer);
+        this.timer = window.setTimeout(() => this.flush(false), IME_PAUSE_MS);
+      }
+      flush(force: boolean) {
+        window.clearTimeout(this.timer);
+        if (this.view.composing && !force) {
+          this.schedule();
+          return;
+        }
+        const spec = flushSpec(this.view.state, { enabled: cfg.autoAnnotate });
+        if (spec) this.view.dispatch(spec);
+      }
+      update(u: ViewUpdate) {
+        if (u.docChanged && u.state.field(pendingField, false)?.length) this.schedule();
+      }
+      destroy() {
+        window.clearTimeout(this.timer);
+      }
+    },
+    {
+      eventHandlers: {
+        compositionend() {
+          this.schedule();
+        },
+        blur() {
+          this.flush(false);
+        },
+      },
+    },
+  );
+}
+
 export function rakkanEditor(cfg: RakkanEditorConfig): Extension {
   return [
     parseField,
+    annotate({ enabled: cfg.autoAnnotate }),
+    imeFlush(cfg),
     collapseField(cfg),
     decorations(cfg),
     EditorView.domEventHandlers({

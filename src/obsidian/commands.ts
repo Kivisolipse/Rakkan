@@ -61,7 +61,7 @@ export function markSelection(view: EditorView, owner: Owner, signature: string)
     }
   }
 
-  if (changes.length) view.dispatch({ changes, userEvent: "input", scrollIntoView: true });
+  if (changes.length) view.dispatch({ changes, userEvent: "input.rakkan", scrollIntoView: true });
   return skipped;
 }
 
@@ -77,7 +77,7 @@ export function stripSelection(view: EditorView) {
     const ch = minimalChange(state.sliceDoc(t.from, t.to), text);
     if (ch) changes.push({ from: t.from + ch.from, to: t.from + ch.to, insert: ch.insert });
   }
-  if (changes.length) view.dispatch({ changes, userEvent: "delete" });
+  if (changes.length) view.dispatch({ changes, userEvent: "input.rakkan.strip" });
 }
 
 /** Insert an empty signed block at the cursor, with the closing line already in place. */
@@ -92,7 +92,7 @@ export function insertBlock(view: EditorView, signature: string) {
   view.dispatch({
     changes: { from: pos, to: atEmpty ? line.to : pos, insert },
     selection: { anchor: pos + open.length },
-    userEvent: "input",
+    userEvent: "input.rakkan",
     scrollIntoView: true,
   });
 }
@@ -113,7 +113,7 @@ export function fixBlankLines(view: EditorView): number {
         changes.push({ from: line.to, to: line.to, insert: "\n" });
     }
   }
-  if (changes.length) view.dispatch({ changes, userEvent: "input" });
+  if (changes.length) view.dispatch({ changes, userEvent: "input.rakkan" });
   return changes.length;
 }
 

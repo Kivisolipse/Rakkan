@@ -40,6 +40,17 @@ describe("setOwner", () => {
     expect(mark("标签 #学习 吧", 0, "学", "ai")).toBe("标签 &&#学习&& 吧");
   });
 
+  it("counts offsets from the line start in blockquotes", () => {
+    expect(mark("&& Claude\n\n> AI 写的话\n\n&&", 2, "写的", "human")).toBe("> AI @@写的@@话");
+  });
+
+  it("keeps markers outside bold, highlight, strike and italic", () => {
+    expect(mark("这是**加粗字**哦", 0, "粗", "ai")).toBe("这是&&**加粗字**&&哦");
+    expect(mark("这是==高亮字==哦", 0, "亮", "ai")).toBe("这是&&==高亮字==&&哦");
+    expect(mark("这是~~删除字~~哦", 0, "除", "ai")).toBe("这是&&~~删除字~~&&哦");
+    expect(mark("这是*斜体字*哦", 0, "体", "ai")).toBe("这是&&*斜体字*&&哦");
+  });
+
   it("keeps [@key] attached to untouched spans", () => {
     expect(mark("&&模型&&[@gpt]和人", 0, "和", "human")).toBe("&&模型&&[@gpt]和人");
     expect(mark("&&模型&&[@gpt]和人", 0, "人", "ai")).toBe("&&模型&&[@gpt]和&&人&&");
