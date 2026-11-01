@@ -1,3 +1,4 @@
+import { DEFAULT_PDF, type PdfOptions } from "./pdf";
 import { App, PluginSettingTab, Setting } from "obsidian";
 import { BUILTIN_FAMILIES, hueHex, signatureFamily, type ExtraPrefix } from "../core";
 import { KIND_LABEL } from "./authors";
@@ -27,6 +28,8 @@ export interface RakkanSettings extends Omit<StyleSettings, "authors"> {
   sourceOpacity: number;
   /** Colours in PDFs exported with Obsidian's "Export to PDF". */
   pdfColors: "color" | "plain";
+  /** The last options of "导出为 PDF". */
+  pdf: PdfOptions;
 }
 
 
@@ -49,6 +52,7 @@ export const DEFAULT_SETTINGS: RakkanSettings = {
   writingStrength: 0.35,
   sourceOpacity: 0.72,
   pdfColors: "color",
+  pdf: DEFAULT_PDF,
   bookPath: "署名簿.md",
 };
 

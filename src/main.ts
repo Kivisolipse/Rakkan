@@ -10,6 +10,7 @@ import { colorCss } from "./cm6/colors";
 import { DiagnosticsModal, statusText } from "./obsidian/statusbar";
 import { LooseSearchModal } from "./obsidian/search";
 import { AuthorPickerModal, AuthorSuggest, createBook, loadBook } from "./obsidian/authors";
+import { exportPdf, PdfModal } from "./obsidian/pdf";
 import { exportNote, importIA, type ExportKind } from "./obsidian/export";
 import { fixBlankLines, insertBlock, markSelection, pasteAsAI, stripSelection } from "./obsidian/commands";
 
@@ -50,6 +51,8 @@ export default class RakkanPlugin extends Plugin {
       anchorFrame = window.requestAnimationFrame(() => this.anchorReading());
     };
     this.registerMarkdownPostProcessor((el, ctx) => {
+      // PDF export renders the pieces itself and colours them with their real lines.
+      if (el.closest(".rk-export")) return;
       processSection(el, ctx, { styles: () => this.styleSnapshot });
       anchorSoon();
     }, 100);
@@ -169,6 +172,24 @@ export default class RakkanPlugin extends Plugin {
         },
       });
     }
+    this.addCommand({
+      id: "export-pdf",
+      name: "导出为 PDF…",
+      editorCallback: (editor, ctx) => {
+        const file = ctx.file;
+        if (!file) return;
+        new PdfModal(
+          this.app,
+          file,
+          this.settings.pdf,
+          (o) => {
+            this.settings.pdf = o;
+            void this.saveSettings();
+          },
+          (o) => exportPdf(this.app, file, editor.getValue(), o, { styles: () => this.styleSnapshot }),
+        ).open();
+      },
+    });
     this.addCommand({
       id: "import-ia",
       name: "从 iA 标注转换（当前笔记）",
