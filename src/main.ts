@@ -1,4 +1,4 @@
-import { editorLivePreviewField, MarkdownView, Notice, Plugin, TFile, type Editor } from "obsidian";
+import { editorLivePreviewField, MarkdownView, MenuItem, Notice, Plugin, TFile, type Editor, type Menu } from "obsidian";
 import { EditorSelection } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { Parser, parseAuthor, pasteEdits, quoteText, setBookColor, type Author, type ParseResult } from "./core";
@@ -90,6 +90,7 @@ export default class RakkanPlugin extends Plugin {
 
     this.addSettingTab(new RakkanSettingTab(this.app, this));
     this.addCommands();
+    this.registerEvent(this.app.workspace.on("editor-menu", (menu, editor) => this.buildMenu(menu, editor)));
   }
 
   private addCommands() {
@@ -101,18 +102,12 @@ export default class RakkanPlugin extends Plugin {
     this.addCommand({
       id: "mark-ai",
       name: "标为代笔",
-      editorCallback: withView((view) => {
-        const skipped = markSelection(view, "ai", this.settings.defaultSignature);
-        if (skipped) new Notice(`有 ${skipped} 行含引文或代码，没有改动`);
-      }),
+      editorCallback: withView((view) => this.markAs(view, "ai")),
     });
     this.addCommand({
       id: "mark-human",
       name: "标为亲笔",
-      editorCallback: withView((view) => {
-        const skipped = markSelection(view, "human", this.settings.defaultSignature);
-        if (skipped) new Notice(`有 ${skipped} 行含引文或代码，没有改动`);
-      }),
+      editorCallback: withView((view) => this.markAs(view, "human")),
     });
     this.addCommand({
       id: "strip-markers",
@@ -135,21 +130,7 @@ export default class RakkanPlugin extends Plugin {
     this.addCommand({
       id: "paste-as-quote",
       name: "粘贴为引文",
-      editorCallback: (editor) => {
-        void navigator.clipboard
-          .readText()
-          .then((text) => {
-            if (!text.trim()) return;
-            new AuthorPickerModal(this.app, { authors: () => Object.values(this.allAuthors()) }, (key) => {
-              const quoted = quoteText(text, key);
-              const multi = quoted.startsWith("> ");
-              const atStart = editor.getCursor().ch === 0;
-              const lead = atStart ? "" : "\n\n";
-              editor.replaceSelection(multi ? `${lead}${quoted}\n` : quoted);
-            }).open();
-          })
-          .catch(() => new Notice("读不到剪贴板"));
-      },
+      editorCallback: (editor) => this.pasteAsQuote(editor),
     });
     this.addCommand({
       id: "paste-edits",
@@ -167,14 +148,7 @@ export default class RakkanPlugin extends Plugin {
     this.addCommand({
       id: "paste-as-ai",
       name: "粘贴为代笔",
-      editorCallback: withView(async (view) => {
-        try {
-          const text = await navigator.clipboard.readText();
-          if (text) pasteAsAI(view, text);
-        } catch {
-          new Notice("读不到剪贴板");
-        }
-      }),
+      editorCallback: withView((view) => void this.pasteAsAIFromClipboard(view)),
     });
     this.addCommand({
       id: "toggle-mode",
@@ -202,6 +176,69 @@ export default class RakkanPlugin extends Plugin {
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         new DiagnosticsModal(this.app, this.lastResult?.diagnostics ?? [], view).open();
       },
+    });
+  }
+
+  private markAs(view: EditorView, owner: "ai" | "human") {
+    const skipped = markSelection(view, owner, this.settings.defaultSignature);
+    if (skipped) new Notice(`有 ${skipped} 行含引文或代码，没有改动`);
+  }
+
+  private async pasteAsAIFromClipboard(view: EditorView) {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) pasteAsAI(view, text);
+    } catch {
+      new Notice("读不到剪贴板");
+    }
+  }
+
+  private pasteAsQuote(editor: Editor) {
+    void navigator.clipboard
+      .readText()
+      .then((text) => {
+        if (!text.trim()) return;
+        new AuthorPickerModal(this.app, { authors: () => Object.values(this.allAuthors()) }, (key) => {
+          const quoted = quoteText(text, key);
+          const multi = quoted.startsWith("> ");
+          const atStart = editor.getCursor().ch === 0;
+          const lead = atStart ? "" : "\n\n";
+          editor.replaceSelection(multi ? `${lead}${quoted}\n` : quoted);
+        }).open();
+      })
+      .catch(() => new Notice("读不到剪贴板"));
+  }
+
+  /** Right-click menu: Rakkan ▸ the editing actions (a flat list where submenus are not available). */
+  private buildMenu(menu: Menu, editor: Editor) {
+    const view = cmOf(editor);
+    if (!view) return;
+    const entries: Array<{ title: string; icon: string; run: () => void }> = [];
+    if (!view.state.selection.main.empty) {
+      entries.push(
+        { title: "标为代笔", icon: "bot", run: () => this.markAs(view, "ai") },
+        { title: "标为亲笔", icon: "user", run: () => this.markAs(view, "human") },
+        { title: "粘贴修改", icon: "diff", run: () => this.pasteEdits(view) },
+        { title: "去掉选区的标记", icon: "eraser", run: () => stripSelection(view) },
+      );
+    }
+    entries.push(
+      { title: "粘贴为代笔", icon: "clipboard-paste", run: () => void this.pasteAsAIFromClipboard(view) },
+      { title: "粘贴为引文", icon: "quote", run: () => this.pasteAsQuote(editor) },
+      { title: "插入 AI 块", icon: "square-plus", run: () => insertBlock(view, this.settings.defaultSignature) },
+    );
+
+    // setSubmenu exists in the app but not in the published typings.
+    const hasSubmenu = typeof (MenuItem.prototype as unknown as { setSubmenu?: unknown }).setSubmenu === "function";
+    if (!hasSubmenu) {
+      menu.addSeparator();
+      for (const e of entries) menu.addItem((i) => i.setTitle(`Rakkan · ${e.title}`).setIcon(e.icon).onClick(e.run));
+      return;
+    }
+    menu.addItem((item) => {
+      item.setTitle("Rakkan").setIcon("stamp").setSection("rakkan");
+      const sub = (item as unknown as { setSubmenu(): Menu }).setSubmenu();
+      for (const e of entries) sub.addItem((i) => i.setTitle(e.title).setIcon(e.icon).onClick(e.run));
     });
   }
 
