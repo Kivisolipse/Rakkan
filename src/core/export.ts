@@ -12,9 +12,31 @@ import { stripMarkers } from "./strip";
 import type { InlineSpan } from "./types";
 import { parse } from "./parse";
 
-/** The note without any Rakkan syntax. */
-export function exportPlain(text: string): string {
-  return stripMarkers(parse(text)).text;
+export interface PlainOptions {
+  /** Display name for a `[@key]` author, when known. */
+  nameOf?(key: string): string | undefined;
+}
+
+const CITE_LINE = /^[ \t]*(?:>[ \t]?)+\[@([^\]\s]+)\][ \t]*$/;
+
+/**
+ * The note without any Rakkan syntax. The `[@key]` line that ends a cited
+ * blockquote is the source of the quote, so it stays as `— name`.
+ */
+export function exportPlain(text: string, opts: PlainOptions = {}): string {
+  const r = parse(text);
+  const edits: Array<{ from: number; to: number; insert: string }> = [];
+  for (const seg of r.segments) {
+    if (seg.role !== "mark" || seg.mark !== "cite") continue;
+    let line = 0;
+    while (line + 1 < r.lines.length && r.lines[line + 1].from <= seg.from) line++;
+    const m = CITE_LINE.exec(text.slice(r.lines[line].from, r.lines[line].to));
+    if (!m || r.lineContexts[line].pair !== "quote") continue;
+    edits.push({ from: seg.from, to: seg.to, insert: `— ${opts.nameOf?.(m[1]) ?? m[1]}` });
+  }
+  let source = text;
+  for (const e of edits.reverse()) source = source.slice(0, e.from) + e.insert + source.slice(e.to);
+  return stripMarkers(edits.length ? parse(source) : r).text;
 }
 
 export interface PandocOptions {

@@ -21,6 +21,16 @@ export interface PdfOptions {
   margin: "0" | "1" | "2";
   /** Percent, 10–100. */
   scale: number;
+  /** Page numbers in the footer. */
+  pageNumbers: boolean;
+  /** A short summary of who wrote how much, after the text. */
+  summary: boolean;
+}
+
+/** What the PDF export needs from the plugin besides the reading view's. */
+export interface PdfDeps extends ReadingDeps {
+  /** Display name of a `[@key]` author, when the author book knows it. */
+  nameOf?(key: string): string | undefined;
 }
 
 export const DEFAULT_PDF: PdfOptions = {
@@ -30,6 +40,8 @@ export const DEFAULT_PDF: PdfOptions = {
   landscape: false,
   margin: "0",
   scale: 100,
+  pageNumbers: true,
+  summary: false,
 };
 
 /** Page sizes in inches. */
@@ -65,7 +77,7 @@ export class PdfModal extends Modal {
     private run: (o: PdfOptions) => Promise<void>,
   ) {
     super(app);
-    this.o = { ...initial };
+    this.o = { ...DEFAULT_PDF, ...initial };
   }
 
   override onOpen() {
@@ -98,6 +110,11 @@ export class PdfModal extends Modal {
         .setValue(this.o.margin)
         .onChange((v) => (this.o.margin = v as PdfOptions["margin"])),
     );
+    new Setting(contentEl).setName("页码").addToggle((t) => t.setValue(this.o.pageNumbers).onChange((v) => (this.o.pageNumbers = v)));
+    new Setting(contentEl)
+      .setName("文末附署名统计")
+      .setDesc("亲笔、代笔（按模型）、引文各占多少字。")
+      .addToggle((t) => t.setValue(this.o.summary).onChange((v) => (this.o.summary = v)));
     new Setting(contentEl)
       .setName("缩放百分比")
       .addSlider((s) => s.setLimits(10, 100, 1).setValue(this.o.scale).setDynamicTooltip().onChange((v) => (this.o.scale = v)));
@@ -139,11 +156,12 @@ function openPrintWindow(title: string): Window | null {
 const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
 
 /** Render the note into `into`, the way the reading view would show it. */
-async function renderNote(app: App, file: TFile, text: string, o: PdfOptions, into: HTMLElement, owner: Component, deps: ReadingDeps) {
+async function renderNote(app: App, file: TFile, text: string, o: PdfOptions, into: HTMLElement, owner: Component, deps: PdfDeps) {
   if (o.includeName) into.createEl("h1", { text: file.basename });
   if (o.content === "plain") {
     const holder = into.createDiv("rk-export");
-    await MarkdownRenderer.render(app, withoutFrontmatter(exportPlain(text)), holder, file.path, owner);
+    await MarkdownRenderer.render(app, withoutFrontmatter(exportPlain(text, { nameOf: deps.nameOf })), holder, file.path, owner);
+    if (o.summary) addSummary(into, text, deps);
     return;
   }
   const r = parse(text);
@@ -158,6 +176,26 @@ async function renderNote(app: App, file: TFile, text: string, o: PdfOptions, in
     } as unknown as MarkdownPostProcessorContext;
     processSection(holder, ctx, deps);
   }
+  if (o.summary) addSummary(into, text, deps);
+}
+
+/** Who wrote how much, as a small table after the text. */
+function addSummary(into: HTMLElement, text: string, deps: PdfDeps) {
+  const { stats } = parse(text);
+  const total = stats.human + stats.ai + stats.quote;
+  if (!total) return;
+  const box = into.createDiv("rk-export rk-summary");
+  box.createEl("h2", { text: "署名" });
+  const table = box.createEl("table");
+  const row = (name: string, n: number) => {
+    const tr = table.createEl("tr");
+    tr.createEl("td", { text: name });
+    tr.createEl("td", { text: `${n.toLocaleString()} 字` });
+    tr.createEl("td", { text: `${Math.round((n / total) * 100)}%` });
+  };
+  row("亲笔", stats.human);
+  for (const [who, n] of Object.entries(stats.aiByAuthor).sort((a, b) => b[1] - a[1])) row(`代笔 · ${deps.nameOf?.(who) ?? who}`, n);
+  for (const [key, n] of Object.entries(stats.quoteByKey).sort((a, b) => b[1] - a[1])) row(`引文 · ${deps.nameOf?.(key) ?? (key || "无出处")}`, n);
 }
 
 function withoutFrontmatter(text: string): string {
@@ -263,7 +301,7 @@ function paintGradients(view: HTMLElement) {
 }
 
 /** Ask for a place to save the file, render, and print. */
-export async function exportPdf(app: App, file: TFile, text: string, o: PdfOptions, deps: ReadingDeps, css: string) {
+export async function exportPdf(app: App, file: TFile, text: string, o: PdfOptions, deps: PdfDeps, css: string) {
   if (!Platform.isDesktopApp) {
     await exportHtml(app, file, text, o, deps, css);
     return;
@@ -304,6 +342,10 @@ export async function exportPdf(app: App, file: TFile, text: string, o: PdfOptio
       "html, body { margin: 0 !important; background: #fff; }",
       `.print { position: static !important; width: ${contentPx}px !important; max-width: none !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }`,
       `.print .markdown-preview-view { width: ${contentPx}px !important; max-width: none !important; margin: 0 !important; padding: 0 !important; }`,
+      // Keep a heading with what follows, and a code block, table or quote on one page when it fits.
+      "h1, h2, h3, h4, h5, h6 { break-after: avoid; }",
+      "pre, table, blockquote, img, .callout { break-inside: avoid; }",
+      ".rk-summary { margin-top: 2em; break-inside: avoid; } .rk-summary td { padding: 0.1em 1em 0.1em 0; }",
     ].join("\n");
     const print = win.document.body.createDiv("print");
     const view = print.createDiv("markdown-preview-view markdown-rendered");
@@ -321,6 +363,14 @@ export async function exportPdf(app: App, file: TFile, text: string, o: PdfOptio
       scale,
       printBackground: true,
       margins: { top: margin, left: margin, bottom: margin, right: margin },
+      ...(o.pageNumbers
+        ? {
+            displayHeaderFooter: true,
+            headerTemplate: "<span></span>",
+            footerTemplate:
+              '<div style="width:100%;text-align:center;font-size:9px;color:#888;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>',
+          }
+        : {}),
       open: true,
       filepath: picked.filePath,
     };
@@ -343,7 +393,7 @@ export async function exportPdf(app: App, file: TFile, text: string, o: PdfOptio
  * Where there is no way to print to a file (phones), write a page that opens in
  * any browser, which can print or save it as a PDF from there.
  */
-async function exportHtml(app: App, file: TFile, text: string, o: PdfOptions, deps: ReadingDeps, css: string) {
+async function exportHtml(app: App, file: TFile, text: string, o: PdfOptions, deps: PdfDeps, css: string) {
   const owner = new Component();
   owner.load();
   const holder = document.body.createDiv("markdown-preview-view markdown-rendered");

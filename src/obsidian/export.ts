@@ -25,7 +25,7 @@ export async function exportNote(
 ) {
   const nameOf = (key: string) => authors[key]?.name;
   let out: string;
-  if (kind === "plain") out = exportPlain(text);
+  if (kind === "plain") out = exportPlain(text, { nameOf });
   else if (kind === "ia") out = toIA(text, { nameOf });
   else {
     out = exportPandoc(text, {

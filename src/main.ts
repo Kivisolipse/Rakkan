@@ -188,7 +188,7 @@ export default class RakkanPlugin extends Plugin {
           },
           async (o) => {
             const css = await this.app.vault.adapter.read(normalizePath(`${this.manifest.dir}/styles.css`)).catch(() => "");
-            await exportPdf(this.app, file, editor.getValue(), o, { styles: () => this.styleSnapshot }, css);
+            await exportPdf(this.app, file, editor.getValue(), o, { styles: () => this.styleSnapshot, nameOf: (key) => this.allAuthors()[key]?.name }, css);
           },
         ).open();
       },
@@ -283,6 +283,7 @@ export default class RakkanPlugin extends Plugin {
       { title: "粘贴为代笔", icon: "clipboard-paste", run: () => void this.pasteAsAIFromClipboard(view) },
       { title: "粘贴为引文", icon: "quote", run: () => this.pasteAsQuote(editor) },
       { title: "插入 AI 块", icon: "square-plus", run: () => insertBlock(view, this.settings.defaultSignature) },
+      { title: "导出为 PDF…", icon: "file-output", run: () => (this.app as unknown as { commands: { executeCommandById(id: string): boolean } }).commands.executeCommandById("rakkan:export-pdf") },
     );
 
     // setSubmenu exists in the app but not in the published typings.

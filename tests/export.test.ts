@@ -48,3 +48,15 @@ describe("exportPandoc", () => {
     expect(out).toContain(FENCE + "ts\nlet a = 1\n" + FENCE);
   });
 });
+
+describe("exportPlain keeps the source of a cited blockquote", () => {
+  it("turns the [@key] line into a dash and the name", () => {
+    const text = ["> 整段的引用。", "> 最后一行。", "> [@fakebook]", "", "后文。"].join("\n");
+    expect(exportPlain(text)).toBe(["> 整段的引用。", "> 最后一行。", "> — fakebook", "", "后文。"].join("\n"));
+    expect(exportPlain(text, { nameOf: (k) => (k === "fakebook" ? "假书" : undefined) })).toContain("> — 假书");
+  });
+
+  it("leaves other markers and ordinary text alone", () => {
+    expect(exportPlain("人写的。&&AI 句&&[@gpt]，回到人。")).toBe("人写的。AI 句，回到人。");
+  });
+});
