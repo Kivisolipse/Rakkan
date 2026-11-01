@@ -1,4 +1,4 @@
-import { editorLivePreviewField, MarkdownView, MenuItem, Notice, Plugin, TFile, type Editor, type Menu } from "obsidian";
+import { editorLivePreviewField, MarkdownView, MenuItem, normalizePath, Notice, Plugin, TFile, type Editor, type Menu } from "obsidian";
 import { EditorSelection } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { Parser, parseAuthor, pasteEdits, quoteText, setBookColor, type Author, type ParseResult } from "./core";
@@ -186,7 +186,10 @@ export default class RakkanPlugin extends Plugin {
             this.settings.pdf = o;
             void this.saveSettings();
           },
-          (o) => exportPdf(this.app, file, editor.getValue(), o, { styles: () => this.styleSnapshot }),
+          async (o) => {
+            const css = await this.app.vault.adapter.read(normalizePath(`${this.manifest.dir}/styles.css`)).catch(() => "");
+            await exportPdf(this.app, file, editor.getValue(), o, { styles: () => this.styleSnapshot }, css);
+          },
         ).open();
       },
     });

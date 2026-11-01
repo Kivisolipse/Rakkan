@@ -7,7 +7,7 @@
 //   - render the note into it,
 //   - ask the app's main process to print that window to a file.
 
-import { Component, MarkdownRenderer, Modal, Notice, Platform, Setting, type App, type MarkdownPostProcessorContext, type TFile } from "obsidian";
+import { Component, MarkdownRenderer, Modal, normalizePath, Notice, Platform, Setting, type App, type MarkdownPostProcessorContext, type TFile } from "obsidian";
 import { exportPlain, parse, splitSections } from "../core";
 import { processSection, type ReadingDeps } from "./reading";
 
@@ -31,6 +31,18 @@ export const DEFAULT_PDF: PdfOptions = {
   margin: "0",
   scale: 100,
 };
+
+/** Page sizes in inches. */
+const PAGES: Record<PdfOptions["pageSize"], [number, number]> = {
+  A3: [11.69, 16.54],
+  A4: [8.27, 11.69],
+  A5: [5.83, 8.27],
+  Legal: [8.5, 14],
+  Letter: [8.5, 11],
+  Tabloid: [11, 17],
+};
+/** Margins in inches for the three choices (the dialog's 默认, 无, 最小). */
+const MARGINS: Record<PdfOptions["margin"], number> = { "0": 0.6, "1": 0, "2": 0.2 };
 
 interface ElectronLike {
   ipcRenderer: { once(channel: string, fn: () => void): void; send(channel: string, data: unknown): void };
@@ -153,10 +165,107 @@ function withoutFrontmatter(text: string): string {
   return m ? text.slice(m[0].length) : text;
 }
 
+const RAINBOW: Array<[number, string]> = [
+  [0, "#f0883a"],
+  [0.22, "#ec5f55"],
+  [0.42, "#dc3f77"],
+  [0.62, "#bd57cc"],
+  [0.82, "#8f6fe8"],
+  [1, "#6f86f2"],
+];
+
+const rgb = (hex: string): [number, number, number] => {
+  const h = hex.trim().replace("#", "");
+  const f = h.length === 3 ? [...h].map((c) => c + c).join("") : h;
+  return [parseInt(f.slice(0, 2), 16), parseInt(f.slice(2, 4), 16), parseInt(f.slice(4, 6), 16)];
+};
+
+function sample(stops: Array<[number, string]>, t: number): string {
+  const x = Math.min(1, Math.max(0, t));
+  let k = 0;
+  while (k < stops.length - 2 && x > stops[k + 1][0]) k++;
+  const [t0, c0] = stops[k];
+  const [t1, c1] = stops[k + 1];
+  const u = t1 === t0 ? 0 : (x - t0) / (t1 - t0);
+  const a = rgb(c0);
+  const b = rgb(c1);
+  return "#" + [0, 1, 2].map((i) => Math.round(a[i] + (b[i] - a[i]) * u).toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * A printed page cannot clip a gradient to text reliably, so give every
+ * character of rainbow and gradient text the colour it would have: a rainbow
+ * by where the character sits across the page, a gradient by how far along its
+ * phrase it is. The colours end up as plain text colour, which stays text in the PDF.
+ */
+function paintGradients(view: HTMLElement) {
+  const doc = view.ownerDocument;
+  const box = view.getBoundingClientRect();
+  const left = box.left;
+  const width = box.width || 1;
+  const range = doc.createRange();
+  const isSpace = (c: string) => c.trim() === "";
+  for (const el of Array.from(view.querySelectorAll<HTMLElement>(".rk-style-rainbow, .rk-style-gradient"))) {
+    const rainbow = el.classList.contains("rk-style-rainbow");
+    const css = doc.defaultView!.getComputedStyle(el);
+    const c1 = css.getPropertyValue("--rk-c").trim() || "#8b5cf6";
+    const c2 = css.getPropertyValue("--rk-c2").trim() || c1;
+    const stops: Array<[number, string]> = rainbow
+      ? RAINBOW
+      : [
+          [0, c1],
+          [1, c2],
+        ];
+
+    const nodes: Text[] = [];
+    const walker = doc.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (!n.parentElement?.closest(".rk-code-island")) nodes.push(n as Text);
+    }
+    const total = nodes.reduce((n, t) => n + t.data.length, 0) || 1;
+    let seen = 0;
+    // Measure first, change after: replacing nodes moves the layout under the ranges.
+    const plans = nodes.map((node) => {
+      const colors: Array<string | null> = [];
+      for (let i = 0; i < node.data.length; i++) {
+        let t: number;
+        if (rainbow) {
+          range.setStart(node, i);
+          range.setEnd(node, i + 1);
+          const r = range.getBoundingClientRect();
+          t = (r.left + r.width / 2 - left) / width;
+        } else {
+          t = (seen + i) / Math.max(1, total - 1);
+        }
+        colors.push(isSpace(node.data[i]) ? null : sample(stops, t));
+      }
+      seen += node.data.length;
+      return { node, colors };
+    });
+    for (const { node, colors } of plans) {
+      const frag = doc.createDocumentFragment();
+      for (let i = 0; i < node.data.length; i++) {
+        // One span per character: the colour changes with every one.
+        const c = colors[i];
+        if (c === null) frag.append(node.data[i]);
+        else {
+          const span = doc.createElement("span");
+          span.style.setProperty("color", c, "important");
+          span.textContent = node.data[i];
+          frag.append(span);
+        }
+      }
+      node.replaceWith(frag);
+    }
+    el.style.setProperty("-webkit-text-fill-color", "currentcolor");
+    el.style.background = "none";
+  }
+}
+
 /** Ask for a place to save the file, render, and print. */
-export async function exportPdf(app: App, file: TFile, text: string, o: PdfOptions, deps: ReadingDeps) {
+export async function exportPdf(app: App, file: TFile, text: string, o: PdfOptions, deps: ReadingDeps, css: string) {
   if (!Platform.isDesktopApp) {
-    new Notice("导出 PDF 只能在桌面端用");
+    await exportHtml(app, file, text, o, deps, css);
     return;
   }
   const mainElectron = electronOf(window);
@@ -166,7 +275,10 @@ export async function exportPdf(app: App, file: TFile, text: string, o: PdfOptio
   }
   const picked = await mainElectron.remote.dialog.showSaveDialog({
     defaultPath: file.basename + ".pdf",
-    filters: [{ name: "PDF Files", extensions: ["pdf"] }, { name: "All Files", extensions: ["*"] }],
+    filters: [
+      { name: "PDF Files", extensions: ["pdf"] },
+      { name: "All Files", extensions: ["*"] },
+    ],
     properties: ["showOverwriteConfirmation"],
   });
   if (picked.canceled || !picked.filePath) return;
@@ -181,11 +293,23 @@ export async function exportPdf(app: App, file: TFile, text: string, o: PdfOptio
   owner.load();
   try {
     await sleep(200);
+    // Lay the text out exactly as wide as the printed page, so the positions measured here are the printed ones.
+    const [pw, ph] = PAGES[o.pageSize];
+    const margin = MARGINS[o.margin];
+    const scale = Math.min(2, Math.max(0.1, o.scale / 100));
+    const pageW = o.landscape ? ph : pw;
+    const contentPx = Math.floor(((pageW - 2 * margin) * 96) / scale);
+    const fit = win.document.head.appendChild(win.document.createElement("style"));
+    fit.textContent = [
+      "html, body { margin: 0 !important; background: #fff; }",
+      `.print { position: static !important; width: ${contentPx}px !important; max-width: none !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }`,
+      `.print .markdown-preview-view { width: ${contentPx}px !important; max-width: none !important; margin: 0 !important; padding: 0 !important; }`,
+    ].join("\n");
     const print = win.document.body.createDiv("print");
     const view = print.createDiv("markdown-preview-view markdown-rendered");
-    // The theme's variables are what the reading view's colours are made of.
     await renderNote(app, file, text, o, view, owner, deps);
     await sleep(400);
+    if (o.content === "color") paintGradients(view);
 
     const electron = electronOf(win);
     if (!electron) throw new Error("no electron in the print window");
@@ -193,14 +317,13 @@ export async function exportPdf(app: App, file: TFile, text: string, o: PdfOptio
       includeName: o.includeName,
       pageSize: o.pageSize,
       landscape: o.landscape,
-      marginsType: parseInt(o.margin),
       scaleFactor: o.scale,
-      scale: Math.min(2, Math.max(0.1, o.scale / 100)),
+      scale,
       printBackground: true,
+      margins: { top: margin, left: margin, bottom: margin, right: margin },
       open: true,
       filepath: picked.filePath,
     };
-    if (o.margin === "1" || o.margin === "2") options.margins = { top: 0, left: 0, bottom: 0, right: 0 };
     await new Promise<void>((done) => {
       electron.ipcRenderer.once("print-to-pdf", () => done());
       electron.ipcRenderer.send("print-to-pdf", options);
@@ -213,5 +336,50 @@ export async function exportPdf(app: App, file: TFile, text: string, o: PdfOptio
     notice.hide();
     owner.unload();
     win.close();
+  }
+}
+
+/**
+ * Where there is no way to print to a file (phones), write a page that opens in
+ * any browser, which can print or save it as a PDF from there.
+ */
+async function exportHtml(app: App, file: TFile, text: string, o: PdfOptions, deps: ReadingDeps, css: string) {
+  const owner = new Component();
+  owner.load();
+  const holder = document.body.createDiv("markdown-preview-view markdown-rendered");
+  holder.setAttribute("style", "position:absolute;left:-99999px;top:0;width:760px;");
+  try {
+    await renderNote(app, file, text, o, holder, owner, deps);
+    await sleep(300);
+    const colors = document.getElementById("rakkan-colors")?.textContent ?? "";
+    const title = file.basename.replace(/[<&]/g, "");
+    const page = [
+      "<!doctype html>",
+      '<html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">',
+      `<title>${title}</title>`,
+      "<style>",
+      'body { font: 16px/1.7 system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; max-width: 760px; margin: 2em auto; padding: 0 1em; color: #222; background: #fff; }',
+      "pre { background: #f5f5f5; padding: .6em .8em; overflow-x: auto; border-radius: 4px; }",
+      "blockquote { border-left: 3px solid #bbb; margin-left: 0; padding-left: 1em; color: #555; }",
+      "table { border-collapse: collapse; } td, th { border: 1px solid #ccc; padding: .2em .6em; }",
+      "img { max-width: 100%; }",
+      colors,
+      css,
+      "/* Fixed backgrounds do not print: a rainbow runs across its own phrase. */",
+      ".rk-style-rainbow { background-attachment: scroll !important; background-size: 100% 100% !important; background-position: 0 0 !important; }",
+      "</style></head>",
+      `<body class="theme-light${o.content === "plain" ? " rk-pdf-plain" : ""}"><div class="markdown-rendered">${holder.innerHTML}</div></body></html>`,
+    ].join("\n");
+    const dir = file.parent && file.parent.path !== "/" ? file.parent.path + "/" : "";
+    let path = normalizePath(`${dir}${file.basename}.html`);
+    for (let n = 2; app.vault.getAbstractFileByPath(path); n++) path = normalizePath(`${dir}${file.basename} ${n}.html`);
+    await app.vault.create(path, page);
+    new Notice(`这个设备没法直接生成 PDF，已存成网页：${path}。用浏览器打开后选「打印 → 存为 PDF」`, 10000);
+  } catch (e) {
+    console.error(e);
+    new Notice("导出失败，详情见开发者工具的控制台");
+  } finally {
+    holder.remove();
+    owner.unload();
   }
 }
