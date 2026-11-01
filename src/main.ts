@@ -171,6 +171,15 @@ export default class RakkanPlugin extends Plugin {
       editorCallback: (editor) => importIA(editor),
     });
     this.addCommand({
+      id: "toggle-pdf-colors",
+      name: "切换导出 PDF 的颜色（带颜色 / 纯文字）",
+      callback: async () => {
+        this.settings.pdfColors = this.settings.pdfColors === "plain" ? "color" : "plain";
+        await this.saveSettings();
+        new Notice(this.settings.pdfColors === "plain" ? "导出 PDF：纯文字" : "导出 PDF：带颜色");
+      },
+    });
+    this.addCommand({
       id: "toggle-mode",
       name: "切换写作 / 审阅显示",
       callback: async () => {
@@ -378,6 +387,7 @@ export default class RakkanPlugin extends Plugin {
     if (this.styleEl) this.styleEl.textContent = colorCss(this.settings);
     document.body.toggleClass("rk-mode-writing", this.settings.mode === "writing");
     document.body.toggleClass("rk-mode-review", this.settings.mode === "review");
+    document.body.toggleClass("rk-pdf-plain", this.settings.pdfColors === "plain");
   }
 
   /** Redraw editors and reading views after a settings change. */
@@ -392,7 +402,7 @@ export default class RakkanPlugin extends Plugin {
   }
 
   override onunload() {
-    document.body.removeClass("rk-mode-writing", "rk-mode-review");
+    document.body.removeClass("rk-mode-writing", "rk-mode-review", "rk-pdf-plain");
   }
 
   async loadSettings() {

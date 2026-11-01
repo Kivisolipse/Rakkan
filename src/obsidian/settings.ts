@@ -25,6 +25,8 @@ export interface RakkanSettings extends Omit<StyleSettings, "authors"> {
   writingStrength: number;
   /** Opacity of quoted sources (0–1). */
   sourceOpacity: number;
+  /** Colours in PDFs exported with Obsidian's "Export to PDF". */
+  pdfColors: "color" | "plain";
 }
 
 
@@ -46,6 +48,7 @@ export const DEFAULT_SETTINGS: RakkanSettings = {
   colors: {},
   writingStrength: 0.35,
   sourceOpacity: 0.72,
+  pdfColors: "color",
   bookPath: "署名簿.md",
 };
 
@@ -280,6 +283,20 @@ export class RakkanSettingTab extends PluginSettingTab {
           .setDynamicTooltip()
           .onChange(async (v) => {
             s.sourceOpacity = v;
+            await save();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("导出 PDF 时")
+      .setDesc("用 Obsidian 自带的「导出为 PDF」时，AI 的字是带颜色还是纯文字。标记在 PDF 里本来就不显示。彩虹字和渐变字打印时一律改成单色。")
+      .addDropdown((d) =>
+        d
+          .addOption("color", "带颜色")
+          .addOption("plain", "纯文字，不带颜色")
+          .setValue(s.pdfColors)
+          .onChange(async (v) => {
+            s.pdfColors = v as "color" | "plain";
             await save();
           }),
       );
