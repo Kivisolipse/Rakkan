@@ -99,6 +99,13 @@ export default class RakkanPlugin extends Plugin {
     this.addSettingTab(new RakkanSettingTab(this.app, this));
     this.addCommands();
     this.registerEvent(this.app.workspace.on("editor-menu", (menu, editor) => this.buildMenu(menu, editor)));
+    // The three-dot menu of a note (reading view included) and the file explorer's right-click menu.
+    this.registerEvent(
+      this.app.workspace.on("file-menu", (menu, file) => {
+        if (!(file instanceof TFile) || file.extension !== "md") return;
+        menu.addItem((item) => item.setTitle("导出为 PDF（Rakkan）…").setIcon("file-output").setSection("action").onClick(() => this.openPdfExport(file)));
+      }),
+    );
   }
 
   private addCommands() {
@@ -167,32 +174,23 @@ export default class RakkanPlugin extends Plugin {
       this.addCommand({
         id: "export-" + kind,
         name,
-        editorCallback: (editor, ctx) => {
-          if (ctx.file) void exportNote(this.app, ctx.file, editor.getValue(), kind, this.allAuthors(), this.settings.extraPrefixes);
+        checkCallback: (checking) => {
+          const file = this.app.workspace.getActiveFile();
+          if (!file || file.extension !== "md") return false;
+          if (!checking) void this.readNote(file).then((text) => exportNote(this.app, file, text, kind, this.allAuthors(), this.settings.extraPrefixes));
+          return true;
         },
       });
     }
+    // Works in reading view too, which the editor commands do not.
     this.addCommand({
       id: "export-pdf",
       name: "导出为 PDF…",
-      editorCallback: (editor, ctx) => {
-        const file = ctx.file;
-        if (!file) return;
-        const pdfDeps = () => ({ styles: () => this.styleSnapshot, nameOf: (key: string) => this.allAuthors()[key]?.name });
-        new PdfModal(
-          this.app,
-          file,
-          this.settings.pdf,
-          (o) => {
-            this.settings.pdf = o;
-            void this.saveSettings();
-          },
-          async (o) => {
-            const css = await this.app.vault.adapter.read(normalizePath(`${this.manifest.dir}/styles.css`)).catch(() => "");
-            await exportPdf(this.app, file, editor.getValue(), o, pdfDeps(), css);
-          },
-          (o) => previewPdf(this.app, file, editor.getValue(), o, pdfDeps()),
-        ).open();
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || file.extension !== "md") return false;
+        if (!checking) this.openPdfExport(file);
+        return true;
       },
     });
     this.addCommand({
@@ -259,6 +257,32 @@ export default class RakkanPlugin extends Plugin {
       .catch(() => new Notice("读不到剪贴板"));
   }
 
+  /** The note's text, with unsaved edits: they are in the editor, not on disk yet. */
+  private async readNote(file: TFile): Promise<string> {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    return view?.file?.path === file.path && view.getMode() === "source" ? view.editor.getValue() : await this.app.vault.read(file);
+  }
+
+  /** The PDF export dialog for `file`, from whatever view shows it. */
+  openPdfExport(file: TFile) {
+    const pdfDeps = () => ({ styles: () => this.styleSnapshot, nameOf: (key: string) => this.allAuthors()[key]?.name });
+    const read = () => this.readNote(file);
+    new PdfModal(
+      this.app,
+      file,
+      this.settings.pdf,
+      (o) => {
+        this.settings.pdf = o;
+        void this.saveSettings();
+      },
+      async (o) => {
+        const css = await this.app.vault.adapter.read(normalizePath(`${this.manifest.dir}/styles.css`)).catch(() => "");
+        await exportPdf(this.app, file, await read(), o, pdfDeps(), css);
+      },
+      async (o) => previewPdf(this.app, file, await read(), o, pdfDeps()),
+    ).open();
+  }
+
   /** Right-click menu: Rakkan ▸ the editing actions (a flat list where submenus are not available). */
   private buildMenu(menu: Menu, editor: Editor) {
     const view = cmOf(editor);
@@ -276,7 +300,7 @@ export default class RakkanPlugin extends Plugin {
       { title: "粘贴为代笔", icon: "clipboard-paste", run: () => void this.pasteAsAIFromClipboard(view) },
       { title: "粘贴为引文", icon: "quote", run: () => this.pasteAsQuote(editor) },
       { title: "插入 AI 块", icon: "square-plus", run: () => insertBlock(view, this.settings.defaultSignature) },
-      { title: "导出为 PDF…", icon: "file-output", run: () => (this.app as unknown as { commands: { executeCommandById(id: string): boolean } }).commands.executeCommandById("rakkan:export-pdf") },
+      { title: "导出为 PDF…", icon: "file-output", run: () => { const f = this.app.workspace.getActiveFile(); if (f) this.openPdfExport(f); } },
     );
 
     // setSubmenu exists in the app but not in the published typings.
