@@ -66,13 +66,19 @@ export function parseBook(text: string, extra: ExtraPrefix[] = []): Record<strin
 /** The template for a new author book. All names here are made up. */
 export const BOOK_TEMPLATE = `# 署名簿
 
-一行一个作者：\`- @key: 名字 (标识) · 种类 · #颜色\`。种类写 人、AI 或 来源，颜色可以不写。
-正文里用 \`「引文」[@key]\` 或 \`&&AI 写的&&[@key]\` 指向这里。
-
 - @claude: Claude (claude-opus-5-5) · AI
 - @gpt: GPT (gpt-5) · AI
 - @ada: Ada Example · 人 · #3b82f6
 - @fakebook: 《一本不存在的书》 (ISBN 000-0-00-000000-0) · 来源
+`;
+
+/** The same template in English. */
+export const BOOK_TEMPLATE_EN = `# Authors
+
+- @claude: Claude (claude-opus-5-5) · AI
+- @gpt: GPT (gpt-5) · AI
+- @ada: Ada Example · human · #3b82f6
+- @fakebook: "A Book That Does Not Exist" (ISBN 000-0-00-000000-0) · source
 `;
 
 /** A stable colour for a human author who has none: a hue taken from the key. */
@@ -111,5 +117,59 @@ export function setBookColor(text: string, key: string, color: string | null): s
     lines[i] = lines[i].slice(0, lines[i].indexOf("@")) + `@${key}: ${body}` + cr;
     break;
   }
+  return lines.join("\n");
+}
+
+/** The word for each kind as written in a book line (人 / AI / 来源, or human / AI / source). */
+export type KindWords = Record<AuthorKind, string>;
+
+/** A key made from a name: lower case, spaces to hyphens, without the characters a key cannot hold. */
+export function keyFromName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[@:[\]「」『』“”"]/g, "");
+}
+
+/** `名字 (标识) · 种类 · #颜色` for one author. */
+function bodyOf(a: Author, words: KindWords): string {
+  const name = (a.name ?? "").replace(/[·•|｜]/g, " ").replace(/\s+/g, " ").trim();
+  const head = a.id ? `${name} (${a.id})`.trim() : name;
+  return [head, words[a.kind], a.color].filter(Boolean).join(" · ");
+}
+
+const eolOf = (text: string) => (text.includes("\r\n") ? "\r\n" : "\n");
+
+/** Add `- @key: …` at the end of the book. */
+export function addBookAuthor(text: string, a: Author, words: KindWords): string {
+  const eol = eolOf(text);
+  return text.replace(/\s*$/, "") + `${eol}- @${a.key}: ${bodyOf(a, words)}${eol}`;
+}
+
+/** Change the name and/or kind of an author; the model ID, colour and the rest of the line stay. */
+export function updateBookAuthor(
+  text: string,
+  key: string,
+  patch: { name?: string; kind?: AuthorKind },
+  words: KindWords,
+): string {
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const cr = lines[i].endsWith("\r") ? "\r" : "";
+    const m = LINE_RE.exec(lines[i].replace(/\r$/, ""));
+    if (!m || m[1] !== key) continue;
+    const a = { ...parseAuthor(key, m[2]), ...patch };
+    lines[i] = lines[i].slice(0, lines[i].indexOf("@")) + `@${key}: ${bodyOf(a, words)}` + cr;
+    break;
+  }
+  return lines.join("\n");
+}
+
+/** Remove the first definition of `key`. */
+export function removeBookAuthor(text: string, key: string): string {
+  const lines = text.split("\n");
+  const at = lines.findIndex((l) => LINE_RE.exec(l.replace(/\r$/, ""))?.[1] === key);
+  if (at >= 0) lines.splice(at, 1);
   return lines.join("\n");
 }

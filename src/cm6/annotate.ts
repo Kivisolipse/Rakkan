@@ -506,50 +506,108 @@ function extrasFor(tr: Transaction, r: ParseResult, typing: boolean): TextChange
   return extras;
 }
 
-// ── Moving lines ────────────────────────────────────────────────────────
+// ── Moving text ─────────────────────────────────────────────────────────
+
+/** Who wrote the visible character at `pos` of a parsed note; null where it is not plain text. */
+function ownerAt(r: ParseResult, pos: number): { owner: "ai" | "human"; key?: string } | null {
+  let lo = 0;
+  let hi = r.segments.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (r.segments[mid].from <= pos) lo = mid;
+    else hi = mid - 1;
+  }
+  const s = r.segments[lo];
+  if (!s || s.role !== "text" || pos < s.from || pos >= s.to) return null;
+  return s.attr.kind === "ai" ? { owner: "ai", ...(s.attr.key ? { key: s.attr.key } : {}) } : { owner: "human" };
+}
+
+interface Piece {
+  from: number;
+  to: number;
+  text: string;
+}
 
 /**
- * Moving a line across an AI block's edge changes what its unmarked text
- * means: out of a block it would turn into the user's, into one into the AI's.
- * Re-mark every moved line so each character keeps its owner.
+ * Moving text across an AI block's edge changes what its unmarked words mean:
+ * out of a block they would turn into the user's, into one into the AI's. Find
+ * the text that was cut and put back elsewhere in the same transaction (the
+ * move-line command, a drag and drop, a sorting plugin) and re-mark it so each
+ * character keeps its owner.
  *
- * The move-line command swaps a block of lines with the line next to it by
- * deleting that line's text and inserting it on the other side; the lines in
- * between shift by one.
+ * Whole lines are matched line by line, and the lines they jumped over shift
+ * with them (a block closer that moved above a line changes that line's
+ * region too). A piece of one line is matched character by character.
  */
-function moveExtras(tr: Transaction, r: ParseResult): TextChange[] {
+function relocateExtras(tr: Transaction, r: ParseResult): TextChange[] {
   const oldDoc = tr.startState.doc;
   const newDoc = tr.newDoc;
-  const cut: Array<{ line: number; text: string }> = [];
-  const put: Array<{ line: number; text: string }> = [];
-  let odd = false;
-  tr.changes.iterChanges((fromA, toA, fromB, _toB, inserted) => {
-    const removed = oldDoc.sliceString(fromA, toA);
+  const cuts: Piece[] = [];
+  const puts: Piece[] = [];
+  const mixed: Array<{ fromA: number; toA: number; fromB: number; toB: number }> = [];
+  tr.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
     const added = inserted.toString();
-    if ((removed && added) || (!removed && !added)) odd = true;
-    else if (removed) {
-      const lead = removed.startsWith("\n") ? 1 : 0;
-      cut.push({ line: oldDoc.lineAt(fromA + lead).number - 1, text: removed.replace(/^\n|\n$/g, "") });
-    } else {
-      const lead = added.startsWith("\n") ? 1 : 0;
-      put.push({ line: newDoc.lineAt(fromB + lead).number - 1, text: added.replace(/^\n|\n$/g, "") });
-    }
+    if (toA > fromA && added) mixed.push({ fromA, toA, fromB, toB });
+    else if (toA > fromA) cuts.push({ from: fromA, to: toA, text: oldDoc.sliceString(fromA, toA) });
+    else if (added) puts.push({ from: fromB, to: toB, text: added });
   });
-  if (odd || !put.length || put.length !== cut.length) return [];
 
-  // New line index → old line index, for every line whose position changed.
+  // New line index → old line index, for every line whose place changed.
   const from = new Map<number, number>();
+  let odd = false;
   const set = (n: number, o: number) => {
     if (from.has(n)) odd = true;
     from.set(n, o);
   };
-  for (const p of put) {
-    const k = cut.findIndex((c) => c.text === p.text);
-    if (k < 0) return [];
-    const a = cut.splice(k, 1)[0].line;
-    set(p.line, a);
-    if (a > p.line) for (let i = p.line; i < a; i++) set(i + 1, i);
-    else for (let i = a + 1; i <= p.line; i++) set(i - 1, i);
+  const fragments: Array<{ cut: Piece; put: Piece }> = [];
+
+  if (mixed.length === 1 && !cuts.length && !puts.length) {
+    // One replacement that only reorders whole lines (a sort).
+    const { fromA, toA, fromB, toB } = mixed[0];
+    if (toA - fromA !== toB - fromB) return [];
+    const old = oldDoc.sliceString(fromA, toA).split("\n");
+    const now = newDoc.sliceString(fromB, toB).split("\n");
+    const whole =
+      oldDoc.lineAt(fromA).from === fromA && oldDoc.lineAt(toA).to === toA && newDoc.lineAt(fromB).from === fromB && newDoc.lineAt(toB).to === toB;
+    if (!whole || old.length !== now.length || old.length < 2) return [];
+    const a0 = oldDoc.lineAt(fromA).number - 1;
+    const b0 = newDoc.lineAt(fromB).number - 1;
+    const used = new Set<number>();
+    for (let j = 0; j < now.length; j++) {
+      const i = old[j] === now[j] && !used.has(j) ? j : old.findIndex((t, k) => t === now[j] && !used.has(k));
+      if (i < 0) return [];
+      used.add(i);
+      set(b0 + j, a0 + i);
+    }
+  } else {
+    if (mixed.length || !puts.length || puts.length !== cuts.length) return [];
+    for (const put of puts) {
+      // The move-line command cuts a line together with one of its line breaks, and puts it back with the other.
+      const core = (t: string) => t.replace(/^\n|\n$/, "");
+      const lead = (t: string) => (t.startsWith("\n") ? 1 : 0);
+      const k = cuts.findIndex((c) => core(c.text) === core(put.text));
+      if (k < 0) return [];
+      const cut = cuts.splice(k, 1)[0];
+      const body = core(cut.text);
+      const a = cut.from + lead(cut.text);
+      const b = put.from + lead(put.text);
+      const wholeLines =
+        oldDoc.lineAt(a).from === a &&
+        oldDoc.lineAt(a + body.length).to === a + body.length &&
+        newDoc.lineAt(b).from === b &&
+        newDoc.lineAt(b + body.length).to === b + body.length;
+      if (!wholeLines) {
+        if (!body || /[\n&@]/.test(body)) return [];
+        fragments.push({ cut: { from: a, to: a + body.length, text: body }, put: { from: b, to: b + body.length, text: body } });
+        continue;
+      }
+      const count = body.split("\n").length;
+      const ao = oldDoc.lineAt(a).number - 1;
+      const bn = newDoc.lineAt(b).number - 1;
+      for (let i = 0; i < count; i++) set(bn + i, ao + i);
+      if (ao > bn) for (let i = bn; i < ao; i++) set(i + count, i);
+      else for (let i = ao + count; i < bn + count; i++) set(i - count, i);
+    }
   }
   if (odd) return [];
 
@@ -570,6 +628,7 @@ function moveExtras(tr: Transaction, r: ParseResult): TextChange[] {
     });
     const kept = found.kept;
     if (!kept) continue;
+
     // Islands only mean something inside an AI region, so start from the bare characters.
     if (oc.prefix !== nc.prefix) continue;
     const bare = text.slice(0, nc.prefix) + kept.map((c) => c.ch).join("");
@@ -589,6 +648,28 @@ function moveExtras(tr: Transaction, r: ParseResult): TextChange[] {
     for (const e of diffChanges(text, res.text)) {
       extras.push({ from: nr.lines[n].from + e.from, to: nr.lines[n].from + e.to, insert: e.insert });
     }
+  }
+
+  // A piece of a line: only its own characters carry the owner they had.
+  for (const { cut, put } of fragments) {
+    const index = newDoc.lineAt(put.from).number - 1;
+    const line = nr.lines[index];
+    const nc = nr.lineContexts[index];
+    if (!nc || nc.mode !== "prose" || nc.pair === "quote") continue;
+    const text = nr.text.slice(line.from, line.to);
+    const res = rewriteLineDetailed(text, nc, (chars) => {
+      for (const c of chars) {
+        const pos = line.from + nc.prefix + c.at;
+        if (pos < put.from || pos >= put.to) continue;
+        const was = ownerAt(r, cut.from + (pos - put.from));
+        if (!was) continue;
+        c.owner = was.owner;
+        if (was.key) c.key = was.key;
+        else delete c.key;
+      }
+    });
+    if (!res) continue;
+    for (const e of diffChanges(text, res.text)) extras.push({ from: line.from + e.from, to: line.from + e.to, insert: e.insert });
   }
   return extras;
 }
@@ -671,10 +752,11 @@ export function annotateFilter(cfg: AnnotateConfig): Extension {
   return EditorState.transactionFilter.of((tr) => {
     if (!tr.docChanged || !cfg.enabled()) return tr;
     const ev = tr.annotation(Transaction.userEvent);
-    if (!ev) return tr;
-    const typing = TYPING_EVENTS.has(ev);
-    const deleting = ev.startsWith("delete");
-    const moving = ev === "move.line";
+    // Text moved by another plugin carries no event; undo, redo and remote changes put things back as they were.
+    const moving = ev === undefined ? tr.annotation(Transaction.addToHistory) !== false && !tr.annotation(Transaction.remote) : ev.startsWith("move");
+    if (ev === undefined && !moving) return tr;
+    const typing = ev !== undefined && TYPING_EVENTS.has(ev);
+    const deleting = ev !== undefined && ev.startsWith("delete");
     const pasting = ev === "input.paste" || ev === "input.drop";
     if (!typing && !deleting && !moving && !pasting) return tr;
 
@@ -686,7 +768,7 @@ export function annotateFilter(cfg: AnnotateConfig): Extension {
       if (split) return split;
     }
 
-    const extras = moving ? moveExtras(tr, r) : pasting ? bumpExtras(tr, r) : extrasFor(tr, r, typing);
+    const extras = moving ? relocateExtras(tr, r) : pasting ? bumpExtras(tr, r) : extrasFor(tr, r, typing);
     if (!extras.length) return tr;
 
     const extraSet = ChangeSet.of(extras, tr.newDoc.length);

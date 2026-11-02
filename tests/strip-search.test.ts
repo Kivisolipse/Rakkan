@@ -21,7 +21,7 @@ describe("stripMarkers", () => {
 
   it("removes code declarations", () => {
     const r = parse("```ts &&&\nx = &&&1&&&\n```");
-    expect(stripMarkers(r).text).toBe("```ts \nx = 1\n```");
+    expect(stripMarkers(r).text).toBe("```ts\nx = 1\n```");
   });
 
   it("never touches math", () => {

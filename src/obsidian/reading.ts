@@ -5,6 +5,8 @@
 import { Notice, type MarkdownPostProcessorContext } from "obsidian";
 import { Parser, codeBlockText, parseLine, scanInline, type Attr, type LineContext, type ParseResult } from "../core";
 import { resolve, type StyleSettings } from "../cm6/resolve";
+import { colourMathIslands } from "./mathview";
+import { t } from "../i18n";
 
 const HUMAN: Attr = { kind: "human", explicit: false };
 const PLACEHOLDER = "￼";
@@ -137,7 +139,7 @@ function takeOverCopyButton(pre: HTMLElement, doc: ParseResult, fenceLine: numbe
       if (!(e.target as HTMLElement).closest(".copy-code-button")) return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      void navigator.clipboard.writeText(code.plain).then(() => new Notice("已复制（去掉了标记）"));
+      void navigator.clipboard.writeText(code.plain).then(() => new Notice(t("已复制（已移除标记）")));
     },
     true,
   );
@@ -166,7 +168,7 @@ function wrapCuts(codeEl: Element, nodes: Text[], cuts: Cut[]) {
         if (!c.drop && b > a) {
           const span = document.createElement("span");
           span.className = "rk rk-island rk-code-island";
-          span.title = "亲笔";
+          span.title = t("亲笔");
           span.textContent = node.data.slice(a - start, b - start);
           frag.append(span);
         }
@@ -248,10 +250,12 @@ export function processSection(el: HTMLElement, ctx: MarkdownPostProcessorContex
   let sectionSource: string[] = [];
   let codePre: HTMLElement | null = null;
   let fenceLine = -1;
+  let sectionStart = -1;
 
   if (info) {
     doc = parseCached(info.text);
     const { lineStart, lineEnd } = info;
+    sectionStart = lineStart;
     sectionSource = info.text.split("\n").slice(lineStart, lineEnd + 1);
     const pre = el.querySelector("pre");
     if (pre) {
@@ -286,6 +290,16 @@ export function processSection(el: HTMLElement, ctx: MarkdownPostProcessorContex
     el.addClass("rk-in-block");
     el.querySelectorAll("pre").forEach((pre) => pre.addClass(...blockRes.cls.split(" "), "rk-code"));
     if (codePre && doc) renderCodeIslands(codePre, doc, fenceLine, blockRes.cls, blockRes.style);
+  }
+
+  // A formula inside an AI block is the AI's, apart from the islands it declares.
+  const mathEl = doc ? el.querySelector<HTMLElement>(".math.math-block") : null;
+  if (mathEl && doc && sectionStart >= 0) {
+    if (blockRes) {
+      mathEl.addClasses(blockRes.cls.split(" "));
+      if (blockRes.style) mathEl.setAttribute("style", blockRes.style);
+    }
+    if (doc.lineContexts[sectionStart + 1]?.codeFence === sectionStart) colourMathIslands(mathEl, doc, sectionStart, styles);
   }
 
   const docLike = doc ?? { blocks: [], definitions: {} };

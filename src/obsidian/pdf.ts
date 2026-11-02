@@ -10,6 +10,8 @@
 import { Component, MarkdownRenderer, Modal, normalizePath, Notice, Platform, Setting, type App, type MarkdownPostProcessorContext, type TFile } from "obsidian";
 import { exportPlain, parse, splitSections, type ParseResult } from "../core";
 import { processSection, type ReadingDeps } from "./reading";
+import { t } from "../i18n";
+import { hint } from "./hint";
 
 export interface PdfOptions {
   /** `color`: AI text in its colours. `plain`: no colours and no markers at all. */
@@ -88,52 +90,52 @@ export class PdfModal extends Modal {
   override onOpen() {
     const { contentEl, titleEl } = this;
     this.modalEl.addClass("mod-narrow");
-    titleEl.setText("导出为 PDF");
-    contentEl.createEl("p", { cls: "u-muted", text: `把「${this.file.basename}」导出为 PDF。` });
+    titleEl.setText(t("导出为 PDF"));
+    contentEl.createEl("p", { cls: "u-muted", text: t("把「{name}」导出为 PDF。", { name: this.file.basename }) });
 
     new Setting(contentEl)
-      .setName("内容")
-      .setDesc("带颜色：AI 的字按模型上色，标记不显示。纯文字：没有颜色，也没有任何标记。")
+      .setName(t("内容"))
+      .then((row) => hint(row, t("带颜色：AI 文字按模型着色，不显示标记。纯文字：无颜色，无标记。")))
       .addDropdown((d) =>
         d
-          .addOption("color", "带颜色")
-          .addOption("plain", "纯文字")
+          .addOption("color", t("带颜色"))
+          .addOption("plain", t("纯文字"))
           .setValue(this.o.content)
           .onChange((v) => (this.o.content = v as PdfOptions["content"])),
       );
-    new Setting(contentEl).setName("将笔记名作为标题").addToggle((t) => t.setValue(this.o.includeName).onChange((v) => (this.o.includeName = v)));
-    new Setting(contentEl).setName("页面尺寸").addDropdown((d) => {
+    new Setting(contentEl).setName(t("笔记名作标题")).addToggle((t) => t.setValue(this.o.includeName).onChange((v) => (this.o.includeName = v)));
+    new Setting(contentEl).setName(t("页面尺寸")).addDropdown((d) => {
       for (const s of ["A3", "A4", "A5", "Legal", "Letter", "Tabloid"]) d.addOption(s, s);
       d.setValue(this.o.pageSize).onChange((v) => (this.o.pageSize = v as PdfOptions["pageSize"]));
     });
-    new Setting(contentEl).setName("横向打印").addToggle((t) => t.setValue(this.o.landscape).onChange((v) => (this.o.landscape = v)));
-    new Setting(contentEl).setName("页边距").addDropdown((d) =>
+    new Setting(contentEl).setName(t("横向打印")).addToggle((t) => t.setValue(this.o.landscape).onChange((v) => (this.o.landscape = v)));
+    new Setting(contentEl).setName(t("页边距")).addDropdown((d) =>
       d
-        .addOption("0", "默认")
-        .addOption("2", "最小")
-        .addOption("1", "无")
+        .addOption("0", t("默认"))
+        .addOption("2", t("最小"))
+        .addOption("1", t("无"))
         .setValue(this.o.margin)
         .onChange((v) => (this.o.margin = v as PdfOptions["margin"])),
     );
-    new Setting(contentEl).setName("页码").addToggle((t) => t.setValue(this.o.pageNumbers).onChange((v) => (this.o.pageNumbers = v)));
+    new Setting(contentEl).setName(t("页码")).addToggle((t) => t.setValue(this.o.pageNumbers).onChange((v) => (this.o.pageNumbers = v)));
     new Setting(contentEl)
-      .setName("文末附署名统计")
-      .setDesc("亲笔、代笔（按模型）、引文各占多少字。")
+      .setName(t("文末署名统计"))
+      .then((row) => hint(row, t("亲笔、代笔（按模型）与引文各自的字数。")))
       .addToggle((t) => t.setValue(this.o.summary).onChange((v) => (this.o.summary = v)));
     new Setting(contentEl)
-      .setName("缩放百分比")
+      .setName(t("缩放比例"))
       .addSlider((s) => s.setLimits(10, 100, 1).setValue(this.o.scale).setDynamicTooltip().onChange((v) => (this.o.scale = v)));
 
     new Setting(contentEl)
       .addButton((b) =>
-        b.setButtonText("预览").onClick(async () => {
+        b.setButtonText(t("预览")).onClick(async () => {
           this.save(this.o);
           await this.preview(this.o);
         }),
       )
       .addButton((b) =>
         b
-          .setButtonText("导出")
+          .setButtonText(t("导出"))
           .setCta()
           .onClick(async () => {
             this.save(this.o);
@@ -141,7 +143,7 @@ export class PdfModal extends Modal {
             await this.run(this.o);
           }),
       )
-      .addButton((b) => b.setButtonText("取消").onClick(() => this.close()));
+      .addButton((b) => b.setButtonText(t("取消")).onClick(() => this.close()));
   }
 
   override onClose() {
@@ -296,17 +298,17 @@ function addSummary(into: HTMLElement, text: string, deps: PdfDeps) {
   const total = stats.human + stats.ai + stats.quote;
   if (!total) return;
   const box = into.createDiv("rk-export rk-summary");
-  box.createEl("h2", { text: "署名" });
+  box.createEl("h2", { text: t("署名") });
   const table = box.createEl("table");
   const row = (name: string, n: number) => {
     const tr = table.createEl("tr");
     tr.createEl("td", { text: name });
-    tr.createEl("td", { text: `${n.toLocaleString()} 字` });
+    tr.createEl("td", { text: t("{n} 字", { n: n.toLocaleString() }) });
     tr.createEl("td", { text: `${Math.round((n / total) * 100)}%` });
   };
-  row("亲笔", stats.human);
-  for (const [who, n] of Object.entries(stats.aiByAuthor).sort((a, b) => b[1] - a[1])) row(`代笔 · ${deps.nameOf?.(who) ?? who}`, n);
-  for (const [key, n] of Object.entries(stats.quoteByKey).sort((a, b) => b[1] - a[1])) row(`引文 · ${deps.nameOf?.(key) ?? (key || "无出处")}`, n);
+  row(t("亲笔"), stats.human);
+  for (const [who, n] of Object.entries(stats.aiByAuthor).sort((a, b) => b[1] - a[1])) row(t("代笔 · {name}", { name: deps.nameOf?.(who) ?? who }), n);
+  for (const [key, n] of Object.entries(stats.quoteByKey).sort((a, b) => b[1] - a[1])) row(t("引文 · {name}", { name: deps.nameOf?.(key) ?? (key || t("无出处")) }), n);
 }
 
 function withoutFrontmatter(text: string): string {
@@ -460,7 +462,7 @@ async function layoutPage(
   view.className = "markdown-preview-view markdown-rendered";
   await renderNote(app, file, text, o, view, owner, deps);
   await sleep(400);
-  if (o.content === "color") await paintGradients(view, (d, t) => notice?.setMessage(`正在给彩虹字上色… ${d} / ${t}`));
+  if (o.content === "color") await paintGradients(view, (done, all) => notice?.setMessage(t("正在为彩虹字着色… {done} / {all}", { done, all })));
   if (preview) addPreviewBar(win, file.basename, Math.max(1, Math.ceil(print.scrollHeight / (pagePx + 2 * Math.round((margin * 96) / scale)))), preview);
   return { view, margin, scale, contentPx };
 }
@@ -473,7 +475,7 @@ export async function exportPdf(app: App, file: TFile, text: string, o: PdfOptio
   }
   const mainElectron = electronOf(window);
   if (!mainElectron?.remote) {
-    new Notice("这个版本的 Obsidian 不让插件调用保存对话框，没法导出");
+    new Notice(t("当前版本的 Obsidian 不允许插件调用保存对话框，无法导出"));
     return;
   }
   const picked = await mainElectron.remote.dialog.showSaveDialog({
@@ -488,10 +490,10 @@ export async function exportPdf(app: App, file: TFile, text: string, o: PdfOptio
 
   const win = openPrintWindow(file.basename);
   if (!win) {
-    new Notice("打不开用来打印的隐藏窗口");
+    new Notice(t("无法打开用于打印的隐藏窗口"));
     return;
   }
-  const notice = new Notice("正在准备 PDF…", 0);
+  const notice = new Notice(t("正在准备 PDF…"), 0);
   const owner = new Component();
   owner.load();
   try {
@@ -522,10 +524,10 @@ export async function exportPdf(app: App, file: TFile, text: string, o: PdfOptio
       electron.ipcRenderer.once("print-to-pdf", () => done());
       electron.ipcRenderer.send("print-to-pdf", options);
     });
-    new Notice(`PDF 已保存：${picked.filePath}`);
+    new Notice(t("PDF 已保存：{path}", { path: picked.filePath }));
   } catch (e) {
     console.error(e);
-    new Notice("导出 PDF 失败，详情见开发者工具的控制台");
+    new Notice(t("导出 PDF 失败，详见开发者工具控制台"));
   } finally {
     notice.hide();
     owner.unload();
@@ -549,16 +551,16 @@ function addPreviewBar(win: Window, name: string, pages: number, onExport: () =>
   bar.className = "rk-bar";
   const title = bar.appendChild(doc.createElement("span"));
   title.className = "rk-title";
-  title.textContent = `${name} · 预览 · 约 ${pages} 页（红线是每页结束的位置）`;
+  title.textContent = t("{name} · 预览 · 约 {pages} 页（红线标出每页结束的位置）", { name, pages });
   const exportButton = bar.appendChild(doc.createElement("button"));
-  exportButton.textContent = "导出";
+  exportButton.textContent = t("导出");
   exportButton.className = "rk-primary";
   exportButton.addEventListener("click", () => {
     win.close();
     onExport();
   });
   const close = bar.appendChild(doc.createElement("button"));
-  close.textContent = "关闭（Esc）";
+  close.textContent = t("关闭（Esc）");
   close.addEventListener("click", () => win.close());
   win.addEventListener("keydown", (e) => {
     if (e.key === "Escape") win.close();
@@ -568,17 +570,17 @@ function addPreviewBar(win: Window, name: string, pages: number, onExport: () =>
 /** Show the pages in a window of their own, the red lines where one ends, before saving anything. */
 export async function previewPdf(app: App, file: TFile, text: string, o: PdfOptions, deps: PdfDeps, onExport: () => void) {
   if (!Platform.isDesktopApp) {
-    new Notice("预览只能在桌面端用");
+    new Notice(t("预览仅支持桌面端"));
     return;
   }
   const [pw, ph] = PAGES[o.pageSize];
   const pageW = (o.landscape ? ph : pw) * 96;
-  const win = openPrintWindow(`${file.basename}（预览）`, true, Math.round(Math.min(1400, Math.max(500, pageW + 60))));
+  const win = openPrintWindow(t("{name}（预览）", { name: file.basename }), true, Math.round(Math.min(1400, Math.max(500, pageW + 60))));
   if (!win) {
-    new Notice("打不开预览窗口");
+    new Notice(t("无法打开预览窗口"));
     return;
   }
-  const notice = new Notice("正在准备预览…", 0);
+  const notice = new Notice(t("正在准备预览…"), 0);
   const owner = new Component();
   owner.load();
   win.addEventListener("pagehide", () => owner.unload());
@@ -586,7 +588,7 @@ export async function previewPdf(app: App, file: TFile, text: string, o: PdfOpti
     await layoutPage(win, app, file, text, o, owner, deps, notice, onExport);
   } catch (e) {
     console.error(e);
-    new Notice("预览失败，详情见开发者工具的控制台");
+    new Notice(t("预览失败，详见开发者工具控制台"));
     win.close();
   } finally {
     notice.hide();
@@ -628,10 +630,10 @@ async function exportHtml(app: App, file: TFile, text: string, o: PdfOptions, de
     let path = normalizePath(`${dir}${file.basename}.html`);
     for (let n = 2; app.vault.getAbstractFileByPath(path); n++) path = normalizePath(`${dir}${file.basename} ${n}.html`);
     await app.vault.create(path, page);
-    new Notice(`这个设备没法直接生成 PDF，已存成网页：${path}。用浏览器打开后选「打印 → 存为 PDF」`, 10000);
+    new Notice(t("当前设备无法直接生成 PDF，已保存为网页：{path}。请用浏览器打开，选择「打印 → 存为 PDF」", { path }), 10000);
   } catch (e) {
     console.error(e);
-    new Notice("导出失败，详情见开发者工具的控制台");
+    new Notice(t("导出失败，详见开发者工具控制台"));
   } finally {
     holder.remove();
     owner.unload();

@@ -189,6 +189,9 @@ export class Parser {
     const blocks: Block[] = [];
     let fence: { char: string; len: number; amp: number; at: number; line: number } | null = null;
     let math = false;
+    // A math block that declares `@@` after a LaTeX comment sign (`$$ %@@`) takes islands, like a declared code block.
+    let mathAt = 0;
+    let mathLine = -1;
     let inComment = false;
     let open: Block | null = null;
 
@@ -221,8 +224,17 @@ export class Parser {
       }
 
       if (math) {
-        structs[i] = { ...base, type: "plain" };
-        if (t.includes("$$")) math = false;
+        if (mathAt && t.slice(containerPrefix(t)).trim() === "$$") {
+          structs[i] = { ...base, type: "fence" };
+          math = false;
+          mathAt = 0;
+          continue;
+        }
+        structs[i] = mathAt ? { ...base, type: "code", amp: 0, at: mathAt, fenceLine: mathLine } : { ...base, type: "plain" };
+        if (t.includes("$$")) {
+          math = false;
+          mathAt = 0;
+        }
         continue;
       }
 
@@ -235,7 +247,7 @@ export class Parser {
       const bl = blockLine(t);
       if (bl?.type === "open") {
         if (open) {
-          diag(i, lines[i].from, lines[i].to, "implicit-close", "上一个 AI 块缺少结尾 &&，已在这里结束");
+          diag(i, lines[i].from, lines[i].to, "implicit-close", "上一个 AI 块缺少结尾 &&，已在此处结束");
           closeBlock(i - 1, null);
         }
         const b: Block = {
@@ -257,7 +269,7 @@ export class Parser {
           structs[i] = { ...base, type: "block-close", block: open.index };
           closeBlock(i, i);
         } else {
-          diag(i, lines[i].from, lines[i].to, "lone-closer", "这个 && 前面没有带署名的开头，按原样显示");
+          diag(i, lines[i].from, lines[i].to, "lone-closer", "此 && 之前没有带署名的开头，按原样显示");
           structs[i] = { ...base };
         }
         continue;
@@ -288,7 +300,13 @@ export class Parser {
 
       if (rest.startsWith("$$") && rest.indexOf("$$", 2) < 0) {
         math = true;
-        structs[i] = { ...base, type: "plain" };
+        const md = /^\$\$[ \t]*(%(@{2,}))[ \t]*$/.exec(rest);
+        if (md) {
+          mathAt = md[2].length;
+          mathLine = i;
+          const start = cp + rest.indexOf("%");
+          structs[i] = { ...base, type: "fence", decls: [[start, start + md[1].length]] };
+        } else structs[i] = { ...base, type: "plain" };
         continue;
       }
 
@@ -298,13 +316,13 @@ export class Parser {
 
     if (fence) {
       const l = fence.line;
-      diag(l, lines[l].from, lines[l].to, "unclosed-fence", "代码围栏没有闭合：后面的署名标记全部失效");
+      diag(l, lines[l].from, lines[l].to, "unclosed-fence", "代码围栏未闭合：其后的署名标记全部失效");
     }
 
     if (open) {
       // An opener that never gets closed stays literal.
       const b = open as Block;
-      diag(b.openLine, lines[b.openLine].from, lines[b.openLine].to, "unclosed-block", "AI 块没有结尾 &&，按原样显示");
+      diag(b.openLine, lines[b.openLine].from, lines[b.openLine].to, "unclosed-block", "AI 块缺少结尾 &&，按原样显示");
       blocks.pop();
       structs[b.openLine] = { ...structs[b.openLine], type: "prose", block: null, prefix: 0 };
       for (let i = b.openLine; i < N; i++) if (structs[i].block === b.index) structs[i].block = null;
@@ -317,7 +335,7 @@ export class Parser {
         const prevBad = l > 0 && !BLANK_RE.test(lineText[l - 1]);
         const nextBad = l < N - 1 && !BLANK_RE.test(lineText[l + 1]);
         if (prevBad || nextBad) {
-          diag(l, lines[l].from, lines[l].to, "blank-line", "&& 所在的行前后需要空一行");
+          diag(l, lines[l].from, lines[l].to, "blank-line", "&& 所在行的前后需各有一个空行");
         }
       }
     }

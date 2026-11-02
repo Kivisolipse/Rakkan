@@ -462,7 +462,7 @@ export function parseLine(text: string, ctx: LineCtx): LineResult {
       from: m.from,
       to: m.to,
       code: "math-swallow",
-      message: "署名标记被公式吞掉了：这里的 $ 可能是金额，写成 \\$ 即可",
+      message: "署名标记被公式吞没：此处的 $ 可能是金额，请写作 \\$",
     });
   }
 

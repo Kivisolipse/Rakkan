@@ -19,6 +19,8 @@ export function stripMarkers(r: ParseResult, from = 0, to = r.text.length): Stri
   for (const s of r.segments) {
     if (s.role !== "mark" || s.to <= from || s.from >= to) continue;
     for (let k = s.from; k < s.to; k++) drop[k] = 1;
+    // The space that set a declaration apart from the info string goes with it.
+    if (s.mark === "decl" && text[s.from - 1] === " ") drop[s.from - 1] = 1;
   }
   for (const b of r.blocks) {
     for (const l of [b.openLine, b.closeLine]) {

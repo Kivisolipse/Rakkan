@@ -13,6 +13,7 @@ import {
   type ParseResult,
   type Signature,
 } from "../core";
+import { t } from "../i18n";
 
 /** How AI and quoted text is shown. The text itself is coloured; nothing is highlighted. */
 export const STYLES = ["color", "gradient", "rainbow", "underline", "none"] as const;
@@ -83,7 +84,7 @@ const colorStyle = (c: string) => `--rk-c: ${c}; --rk-c2: ${c};`;
 export function resolve(attr: Attr, doc: Doc, s: StyleSettings): Resolved | null {
   if (attr.kind === "human") {
     // Human text is never decorated; islands only get a hook class.
-    return attr.explicit ? { cls: "rk rk-island", label: "亲笔" } : null;
+    return attr.explicit ? { cls: "rk rk-island", label: t("亲笔") } : null;
   }
 
   if (attr.kind === "quote") {
@@ -92,7 +93,7 @@ export function resolve(attr: Attr, doc: Doc, s: StyleSettings): Resolved | null
     const author = key ? authorOf(key, doc, s) : undefined;
     const out: Resolved = {
       cls: `rk rk-quote rk-author-${slug(key)} rk-style-${style}`,
-      label: author?.name ?? (key ? `@${key}` : "引文"),
+      label: author?.name ?? (key ? `@${key}` : t("引文")),
     };
     if (!author) return out;
     if (author.id) out.id = author.id;

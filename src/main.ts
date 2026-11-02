@@ -10,10 +10,13 @@ import { DEFAULT_SETTINGS, RakkanSettingTab, type RakkanSettings } from "./obsid
 import { colorCss } from "./cm6/colors";
 import { DiagnosticsModal, statusText } from "./obsidian/statusbar";
 import { LooseSearchModal } from "./obsidian/search";
+import { AuthorsModal } from "./obsidian/authorsmodal";
 import { AuthorPickerModal, AuthorSuggest, createBook, loadBook } from "./obsidian/authors";
 import { exportPdf, PdfModal, previewPdf, type PdfOptions } from "./obsidian/pdf";
 import { exportNote, importIA, type ExportKind } from "./obsidian/export";
+import { publishCss, writePublishCss } from "./obsidian/publish";
 import { fixBlankLines, insertBlock, markSelection, pasteAsAI, stripSelection } from "./obsidian/commands";
+import { setLanguage, t } from "./i18n";
 
 const cmOf = (editor: Editor) => (editor as unknown as { cm?: EditorView }).cm ?? null;
 
@@ -110,7 +113,7 @@ export default class RakkanPlugin extends Plugin {
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu, file) => {
         if (!(file instanceof TFile) || file.extension !== "md") return;
-        menu.addItem((item) => item.setTitle("导出为 PDF（Rakkan）…").setIcon("file-output").setSection("action").onClick(() => this.openPdfExport(file)));
+        menu.addItem((item) => item.setTitle(t("导出为 PDF（Rakkan）…")).setIcon("file-output").setSection("action").onClick(() => this.openPdfExport(file)));
       }),
     );
   }
@@ -123,59 +126,65 @@ export default class RakkanPlugin extends Plugin {
 
     this.addCommand({
       id: "mark-ai",
-      name: "标为代笔",
+      name: t("标记为代笔"),
       editorCallback: withView((view) => this.markAs(view, "ai")),
     });
     this.addCommand({
       id: "mark-human",
-      name: "标为亲笔",
+      name: t("标记为亲笔"),
       editorCallback: withView((view) => this.markAs(view, "human")),
     });
     this.addCommand({
       id: "strip-markers",
-      name: "去掉标记（选区或整篇）",
+      name: t("移除标记（选区或整篇）"),
       editorCallback: withView((view) => stripSelection(view)),
     });
     this.addCommand({
       id: "insert-block",
-      name: "插入 AI 块",
+      name: t("插入 AI 块"),
       editorCallback: withView((view) => insertBlock(view, this.settings.defaultSignature)),
     });
     this.addCommand({
       id: "fix-blank-lines",
-      name: "给块的开合行补空行",
+      name: t("补全块开合行的空行"),
       editorCallback: withView((view) => {
         const n = fixBlankLines(view);
-        new Notice(n ? `补了 ${n} 个空行` : "开合行前后都已经空行了");
+        new Notice(n ? t("已补全 {n} 个空行", { n }) : t("开合行前后均已有空行"));
       }),
     });
     this.addCommand({
       id: "paste-as-quote",
-      name: "粘贴为引文",
+      name: t("粘贴为引文"),
       editorCallback: (editor) => this.pasteAsQuote(editor),
     });
     this.addCommand({
       id: "paste-edits",
-      name: "粘贴修改（只把改动的地方标给模型）",
+      name: t("粘贴修改（仅将改动处标记为模型所写）"),
       editorCallback: (editor) => {
         const view = cmOf(editor);
         if (view) this.pasteEdits(view);
       },
     });
     this.addCommand({
+      id: "manage-authors",
+      name: t("管理作者"),
+      callback: () => this.openAuthors(),
+    });
+    this.addCommand({
       id: "create-book",
-      name: "新建署名簿",
+      name: t("新建署名簿"),
       callback: () => void this.createBookNote(),
     });
     this.addCommand({
       id: "paste-as-ai",
-      name: "粘贴为代笔",
+      name: t("粘贴为代笔"),
       editorCallback: withView((view) => void this.pasteAsAIFromClipboard(view)),
     });
     const exports: Array<[ExportKind, string]> = [
-      ["plain", "导出为新笔记：去掉标记"],
-      ["pandoc", "导出为新笔记：Pandoc 格式"],
-      ["ia", "导出为新笔记：iA 标注格式"],
+      ["plain", t("导出为新笔记：移除标记")],
+      ["pandoc", t("导出为新笔记：Pandoc 格式")],
+      ["ia", t("导出为新笔记：iA 标注格式")],
+      ["publish", t("导出为新笔记：Obsidian Publish 用（带样式类）")],
     ];
     for (const [kind, name] of exports) {
       this.addCommand({
@@ -184,7 +193,7 @@ export default class RakkanPlugin extends Plugin {
         checkCallback: (checking) => {
           const file = this.app.workspace.getActiveFile();
           if (!file || file.extension !== "md") return false;
-          if (!checking) void this.readNote(file).then((text) => exportNote(this.app, file, text, kind, this.allAuthors(), this.settings.extraPrefixes));
+          if (!checking) void this.readNote(file).then((text) => exportNote(this.app, file, text, kind, this.allAuthors(), this.settings.extraPrefixes, this.styleSnapshot));
           return true;
         },
       });
@@ -192,7 +201,7 @@ export default class RakkanPlugin extends Plugin {
     // Works in reading view too, which the editor commands do not.
     this.addCommand({
       id: "export-pdf",
-      name: "导出为 PDF…",
+      name: t("导出为 PDF…"),
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
         if (!file || file.extension !== "md") return false;
@@ -201,22 +210,27 @@ export default class RakkanPlugin extends Plugin {
       },
     });
     this.addCommand({
+      id: "write-publish-css",
+      name: t("生成 Obsidian Publish 样式（publish.css）"),
+      callback: () => void this.writePublishStyles(),
+    });
+    this.addCommand({
       id: "import-ia",
-      name: "从 iA 标注转换（当前笔记）",
+      name: t("从 iA 标注转换（当前笔记）"),
       editorCallback: (editor) => importIA(this.app, editor, this.authors),
     });
     this.addCommand({
       id: "toggle-mode",
-      name: "切换写作 / 审阅显示",
+      name: t("切换写作 / 审阅显示"),
       callback: async () => {
         this.settings.mode = this.settings.mode === "review" ? "writing" : "review";
         await this.saveSettings();
-        new Notice(this.settings.mode === "review" ? "审阅显示" : "写作显示");
+        new Notice(this.settings.mode === "review" ? t("审阅显示") : t("写作显示"));
       },
     });
     this.addCommand({
       id: "search-ignore-format",
-      name: "搜索（忽略格式）",
+      name: t("搜索（忽略格式）"),
       callback: () => {
         const editor = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor;
         const selected = editor?.getSelection().split("\n")[0] ?? "";
@@ -225,7 +239,7 @@ export default class RakkanPlugin extends Plugin {
     });
     this.addCommand({
       id: "show-diagnostics",
-      name: "查看提醒",
+      name: t("查看提醒"),
       callback: () => {
         this.updateStatus();
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
@@ -236,7 +250,7 @@ export default class RakkanPlugin extends Plugin {
 
   private markAs(view: EditorView, owner: "ai" | "human") {
     const skipped = markSelection(view, owner, this.settings.defaultSignature);
-    if (skipped) new Notice(`有 ${skipped} 行含引文或代码，没有改动`);
+    if (skipped) new Notice(t("{n} 行含引文或代码，未作改动", { n: skipped }));
   }
 
   private async pasteAsAIFromClipboard(view: EditorView) {
@@ -244,7 +258,7 @@ export default class RakkanPlugin extends Plugin {
       const text = await navigator.clipboard.readText();
       if (text) pasteAsAI(view, text);
     } catch {
-      new Notice("读不到剪贴板");
+      new Notice(t("无法读取剪贴板"));
     }
   }
 
@@ -261,7 +275,7 @@ export default class RakkanPlugin extends Plugin {
           editor.replaceSelection(multi ? `${lead}${quoted}\n` : quoted);
         }).open();
       })
-      .catch(() => new Notice("读不到剪贴板"));
+      .catch(() => new Notice(t("无法读取剪贴板")));
   }
 
   /** The note's text, with unsaved edits: they are in the editor, not on disk yet. */
@@ -298,17 +312,17 @@ export default class RakkanPlugin extends Plugin {
     const entries: Array<{ title: string; icon: string; run: () => void }> = [];
     if (!view.state.selection.main.empty) {
       entries.push(
-        { title: "标为代笔", icon: "bot", run: () => this.markAs(view, "ai") },
-        { title: "标为亲笔", icon: "user", run: () => this.markAs(view, "human") },
-        { title: "粘贴修改", icon: "diff", run: () => this.pasteEdits(view) },
-        { title: "去掉选区的标记", icon: "eraser", run: () => stripSelection(view) },
+        { title: t("标记为代笔"), icon: "bot", run: () => this.markAs(view, "ai") },
+        { title: t("标记为亲笔"), icon: "user", run: () => this.markAs(view, "human") },
+        { title: t("粘贴修改"), icon: "diff", run: () => this.pasteEdits(view) },
+        { title: t("移除选区的标记"), icon: "eraser", run: () => stripSelection(view) },
       );
     }
     entries.push(
-      { title: "粘贴为代笔", icon: "clipboard-paste", run: () => void this.pasteAsAIFromClipboard(view) },
-      { title: "粘贴为引文", icon: "quote", run: () => this.pasteAsQuote(editor) },
-      { title: "插入 AI 块", icon: "square-plus", run: () => insertBlock(view, this.settings.defaultSignature) },
-      { title: "导出为 PDF…", icon: "file-output", run: () => { const f = this.app.workspace.getActiveFile(); if (f) this.openPdfExport(f); } },
+      { title: t("粘贴为代笔"), icon: "clipboard-paste", run: () => void this.pasteAsAIFromClipboard(view) },
+      { title: t("粘贴为引文"), icon: "quote", run: () => this.pasteAsQuote(editor) },
+      { title: t("插入 AI 块"), icon: "square-plus", run: () => insertBlock(view, this.settings.defaultSignature) },
+      { title: t("导出为 PDF…"), icon: "file-output", run: () => { const f = this.app.workspace.getActiveFile(); if (f) this.openPdfExport(f); } },
     );
 
     // setSubmenu exists in the app but not in the published typings.
@@ -332,18 +346,18 @@ export default class RakkanPlugin extends Plugin {
   private pasteEdits(view: EditorView) {
     const sel = view.state.selection.main;
     if (sel.empty) {
-      new Notice("先选中被改的那段原文，再用这个命令");
+      new Notice(t("请先选中被修改的原文，再运行此命令"));
       return;
     }
     const { from, to } = sel;
     const r = view.state.field(parseField);
     const lineHit = (l: number | null) => l !== null && r.lines[l].from < to && r.lines[l].to > from;
     if (r.blocks.some((b) => lineHit(b.openLine) || lineHit(b.closeLine))) {
-      new Notice("选区里有 AI 块的开头或结尾行，请只选正文");
+      new Notice(t("选区包含 AI 块的开合行，请仅选择正文"));
       return;
     }
     if (r.segments.some((s) => s.attr.kind === "quote" && s.from < to && s.to > from)) {
-      new Notice("选区里有引文，粘贴修改会弄丢出处，请避开引文");
+      new Notice(t("选区包含引文，粘贴修改会丢失出处，请避开引文"));
       return;
     }
     const original = view.state.sliceDoc(from, to);
@@ -351,7 +365,7 @@ export default class RakkanPlugin extends Plugin {
       .readText()
       .then((text) => {
         if (!text.trim()) {
-          new Notice("剪贴板是空的");
+          new Notice(t("剪贴板为空"));
           return;
         }
         new AuthorPickerModal(
@@ -359,23 +373,23 @@ export default class RakkanPlugin extends Plugin {
           { authors: () => Object.values(this.allAuthors()).filter((a) => a.kind === "ai") },
           (key) => {
             if (view.state.sliceDoc(from, to) !== original) {
-              new Notice("原文在选作者的时候变了，请重新来一次");
+              new Notice(t("选择作者期间原文已改动，请重试"));
               return;
             }
             const now = rangePayload(view.state.field(parseField), from, to);
             const res = pasteEdits(now.plain, now.owners, text);
             if (!res.changed) {
-              new Notice("没有发现改动");
+              new Notice(t("未发现改动"));
               return;
             }
             view.dispatch({ selection: EditorSelection.range(from, to) });
             pasteWithOwners(view, { plain: res.plain, owners: res.owners, ...(key ? { key } : {}) });
-            new Notice(`标了 ${res.changed} 处改动`);
+            new Notice(t("已标记 {n} 处改动", { n: res.changed }));
           },
-          "不注明模型",
+          t("不标注模型"),
         ).open();
       })
-      .catch(() => new Notice("读不到剪贴板"));
+      .catch(() => new Notice(t("无法读取剪贴板")));
   }
 
   private currentResult(): ParseResult | null {
@@ -414,13 +428,43 @@ export default class RakkanPlugin extends Plugin {
   }
 
   /** Write an author's colour into its line of the book (the note stays the source of truth). */
-  async setAuthorColor(key: string, color: string | null) {
+  /** Rewrite the author book note and read it back; false when there is no book yet. */
+  async editBook(change: (text: string) => string): Promise<boolean> {
     const file = this.app.vault.getAbstractFileByPath(this.settings.bookPath);
     if (!(file instanceof TFile)) {
-      new Notice("先新建署名簿");
-      return;
+      new Notice(t("请先新建署名簿"));
+      return false;
     }
-    await this.app.vault.process(file, (text) => setBookColor(text, key, color));
+    await this.app.vault.process(file, change);
+    await this.reloadBook();
+    this.refresh();
+    return true;
+  }
+
+  async setAuthorColor(key: string, color: string | null) {
+    await this.editBook((text) => setBookColor(text, key, color));
+  }
+
+  openAuthors() {
+    new AuthorsModal(this.app, {
+      authors: () => Object.values(this.authors),
+      extraPrefixes: () => this.settings.extraPrefixes,
+      editBook: (change) => this.editBook(change),
+      setColor: (key, color) => this.setAuthorColor(key, color),
+    }).open();
+  }
+
+  /** Open the book note, creating it first when it does not exist. */
+  async openBookNote() {
+    const file = this.app.vault.getAbstractFileByPath(this.settings.bookPath);
+    if (file instanceof TFile) await this.app.workspace.getLeaf(false).openFile(file);
+    else await this.createBookNote();
+  }
+
+  /** Colours for a published site, written into publish.css at the vault root. */
+  async writePublishStyles() {
+    const css = await this.app.vault.adapter.read(normalizePath(`${this.manifest.dir}/styles.css`)).catch(() => "");
+    await writePublishCss(this.app, publishCss(this.settings, this.allAuthors(), css));
   }
 
   async createBookNote() {
@@ -460,6 +504,7 @@ export default class RakkanPlugin extends Plugin {
 
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    setLanguage(this.settings.language);
     // Drop style names that no longer exist (the old background styles).
     const s = this.settings;
     const ok = (v: string) => (STYLES as readonly string[]).includes(v);

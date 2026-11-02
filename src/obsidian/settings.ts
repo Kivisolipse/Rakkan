@@ -1,15 +1,18 @@
 import { DEFAULT_PDF, type PdfOptions } from "./pdf";
 import { App, PluginSettingTab, Setting } from "obsidian";
-import { BUILTIN_FAMILIES, hueHex, signatureFamily, type ExtraPrefix } from "../core";
-import { KIND_LABEL } from "./authors";
+import { BUILTIN_FAMILIES, type ExtraPrefix } from "../core";
 import { STYLES, type StyleName, type StyleSettings } from "../cm6/resolve";
 import type RakkanPlugin from "../main";
 import { DEFAULT_COLORS, type ColorPair } from "../cm6/colors";
+import { setLanguage, t, type Language } from "../i18n";
+import { hint } from "./hint";
 
 
 export interface RakkanSettings extends Omit<StyleSettings, "authors"> {
   /** Path of the author book note. */
   bookPath: string;
+  /** Interface language; "auto" follows Obsidian. */
+  language: Language;
   /** Hide markers away from the cursor in live preview. */
   hideMarkers: boolean;
   mode: "writing" | "review";
@@ -30,7 +33,6 @@ export interface RakkanSettings extends Omit<StyleSettings, "authors"> {
   pdf: PdfOptions;
 }
 
-
 export const DEFAULT_SETTINGS: RakkanSettings = {
   familyColors: true,
   aiStyle: "color",
@@ -50,16 +52,17 @@ export const DEFAULT_SETTINGS: RakkanSettings = {
   writingStrength: 0.35,
   sourceOpacity: 0.72,
   pdf: DEFAULT_PDF,
-  bookPath: "署名簿.md",
+  bookPath: "AUTHORS.md",
+  language: "auto",
 };
 
-const STYLE_LABELS: Record<StyleName, string> = {
-  color: "彩色字",
-  gradient: "渐变字",
-  rainbow: "彩虹字",
-  underline: "下划线",
-  none: "关闭",
-};
+const styleLabels = (): Record<StyleName, string> => ({
+  color: t("彩色字"),
+  gradient: t("渐变字"),
+  rainbow: t("彩虹字"),
+  underline: t("下划线"),
+  none: t("关闭"),
+});
 
 function parseLines(text: string): Array<[string, string]> {
   return text
@@ -88,14 +91,29 @@ export class RakkanSettingTab extends PluginSettingTab {
     };
     containerEl.empty();
 
-    new Setting(containerEl).setName("显示").setHeading();
-
     new Setting(containerEl)
-      .setName("显示模式")
-      .setDesc("写作：标记和颜色都很淡；审阅：全彩。可以给命令「切换写作 / 审阅显示」设快捷键。")
+      .setName(t("语言"))
+      .then((row) => hint(row, t("命令名称需重新加载插件后生效。")))
       .addDropdown((d) =>
         d
-          .addOptions({ review: "审阅", writing: "写作" })
+          .addOptions({ auto: t("跟随 Obsidian"), zh: "中文", en: "English" })
+          .setValue(s.language)
+          .onChange(async (v) => {
+            s.language = v as Language;
+            setLanguage(s.language);
+            await save();
+            this.display();
+          }),
+      );
+
+    new Setting(containerEl).setName(t("显示")).setHeading();
+
+    new Setting(containerEl)
+      .setName(t("显示模式"))
+      .then((row) => hint(row, t("写作：标记与颜色淡化；审阅：完整颜色。可为命令「切换写作 / 审阅显示」设置快捷键。")))
+      .addDropdown((d) =>
+        d
+          .addOptions({ review: t("审阅"), writing: t("写作") })
           .setValue(s.mode)
           .onChange(async (v) => {
             s.mode = v as RakkanSettings["mode"];
@@ -104,8 +122,8 @@ export class RakkanSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("实时预览里藏起标记")
-      .setDesc("光标不在那一段时，藏起 && @@ 和 [@key]，块的开合行也藏起来。")
+      .setName(t("实时预览隐藏标记"))
+      .then((row) => hint(row, t("光标不在该段时，隐藏 && @@ 与 [@key]，并隐藏块的开合行。")))
       .addToggle((t) =>
         t.setValue(s.hideMarkers).onChange(async (v) => {
           s.hideMarkers = v;
@@ -114,8 +132,8 @@ export class RakkanSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("状态栏")
-      .setDesc("显示「亲笔 · 代笔 · 引文」比例和提醒。")
+      .setName(t("状态栏"))
+      .then((row) => hint(row, t("显示亲笔、代笔、引文的比例及提醒。")))
       .addToggle((t) =>
         t.setValue(s.showStatusBar).onChange(async (v) => {
           s.showStatusBar = v;
@@ -123,13 +141,13 @@ export class RakkanSettingTab extends PluginSettingTab {
         }),
       );
 
-    new Setting(containerEl).setName("样式").setHeading();
+    new Setting(containerEl).setName(t("样式")).setHeading();
 
-    const styleOptions = Object.fromEntries(STYLES.map((k) => [k, STYLE_LABELS[k]]));
+    const styleOptions = Object.fromEntries(STYLES.map((k) => [k, styleLabels()[k]]));
 
     new Setting(containerEl)
-      .setName("按模型家族上色")
-      .setDesc("关掉以后所有 AI 用同一个颜色。")
+      .setName(t("按模型家族上色"))
+      .then((row) => hint(row, t("关闭后，所有 AI 使用同一颜色。")))
       .addToggle((t) =>
         t.setValue(s.familyColors).onChange(async (v) => {
           s.familyColors = v;
@@ -138,7 +156,7 @@ export class RakkanSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("AI 文字的样式")
+      .setName(t("AI 文字样式"))
       .addDropdown((d) =>
         d
           .addOptions(styleOptions)
@@ -150,7 +168,7 @@ export class RakkanSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("引文的样式")
+      .setName(t("引文样式"))
       .addDropdown((d) =>
         d
           .addOptions(styleOptions)
@@ -162,11 +180,11 @@ export class RakkanSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("总开关：全部用同一种样式")
-      .setDesc("盖过下面所有按家族、按模型的设置。")
+      .setName(t("统一样式"))
+      .then((row) => hint(row, t("优先于下方所有按家族、按模型的设置。")))
       .addDropdown((d) =>
         d
-          .addOptions({ "": "不使用", ...styleOptions })
+          .addOptions({ "": t("不使用"), ...styleOptions })
           .setValue(s.forceStyle)
           .onChange(async (v) => {
             s.forceStyle = v as StyleName | "";
@@ -174,13 +192,13 @@ export class RakkanSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl).setName("模型家族").setHeading();
+    new Setting(containerEl).setName(t("模型家族")).setHeading();
 
     const families = [
       ...BUILTIN_FAMILIES,
       ...s.extraPrefixes.map((e) => ({ id: e.family, label: e.label ?? e.family })),
-      { id: "generic", label: "其他 AI" },
-      { id: "quote", label: "引文" },
+      { id: "generic", label: t("其他 AI") },
+      { id: "quote", label: t("引文") },
     ].filter((f, i, all) => all.findIndex((g) => g.id === f.id) === i);
 
     for (const f of families) {
@@ -202,7 +220,7 @@ export class RakkanSettingTab extends PluginSettingTab {
       if (f.id !== "quote" && f.id !== "generic") {
         row.addDropdown((dd) =>
           dd
-            .addOptions({ "": "跟随默认", ...styleOptions })
+            .addOptions({ "": t("跟随默认"), ...styleOptions })
             .setValue(s.familyStyle[f.id] ?? "")
             .onChange(async (v) => {
               if (v) s.familyStyle[f.id] = v as StyleName;
@@ -214,55 +232,31 @@ export class RakkanSettingTab extends PluginSettingTab {
       row.addExtraButton((b) =>
         b
           .setIcon("rotate-ccw")
-          .setTooltip("恢复默认颜色")
+          .setTooltip(t("恢复默认颜色"))
           .onClick(async () => {
             delete s.colors[f.id];
             await save();
             this.display();
           }),
       );
-      row.descEl.setText("左：浅色主题的颜色，右：深色主题的颜色" + (f.id !== "quote" && f.id !== "generic" ? "，再右：这个家族的样式" : ""));
+      row.descEl.setText(t("左：浅色主题颜色；右：深色主题颜色") + (f.id !== "quote" && f.id !== "generic" ? t("；最右：该家族的样式") : ""));
     }
 
-    new Setting(containerEl).setName("作者").setHeading();
+    new Setting(containerEl).setName(t("作者")).setHeading();
 
-    const authors = Object.values(this.plugin.authors);
-    if (!authors.length) {
-      new Setting(containerEl)
-        .setName("署名簿里还没有作者")
-        .setDesc("在署名簿里加上作者（- @key: 名字 · 种类），这里就能给每个人调颜色。")
-        .addButton((b) => b.setButtonText("新建署名簿").onClick(() => void this.plugin.createBookNote()));
-    }
-    for (const a of authors) {
-      const fam = signatureFamily({ raw: "", ...(a.name ? { name: a.name } : {}), ...(a.id ? { id: a.id } : {}) }, s.extraPrefixes);
-      const fallback =
-        a.kind === "human" ? hueHex(a.key) : a.kind === "ai" ? (DEFAULT_COLORS[fam?.id ?? "generic"] ?? DEFAULT_COLORS.generic).light : DEFAULT_COLORS.quote.light;
-      let timer: number | undefined;
-      new Setting(containerEl)
-        .setName(a.name ?? `@${a.key}`)
-        .setDesc(`@${a.key} · ${KIND_LABEL[a.kind]}${a.color ? "" : "（现在用的是自动配的颜色）"}。颜色写在署名簿那一行里。`)
-        .addColorPicker((c) => {
-          c.setValue(a.color ?? fallback).onChange((v) => {
-            window.clearTimeout(timer);
-            timer = window.setTimeout(() => void this.plugin.setAuthorColor(a.key, v), 400);
-          });
-        })
-        .addExtraButton((b) =>
-          b
-            .setIcon("rotate-ccw")
-            .setTooltip("去掉颜色，用自动配的")
-            .onClick(async () => {
-              await this.plugin.setAuthorColor(a.key, null);
-              this.display();
-            }),
-        );
-    }
+    const count = Object.keys(this.plugin.authors).length;
+    new Setting(containerEl)
+      .setName(t("{n} 位作者", { n: count }))
+      .addButton((btn) =>
+        btn.setButtonText(t("管理")).setCta().onClick(() => this.plugin.openAuthors()),
+      )
+      .addButton((btn) => btn.setButtonText(t("打开署名簿")).onClick(() => void this.plugin.openBookNote()));
 
-    new Setting(containerEl).setName("浓淡").setHeading();
+    new Setting(containerEl).setName(t("颜色浓淡")).setHeading();
 
     new Setting(containerEl)
-      .setName("写作模式下颜色的浓度")
-      .setDesc("0 是完全不上色，1 和审阅模式一样。")
+      .setName(t("写作模式颜色浓度"))
+      .then((row) => hint(row, t("0 为不着色，1 与审阅模式相同。")))
       .addSlider((sl) =>
         sl
           .setLimits(0, 1, 0.05)
@@ -275,8 +269,8 @@ export class RakkanSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("来源的透明度")
-      .setDesc("没有作者的出处（书、网页）显示得多淡，1 是不调暗。")
+      .setName(t("来源透明度"))
+      .then((row) => hint(row, t("无作者出处（书、网页）的显示浓淡，1 为不调暗。")))
       .addSlider((sl) =>
         sl
           .setLimits(0.2, 1, 0.05)
@@ -289,8 +283,8 @@ export class RakkanSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("按具体模型换样式")
-      .setDesc("一行一个：模型 ID 或 @key = 样式（color、gradient、rainbow、underline、none）。")
+      .setName(t("按模型指定样式"))
+      .then((row) => hint(row, t("每行一项：模型 ID 或 @key = 样式（color、gradient、rainbow、underline、none）。")))
       .addTextArea((t) => {
         t.setPlaceholder("claude-opus-5-5 = rainbow\n@gpt = underline")
           .setValue(
@@ -309,8 +303,8 @@ export class RakkanSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("自定义家族前缀")
-      .setDesc("一行一个：模型 ID 前缀 = 家族名。比如 ernie = ERNIE。")
+      .setName(t("自定义家族前缀"))
+      .then((row) => hint(row, t("每行一项：模型 ID 前缀 = 家族名，例如 ernie = ERNIE。")))
       .addTextArea((t) => {
         t.setPlaceholder("ernie = ERNIE")
           .setValue(s.extraPrefixes.map((e) => `${e.prefix} = ${e.label ?? e.family}`).join("\n"))
@@ -323,11 +317,11 @@ export class RakkanSettingTab extends PluginSettingTab {
         t.inputEl.rows = 3;
       });
 
-    new Setting(containerEl).setName("编辑").setHeading();
+    new Setting(containerEl).setName(t("编辑")).setHeading();
 
     new Setting(containerEl)
-      .setName("自动标注亲笔")
-      .setDesc("在 AI 块和 &&…&&（以及里面）打的字，自动包进 @@…@@。中文输入法在停顿约 0.6 秒后才包，组字过程中不会改动文档。")
+      .setName(t("自动标注亲笔"))
+      .then((row) => hint(row, t("在 AI 块与 &&…&& 内输入的文字自动包入 @@…@@。使用输入法时，停顿约 0.6 秒后才处理，组字过程中不改动文档。")))
       .addToggle((t) =>
         t.setValue(s.autoAnnotate).onChange(async (v) => {
           s.autoAnnotate = v;
@@ -336,8 +330,8 @@ export class RakkanSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("复制时去掉标记")
-      .setDesc("剪贴板里的纯文本不带 && @@；在库里粘贴时按落点重新写好标记。")
+      .setName(t("复制时去除标记"))
+      .then((row) => hint(row, t("剪贴板中的纯文本不含 && @@；在库内粘贴时，按落点重新写入标记。")))
       .addToggle((t) =>
         t.setValue(s.stripOnCopy).onChange(async (v) => {
           s.stripOnCopy = v;
@@ -346,8 +340,8 @@ export class RakkanSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("搜索时忽略格式")
-      .setDesc("「搜索（忽略格式）」命令默认打开这个开关，搜索框里也能切换。")
+      .setName(t("搜索时忽略格式"))
+      .then((row) => hint(row, t("「搜索（忽略格式）」命令默认开启此项，搜索框内也可切换。")))
       .addToggle((t) =>
         t.setValue(s.searchIgnoreFormat).onChange(async (v) => {
           s.searchIgnoreFormat = v;
@@ -355,11 +349,11 @@ export class RakkanSettingTab extends PluginSettingTab {
         }),
       );
 
-    new Setting(containerEl).setName("署名簿").setHeading();
+    new Setting(containerEl).setName(t("署名簿")).setHeading();
 
     new Setting(containerEl)
-      .setName("署名簿的位置")
-      .setDesc("库里的一篇笔记，一行一个作者：- @key: 名字 (标识) · 种类 · #颜色。修改后自动重新读取。")
+      .setName(t("署名簿位置"))
+      .then((row) => hint(row, t("库中的一篇笔记，每行一位作者：- @key: 名字 (标识) · 种类 · #颜色。种类为 人、AI 或 来源，颜色可省略。修改后自动重新读取。")))
       .addText((t) =>
         t.setValue(s.bookPath).onChange(async (v) => {
           s.bookPath = v.trim() || DEFAULT_SETTINGS.bookPath;
@@ -368,14 +362,14 @@ export class RakkanSettingTab extends PluginSettingTab {
         }),
       )
       .addButton((b) =>
-        b.setButtonText("新建").onClick(async () => {
+        b.setButtonText(t("新建")).onClick(async () => {
           await this.plugin.createBookNote();
         }),
       );
 
     new Setting(containerEl)
-      .setName("默认署名")
-      .setDesc("「标为代笔」把整段变成 AI 块时用的署名，比如 Claude (claude-opus-5-5)。")
+      .setName(t("默认署名"))
+      .then((row) => hint(row, t("「标记为代笔」将整段转为 AI 块时使用的署名，例如 Claude (claude-opus-5-5)。")))
       .addText((t) =>
         t.setValue(s.defaultSignature).onChange(async (v) => {
           s.defaultSignature = v.replace(/&&/g, "").trim() || "AI";

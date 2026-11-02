@@ -23,6 +23,7 @@ import {
 import { annotate, cleanupSpec, flushSpec, IME_PAUSE_MS, pendingField } from "./annotate";
 import { parseField } from "./parsefield";
 import { resolve, type Resolved, type StyleSettings } from "./resolve";
+import { t } from "../i18n";
 
 export interface RakkanEditorConfig {
   styles(): StyleSettings;
@@ -145,7 +146,7 @@ function build(view: EditorView, cfg: RakkanEditorConfig): DecorationSet {
           out.push(
             markDeco(
               "rk-mark rk-decl",
-              `这个代码块启用了 ${state.sliceDoc(s.from, s.to)} 标记，复制时会自动去掉`,
+              t("该代码块已启用 {mark} 标记，复制时自动移除", { mark: state.sliceDoc(s.from, s.to) }),
             ).range(s.from, s.to),
           );
           break;
@@ -156,7 +157,7 @@ function build(view: EditorView, cfg: RakkanEditorConfig): DecorationSet {
   for (const d of r.diagnostics) {
     if (d.to <= d.from) continue;
     if (!view.visibleRanges.some((vr) => d.from < vr.to && d.to > vr.from)) continue;
-    out.push(markDeco("rk-warn", d.message).range(d.from, d.to));
+    out.push(markDeco("rk-warn", t(d.message)).range(d.from, d.to));
   }
 
   return Decoration.set(out, true);

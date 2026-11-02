@@ -643,3 +643,48 @@ describe("pasting into a declared code block", () => {
     expect(paste(st, st.doc.toString().indexOf("x"), "@@ ").doc.toString()).toBe(code("", "@@ x"));
   });
 });
+
+describe("moving text by drag and drop or by another plugin", () => {
+  const doc = (...lines: string[]) => lines.join("\n");
+  const run = (state: EditorState, changes: Array<{ from: number; to?: number; insert?: string }>, userEvent?: string) =>
+    state.update({ changes, ...(userEvent ? { userEvent } : {}) }).state.doc.toString();
+
+  it("keeps a dragged word human when it lands in an AI block", () => {
+    const st = make(doc("&& Claude", "AI 一", "&&", "人 甲乙 丙"));
+    const t = st.doc.toString();
+    const cut = t.indexOf("甲乙");
+    const at = t.indexOf("一") + 1;
+    expect(run(st, [{ from: cut, to: cut + 2 }, { from: at, insert: "甲乙" }], "move.drop")).toBe(doc("&& Claude", "AI 一@@甲乙@@", "&&", "人  丙"));
+  });
+
+  it("keeps a dragged AI word AI when it leaves the block", () => {
+    const st = make(doc("&& Claude", "AI 一二三", "&&", "人写的"));
+    const t = st.doc.toString();
+    const cut = t.indexOf("二三");
+    expect(run(st, [{ from: cut, to: cut + 2 }, { from: t.length, insert: "二三" }], "move.drop")).toBe(doc("&& Claude", "AI 一", "&&", "人写的&&二三&&"));
+  });
+
+  it("follows lines that a plugin reorders without any event", () => {
+    const st = make(doc("&& Claude", "AI 一", "&&", "人写的"));
+    const from = st.doc.line(3).from;
+    expect(run(st, [{ from, to: st.doc.length, insert: "人写的\n&&" }])).toBe(doc("&& Claude", "AI 一", "@@人写的@@", "&&"));
+  });
+
+  it("leaves undo alone", () => {
+    const st = make(doc("&& Claude", "AI 一", "&&", "人写的"));
+    const from = st.doc.line(3).from;
+    expect(run(st, [{ from, to: st.doc.length, insert: "人写的\n&&" }], "undo")).toBe(doc("&& Claude", "AI 一", "人写的", "&&"));
+  });
+
+  it("ignores edits that are not a move", () => {
+    const st = make(doc("&& Claude", "AI 一", "&&", "人写的"));
+    expect(run(st, [{ from: st.doc.length, insert: "又一句" }])).toBe(doc("&& Claude", "AI 一", "&&", "人写的又一句"));
+  });
+});
+
+describe("typing in a declared formula", () => {
+  it("wraps what is typed in the declared marker", () => {
+    const s = type(make(["&& Claude", "", "$$ %@@", "x = y|", "$$", "", "&&"].join("\n")), "z");
+    expect(show(s)).toBe(["&& Claude", "", "$$ %@@", "x = y@@z|@@", "$$", "", "&&"].join("\n"));
+  });
+});

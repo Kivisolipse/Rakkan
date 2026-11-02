@@ -1,6 +1,7 @@
 import { App, MarkdownView, Modal, Notice } from "obsidian";
 import type { EditorView } from "@codemirror/view";
 import { escapeMathDelimiters, type Author, type Diagnostic, type ParseResult } from "../core";
+import { t } from "../i18n";
 
 const pct = (n: number, total: number) => `${Math.round((n / total) * 100)}%`;
 
@@ -9,15 +10,15 @@ export function statusText(r: ParseResult, authors: Record<string, Author> = {})
   const { human, ai, quote, aiByAuthor, quoteByKey } = r.stats;
   const total = human + ai + quote;
   if (!total) return { text: "", title: "" };
-  const parts = [`亲笔 ${pct(human, total)}`, `代笔 ${pct(ai, total)}`];
-  if (quote) parts.push(`引文 ${pct(quote, total)}`);
+  const parts = [t("亲笔 {x}", { x: pct(human, total) }), t("代笔 {x}", { x: pct(ai, total) })];
+  if (quote) parts.push(t("引文 {x}", { x: pct(quote, total) }));
   if (r.diagnostics.length) parts.push(`⚠ ${r.diagnostics.length}`);
-  const lines = [`亲笔 ${human} 字`];
+  const lines = [t("亲笔 {n} 字", { n: human })];
   for (const [who, n] of Object.entries(aiByAuthor).sort((a, b) => b[1] - a[1]))
-    lines.push(`${who.startsWith("@") ? nameOf(who.slice(1)) : who} ${n} 字`);
+    lines.push(t("{name} {n} 字", { name: who.startsWith("@") ? nameOf(who.slice(1)) : who, n }));
   for (const [key, n] of Object.entries(quoteByKey).sort((a, b) => b[1] - a[1]))
-    lines.push(`引文 ${nameOf(key)} ${n} 字`);
-  if (r.diagnostics.length) lines.push(`${r.diagnostics.length} 处提醒，点击查看`);
+    lines.push(t("引文 {name} {n} 字", { name: nameOf(key), n }));
+  if (r.diagnostics.length) lines.push(t("{n} 处提醒（点击查看）", { n: r.diagnostics.length }));
   return { text: parts.join(" · "), title: lines.join("\n") };
 }
 
@@ -32,21 +33,21 @@ export class DiagnosticsModal extends Modal {
 
   override onOpen() {
     const { contentEl } = this;
-    this.setTitle("落款提醒");
+    this.setTitle(t("落款提醒"));
     if (!this.items.length) {
-      contentEl.createEl("p", { text: "没有需要提醒的地方。" });
+      contentEl.createEl("p", { text: t("没有提醒。") });
       return;
     }
     const list = contentEl.createEl("ul", { cls: "rk-diagnostics" });
     for (const d of this.items) {
       const li = list.createEl("li");
-      const link = li.createEl("a", { text: `第 ${d.line + 1} 行`, href: "#" });
-      li.appendText(`：${d.message}`);
+      const link = li.createEl("a", { text: t("第 {n} 行", { n: d.line + 1 }), href: "#" });
+      li.appendText(t("：") + t(d.message));
       link.addEventListener("click", (e) => {
         e.preventDefault();
         const editor = this.view?.editor;
         if (!editor) {
-          new Notice("在编辑模式下才能跳转");
+          new Notice(t("仅在编辑模式下可跳转"));
           return;
         }
         editor.setCursor({ line: d.line, ch: 0 });
@@ -54,11 +55,11 @@ export class DiagnosticsModal extends Modal {
         this.close();
       });
       if (d.code === "math-swallow") {
-        const fix = li.createEl("button", { text: "改成 \\$", cls: "rk-fix" });
+        const fix = li.createEl("button", { text: t("改成 \\$"), cls: "rk-fix" });
         fix.addEventListener("click", () => {
           const cm = (this.view?.editor as unknown as { cm?: EditorView } | undefined)?.cm;
           if (!cm) {
-            new Notice("在编辑模式下才能修复");
+            new Notice(t("仅在编辑模式下可修复"));
             return;
           }
           const changes = escapeMathDelimiters(cm.state.doc.toString(), d);

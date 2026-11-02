@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOOK_TEMPLATE, hueHex, parse, parseAuthor, parseBook, quoteText, setBookColor } from "../src/core";
+import { BOOK_TEMPLATE, hueHex, parse, parseAuthor, parseBook, quoteText, setBookColor, addBookAuthor, updateBookAuthor, removeBookAuthor, keyFromName } from "../src/core";
 import { authorOf, resolve, type StyleSettings } from "../src/cm6/resolve";
 
 const styles = (authors = {}): StyleSettings => ({
@@ -159,5 +159,39 @@ describe("hueHex", () => {
     expect(hueHex("ada")).toMatch(/^#[0-9a-f]{6}$/);
     expect(hueHex("ada")).toBe(hueHex("ada"));
     expect(hueHex("ada")).not.toBe(hueHex("bob"));
+  });
+});
+
+describe("editing the book", () => {
+  const zh = { human: "人", ai: "AI", source: "来源" } as const;
+  const book = "# 署名簿\n\n- @ada: Ada · 人 · #3b82f6\n- @bob: Bob (id) · 人\r\n- @c: 《书》 · 来源\n";
+
+  it("adds an author at the end, on its own line", () => {
+    expect(addBookAuthor("- @c: X\n", { key: "d", name: "Dee", kind: "ai" }, zh)).toBe("- @c: X\n- @d: Dee · AI\n");
+    expect(addBookAuthor("- @c: X\r\n", { key: "d", name: "Dee", kind: "ai" }, zh)).toBe("- @c: X\r\n- @d: Dee · AI\r\n");
+    expect(addBookAuthor("# x", { key: "d", name: "Dee", kind: "human", color: "#111111" }, zh)).toBe("# x\n- @d: Dee · 人 · #111111\n");
+  });
+
+  it("changes the name and kind and keeps the model ID and colour", () => {
+    const b = "- @ada: Ada (m-1) · AI · #3b82f6\n";
+    expect(updateBookAuthor(b, "ada", { name: "Ada L." }, zh)).toBe("- @ada: Ada L. (m-1) · AI · #3b82f6\n");
+    expect(updateBookAuthor(b, "ada", { kind: "human" }, zh)).toBe("- @ada: Ada (m-1) · 人 · #3b82f6\n");
+    expect(updateBookAuthor(book, "bob", { name: "Rob" }, zh)).toContain("- @bob: Rob (id) · 人\r\n");
+    expect(updateBookAuthor(book, "nobody", { name: "x" }, zh)).toBe(book);
+  });
+
+  it("does not let a name break its own line", () => {
+    const out = updateBookAuthor(book, "ada", { name: "A · B" }, zh);
+    expect(parseBook(out).ada).toMatchObject({ name: "A B", kind: "human", color: "#3b82f6" });
+  });
+
+  it("removes one author", () => {
+    expect(removeBookAuthor(book, "ada")).toBe(book.replace("- @ada: Ada · 人 · #3b82f6\n", ""));
+    expect(removeBookAuthor(book, "nobody")).toBe(book);
+  });
+
+  it("makes a key from a name", () => {
+    expect(keyFromName(" Ada  Example ")).toBe("ada-example");
+    expect(keyFromName("「书」[x]")).toBe("书x");
   });
 });

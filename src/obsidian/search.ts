@@ -1,5 +1,7 @@
 import { App, Modal, Setting } from "obsidian";
 import { looseRegexSource } from "../core";
+import { t } from "../i18n";
+import { hint } from "./hint";
 
 interface GlobalSearch {
   openGlobalSearch(query: string): void;
@@ -39,13 +41,13 @@ export class LooseSearchModal extends Modal {
   }
 
   override onOpen() {
-    this.setTitle("搜索（忽略格式）");
+    this.setTitle(t("搜索（忽略格式）"));
     const submit = () => {
       if (!this.value.trim()) return;
       this.close();
       openSearch(this.app, searchQuery(this.value, this.ignore));
     };
-    new Setting(this.contentEl).setName("搜索").addText((t) => {
+    new Setting(this.contentEl).setName(t("搜索")).addText((t) => {
       t.setValue(this.value).onChange((v) => (this.value = v));
       t.inputEl.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && !e.isComposing) {
@@ -56,10 +58,10 @@ export class LooseSearchModal extends Modal {
       window.setTimeout(() => t.inputEl.focus(), 0);
     });
     new Setting(this.contentEl)
-      .setName("忽略格式")
-      .setDesc("跳过字之间的 && @@ ** == ~~ ` [[ ]]，比如被标记隔开的「分页@@机制@@」也能搜到。")
+      .setName(t("忽略格式"))
+      .then((row) => hint(row, t("忽略字符之间的 && @@ ** == ~~ ` [[ ]]，例如被标记隔开的「分页@@机制@@」也能搜到。")))
       .addToggle((t) => t.setValue(this.ignore).onChange((v) => (this.ignore = v)));
-    new Setting(this.contentEl).addButton((b) => b.setButtonText("搜索").setCta().onClick(submit));
+    new Setting(this.contentEl).addButton((b) => b.setButtonText(t("搜索")).setCta().onClick(submit));
   }
 
   override onClose() {

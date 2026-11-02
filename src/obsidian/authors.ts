@@ -11,9 +11,10 @@ import {
   type EditorSuggestContext,
   type EditorSuggestTriggerInfo,
 } from "obsidian";
-import { BOOK_TEMPLATE, parseBook, type Author, type ExtraPrefix } from "../core";
+import { BOOK_TEMPLATE, BOOK_TEMPLATE_EN, parseBook, type Author, type ExtraPrefix } from "../core";
+import { language, t } from "../i18n";
 
-export const KIND_LABEL = { human: "人", ai: "AI", source: "来源" } as const;
+export const kindLabel = (kind: "human" | "ai" | "source"): string => (kind === "ai" ? "AI" : kind === "human" ? t("人") : t("来源"));
 
 export async function loadBook(app: App, path: string, extra: ExtraPrefix[]): Promise<Record<string, Author>> {
   const file = app.vault.getAbstractFileByPath(path);
@@ -29,7 +30,7 @@ export async function createBook(app: App, path: string): Promise<TFile> {
   if (slash > 0 && !app.vault.getAbstractFileByPath(path.slice(0, slash))) {
     await app.vault.createFolder(path.slice(0, slash));
   }
-  return app.vault.create(path, BOOK_TEMPLATE);
+  return app.vault.create(path, language() === "en" ? BOOK_TEMPLATE_EN : BOOK_TEMPLATE);
 }
 
 export interface AuthorSource {
@@ -63,7 +64,7 @@ export class AuthorSuggest extends EditorSuggest<Author> {
 
   renderSuggestion(a: Author, el: HTMLElement): void {
     el.createDiv({ text: a.name ?? `@${a.key}` });
-    el.createEl("small", { text: `@${a.key} · ${KIND_LABEL[a.kind]}${a.id ? ` · ${a.id}` : ""}` });
+    el.createEl("small", { text: `@${a.key} · ${kindLabel(a.kind)}${a.id ? ` · ${a.id}` : ""}` });
   }
 
   selectSuggestion(a: Author): void {
@@ -83,7 +84,7 @@ export class AuthorPickerModal extends SuggestModal<Author> {
     private noneLabel?: string,
   ) {
     super(app);
-    this.setPlaceholder("选一个作者，或直接输入新的 key");
+    this.setPlaceholder(t("选择作者，或输入新的 key"));
   }
 
   getSuggestions(query: string): Author[] {
@@ -99,7 +100,7 @@ export class AuthorPickerModal extends SuggestModal<Author> {
   renderSuggestion(a: Author, el: HTMLElement): void {
     el.createDiv({ text: a.name ?? `@${a.key}` });
     if (!a.key) return;
-    el.createEl("small", { text: `@${a.key}${a.name ? ` · ${KIND_LABEL[a.kind]}` : " · 新 key"}` });
+    el.createEl("small", { text: `@${a.key}${a.name ? ` · ${kindLabel(a.kind)}` : t(" · 新 key")}` });
   }
 
   onChooseSuggestion(a: Author): void {

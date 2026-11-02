@@ -171,3 +171,82 @@ pre.rk-code {
     opacity: 1;
   }
 }
+
+/* The info icon beside a setting's name; its explanation is the tooltip. */
+.rk-hint {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 0.4em;
+  color: var(--text-faint);
+  cursor: help;
+}
+.rk-hint:hover {
+  color: var(--text-muted);
+}
+.rk-hint svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* The kind icon (human, AI, source) beside an author's name. */
+.rk-kind {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 0.4em;
+  color: var(--text-faint);
+}
+.rk-kind svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* The author manager. */
+.rk-authors-modal {
+  width: min(640px, 92vw);
+}
+.rk-authors-add {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.rk-authors-add input[type="text"] {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.rk-authors-search {
+  width: 100%;
+  margin-bottom: 8px;
+}
+.rk-authors-list {
+  max-height: 55vh;
+  overflow-y: auto;
+}
+.rk-authors-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.rk-authors-row .rk-kind {
+  margin-left: 0;
+}
+.rk-authors-name {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.rk-authors-key {
+  flex: 0 0 auto;
+  max-width: 30%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+}
+.rk-authors-row button.mod-warning {
+  color: var(--text-error);
+}
+.rk-authors-empty {
+  padding: 12px 0;
+  color: var(--text-muted);
+}
