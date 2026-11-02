@@ -9,6 +9,7 @@
 //
 // Ranges are `location,length` in grapheme clusters, counted from 0.
 
+import type { Author } from "./authors";
 import { parse } from "./parse";
 import { rewriteLine } from "./rewrite";
 import { signatureLabel } from "./signature";
@@ -187,19 +188,47 @@ export function parseIA(split: IASplit): IAParsed | null {
 
 // ── Applying ownership to plain text ────────────────────────────────────
 
+const HOLE = String.fromCharCode(0xe000);
+
 /**
  * Write `owners` (one `A` or `H` per UTF-16 unit of `plain`) into the text as
  * Rakkan markers. Lines that cannot carry markers (code, quotes) stay as they are.
  */
-export function applyOwners(plain: string, owners: string): string {
+export function applyOwners(plain: string, owners: string, keys: Array<string | undefined> = []): string {
   const r = parse(plain);
   const edits: Array<{ from: number; to: number; insert: string }> = [];
   r.lines.forEach((line, i) => {
     const ctx = r.lineContexts[i];
     const text = plain.slice(line.from, line.to);
-    const next = rewriteLine(text, ctx, (chars) => {
-      for (const c of chars) c.owner = owners[line.from + ctx.prefix + c.at] === "A" ? "ai" : "human";
+    // A line with a quote cannot be rewritten as it is: stand a single character in for each quote.
+    const quotes = r.spans.filter((s) => s.type === "quote" && s.from >= line.from && s.to <= line.to);
+    const mask = quotes.length > 0 && !text.includes(HOLE);
+    let masked = text;
+    const at: number[] = []; // masked offset → plain offset
+    if (mask) {
+      masked = "";
+      let pos = line.from;
+      for (const q of quotes) {
+        for (; pos < q.from; pos++) at.push(pos), (masked += plain[pos]);
+        at.push(q.from);
+        masked += HOLE;
+        pos = q.to;
+      }
+      for (; pos < line.to; pos++) at.push(pos), (masked += plain[pos]);
+    }
+    let next = rewriteLine(masked, ctx, (chars) => {
+      for (const c of chars) {
+        const o = mask ? at[ctx.prefix + c.at] : line.from + ctx.prefix + c.at;
+        // A quote stands apart from the AI text around it.
+        c.owner = owners[o] === "A" && c.ch !== HOLE ? "ai" : "human";
+        if (c.owner === "ai" && keys[o]) c.key = keys[o];
+        else delete c.key;
+      }
     });
+    if (next !== null && mask) {
+      let n = 0;
+      next = next.replace(new RegExp(HOLE, "g"), () => plain.slice(quotes[n].from, quotes[n++].to));
+    }
     if (next !== null && next !== text) edits.push({ from: line.from, to: line.to, insert: next });
   });
   let out = plain;
@@ -211,30 +240,166 @@ export interface FromIA {
   text: string;
   /** False when the hash does not match the text: the ranges may be misplaced. */
   hashOk: boolean;
-  /** Reference ranges are left as plain text; how many characters that was. */
+  /** Characters of reference ranges that could not become a quote and stay plain text. */
   referenceChars: number;
+  /** Reference ranges written as `「…」[@key]`. */
+  quotes: number;
+  /** Other people (not the owner of the vault) whose text became quotes. */
+  others: string[];
 }
 
+export interface FromIAOptions {
+  /** The author book: a name it knows is written as that author. */
+  authors?: Record<string, Author>;
+  /** Of the humans the book does not know, the one who owns the vault, or null for none. The others become quotes. */
+  owner?: string | null;
+}
+
+export interface HumanChoice {
+  name: string;
+  chars: number;
+}
+
+/** The key of the book author an iA entry stands for, by Rakkan key or by name. */
+function inBook(book: Record<string, Author> | undefined, a: IAAuthor): string | undefined {
+  if (!book) return undefined;
+  const id = a.id?.startsWith("@") ? a.id.slice(1) : undefined;
+  if (id && id in book) return id;
+  const n = a.name.trim().toLowerCase();
+  for (const au of Object.values(book)) if (au.key.toLowerCase() === n || au.name?.trim().toLowerCase() === n) return au.key;
+  return undefined;
+}
+
+function unknownHumansOf(parsed: IAParsed, length: number, book?: Record<string, Author>): HumanChoice[] {
+  const out = new Map<string, HumanChoice>();
+  for (const a of parsed.authors) {
+    if (a.kind !== "human" || inBook(book, a)) continue;
+    const id = a.name.trim().toLowerCase();
+    const entry = out.get(id) ?? { name: a.name, chars: 0 };
+    for (const [loc, len] of a.ranges) entry.chars += Math.max(0, Math.min(loc + len, length) - loc);
+    out.set(id, entry);
+  }
+  return [...out.values()].sort((x, y) => y.chars - x.chars);
+}
+
+/**
+ * The humans of an iA block that the author book does not know, most text first.
+ * Someone has to say which one, if any, owns the vault: they may all be quotes.
+ */
+export function unknownHumans(text: string, book?: Record<string, Author>): HumanChoice[] {
+  const split = splitIA(text);
+  const parsed = split && parseIA(split);
+  return split && parsed ? unknownHumansOf(parsed, graphemes(split.body).length, book) : [];
+}
+
+const GENERIC = /^(?:ai|unknown|assistant|human)$/i;
+
+/** The `[@key]` for an author of the block: the key Rakkan wrote, or one made from the name. */
+function keyOf(a: IAAuthor): string | undefined {
+  if (a.id?.startsWith("@")) return a.id.slice(1) || undefined;
+  if (GENERIC.test(a.name)) return undefined;
+  return a.name.trim().toLowerCase().replace(/\s+/g, "-").replace(/[[\]@「」]/g, "") || undefined;
+}
+
+/** A definition line for the end of the note, when the key says more than the key itself. */
+function definitionOf(a: IAAuthor, key: string): string | null {
+  const id = a.id && !a.id.startsWith("@") ? a.id : undefined;
+  if (a.name === key && !id) return null;
+  return `- @${key}: ${a.name}${id ? ` (${id})` : ""} · ${a.kind === "ai" ? "AI" : a.kind === "human" ? "人" : "来源"}`;
+}
+
+const isBreak = (c: string) => c === "\n" || c === "\r\n" || c === "\r";
+
 /** Turn a note with an iA annotation block into one with Rakkan markers, or null when it has no block. */
-export function fromIA(text: string): FromIA | null {
+export function fromIA(text: string, opts: FromIAOptions = {}): FromIA | null {
   const split = splitIA(text);
   const parsed = split && parseIA(split);
   if (!split || !parsed) return null;
   const g = graphemes(split.body);
-  // Owner per grapheme, then per UTF-16 unit.
-  const per = new Array<string>(g.length).fill("H");
-  let referenceChars = 0;
+  const book = opts.authors;
+
+  // The humans the book does not know: one of them is the owner, whose text stays unmarked.
+  const unknown = unknownHumansOf(parsed, g.length, book);
+  // `owner: null` says there is none: all of them are other people.
+  const ownerName = (opts.owner === undefined ? unknown[0]?.name : opts.owner)?.trim().toLowerCase();
+  const others: string[] = [];
+
+  // Who wrote each grapheme: later entries win where ranges overlap.
+  const owner = new Array<"H" | "A" | "Q">(g.length).fill("H");
+  const who = new Array<string | undefined>(g.length).fill(undefined);
+  const defs = new Map<string, string>();
   for (const a of parsed.authors) {
+    const known = inBook(book, a);
+    if (a.kind === "human" && !known && a.name.trim().toLowerCase() === ownerName) continue;
+    const key = known ?? keyOf(a) ?? (a.kind === "reference" ? "reference" : undefined);
+    if (a.kind === "human" && !key) continue;
+    if (a.kind === "human" && !others.includes(a.name)) others.push(a.name);
+    if (key && !known && !defs.has(key)) {
+      const def = definitionOf(a, key);
+      if (def) defs.set(key, def);
+    }
     for (const [loc, len] of a.ranges) {
       for (let k = loc; k < Math.min(loc + len, g.length); k++) {
-        if (a.kind === "ai") per[k] = "A";
-        else if (a.kind === "reference") referenceChars++;
+        owner[k] = a.kind === "ai" ? "A" : "Q";
+        who[k] = key;
       }
     }
   }
+
+  // Quotes become `「…」[@key]`; the rest keeps its owner.
+  let plain = "";
   let owners = "";
-  g.forEach((c, k) => (owners += per[k].repeat(c.length)));
-  return { text: applyOwners(split.body, owners), hashOk: parsed.hash.ok, referenceChars };
+  const keys: Array<string | undefined> = [];
+  const emit = (s: string, o: "A" | "H", key?: string) => {
+    plain += s;
+    owners += o.repeat(s.length);
+    for (let i = 0; i < s.length; i++) keys.push(o === "A" ? key : undefined);
+  };
+  let quotes = 0;
+  let referenceChars = 0;
+  for (let k = 0; k < g.length; ) {
+    if (owner[k] !== "Q") {
+      emit(g[k], owner[k] as "A" | "H", who[k]);
+      k++;
+      continue;
+    }
+    let end = k;
+    while (end < g.length && owner[end] === "Q" && who[end] === who[k] && !isBreak(g[end])) end++;
+    if (end === k) end = k + 1; // a line break inside a reference range
+    let from = k;
+    let to = end;
+    while (from < to && g[from].trim() === "") from++;
+    while (to > from && g[to - 1].trim() === "") to--;
+    for (let i = k; i < from; i++) emit(g[i], "H");
+    const core = g.slice(from, to).join("");
+    const quoted = core.startsWith("「") && core.endsWith("」");
+    // Rakkan's own export leaves the quote marks outside the reference range: only the cite is missing.
+    const around = from === k && to === end && g[k - 1] === "「" && g[end] === "」";
+    if (core && around && who[k] && !/[「」]/.test(core)) {
+      emit(core, "H");
+      emit(g[end], "H");
+      emit(`[@${who[k]}]`, "H");
+      quotes++;
+      k = end + 1;
+      continue;
+    }
+    if (core && (quoted || !/[「」]/.test(core)) && who[k]) {
+      emit(quoted ? core : "「" + core + "」", "H");
+      emit(`[@${who[k]}]`, "H");
+      quotes++;
+    } else {
+      emit(core, "H");
+      referenceChars += to - from;
+    }
+    for (let i = to; i < end; i++) emit(g[i], "H");
+    k = end;
+  }
+
+  let out = applyOwners(plain, owners, keys);
+  const known = parse(out).definitions;
+  const lines = [...defs].filter(([key]) => !(key in known)).map(([, line]) => line);
+  if (lines.length) out = out.replace(/\n*$/, "\n") + "\n" + lines.join("\n") + "\n";
+  return { text: out, hashOk: parsed.hash.ok, referenceChars, quotes, others };
 }
 
 // ── Writing a block ─────────────────────────────────────────────────────
@@ -258,16 +423,16 @@ export function toIA(text: string, opts: ToIAOptions = {}): string {
   // Who wrote each source character.
   const label = new Array<string | null>(r.text.length).fill(null);
   const human = "@" + esc(opts.human ?? "Human");
+  // `Name <@key>`: the `@` tells a Rakkan key from a model ID.
+  const named = (key: string | undefined, fallback: string) => (key ? `${esc(opts.nameOf?.(key) || key)} <@${esc(key)}>` : fallback);
   const labelOf = (attr: (typeof r.segments)[number]["attr"]): string => {
     if (attr.kind === "human") return human;
     if (attr.kind === "ai") {
       const sig = attr.block !== undefined ? r.blocks[attr.block]?.signature : undefined;
       if (sig) return "&" + esc(signatureLabel(sig)) + (sig.id ? ` <${sig.id}>` : "");
-      const key = attr.key;
-      return "&" + esc((key && opts.nameOf?.(key)) || key || "AI");
+      return "&" + named(attr.key, "AI");
     }
-    const key = attr.key;
-    return "*" + esc((key && opts.nameOf?.(key)) || key || "Reference");
+    return "*" + named(attr.key, "Reference");
   };
   for (const s of r.segments) {
     if (s.role !== "text") continue;

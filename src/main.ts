@@ -203,7 +203,7 @@ export default class RakkanPlugin extends Plugin {
     this.addCommand({
       id: "import-ia",
       name: "从 iA 标注转换（当前笔记）",
-      editorCallback: (editor) => importIA(editor),
+      editorCallback: (editor) => importIA(this.app, editor, this.authors),
     });
     this.addCommand({
       id: "toggle-mode",

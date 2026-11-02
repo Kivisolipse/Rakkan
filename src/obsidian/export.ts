@@ -1,5 +1,5 @@
-import { Notice, normalizePath, type App, type Editor, type TFile } from "obsidian";
-import { exportPandoc, exportPlain, fromIA, signatureFamily, toIA, type Author, type ExtraPrefix } from "../core";
+import { Notice, SuggestModal, normalizePath, type App, type Editor, type TFile } from "obsidian";
+import { exportPandoc, exportPlain, fromIA, signatureFamily, toIA, unknownHumans, type Author, type ExtraPrefix, type HumanChoice } from "../core";
 
 export type ExportKind = "plain" | "pandoc" | "ia";
 
@@ -42,9 +42,50 @@ export async function exportNote(
   new Notice(`已导出：${path}`);
 }
 
+/** Of the humans the author book does not know, which one owns this vault? Perhaps none: they may all be quotes. */
+class OwnerModal extends SuggestModal<HumanChoice | null> {
+  constructor(
+    app: App,
+    private choices: HumanChoice[],
+    private onPick: (name: string | null) => void,
+  ) {
+    super(app);
+    this.setPlaceholder("这些人都不在署名簿里：哪一位是这个库的主人？其余的会写成引文");
+  }
+
+  getSuggestions(query: string): Array<HumanChoice | null> {
+    const q = query.trim().toLowerCase();
+    const found: Array<HumanChoice | null> = this.choices.filter((c) => !q || c.name.toLowerCase().includes(q));
+    return q ? found : [...found, null];
+  }
+
+  renderSuggestion(c: HumanChoice | null, el: HTMLElement): void {
+    if (!c) {
+      el.createDiv({ text: "都不是，全部写成引文" });
+      el.createEl("small", { text: "这些人写的字都是别人的" });
+      return;
+    }
+    el.createDiv({ text: c.name });
+    el.createEl("small", { text: `${c.chars} 个字` });
+  }
+
+  onChooseSuggestion(c: HumanChoice | null): void {
+    this.onPick(c ? c.name : null);
+  }
+}
+
 /** Replace the note's text with its iA annotations written as Rakkan markers (one undo step). */
-export function importIA(editor: Editor) {
-  const res = fromIA(editor.getValue());
+export function importIA(app: App, editor: Editor, authors: Record<string, Author>) {
+  const choices = unknownHumans(editor.getValue(), authors);
+  if (choices.length) {
+    new OwnerModal(app, choices, (owner) => convertIA(editor, authors, owner)).open();
+    return;
+  }
+  convertIA(editor, authors);
+}
+
+function convertIA(editor: Editor, authors: Record<string, Author>, owner?: string | null) {
+  const res = fromIA(editor.getValue(), { authors, owner });
   if (!res) {
     new Notice("这篇笔记末尾没有 iA 的标注块");
     return;
@@ -54,9 +95,9 @@ export function importIA(editor: Editor) {
     return;
   }
   editor.setValue(res.text);
-  new Notice(
-    res.referenceChars
-      ? `已转换。iA 里标为"参考"的 ${res.referenceChars} 个字没有对应的引文作者，保持为普通文字`
-      : "已转换",
-  );
+  const parts = ["已转换"];
+  if (res.quotes) parts.push(`${res.quotes} 处"参考"写成了引文`);
+  if (res.others.length) parts.push(`${res.others.join("、")} 的字写成了引文`);
+  if (res.referenceChars) parts.push(`另有 ${res.referenceChars} 个字的"参考"没法写成引文（里面已有引号），保持为普通文字`);
+  new Notice(parts.join("，"));
 }
