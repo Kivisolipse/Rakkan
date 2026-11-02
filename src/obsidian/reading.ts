@@ -168,7 +168,7 @@ function wrapCuts(codeEl: Element, nodes: Text[], cuts: Cut[]) {
         if (!c.drop && b > a) {
           const span = document.createElement("span");
           span.className = "rk rk-island rk-code-island";
-          span.title = t("亲笔");
+          span.title = t("原创");
           span.textContent = node.data.slice(a - start, b - start);
           frag.append(span);
         }

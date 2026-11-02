@@ -49,12 +49,12 @@ for (const root of roots) {
   }
 }
 
-const header = ["file", "亲笔", "代笔", "引文", "chars", "warn"];
+const header = ["file", "原创", "AI", "引用", "chars", "warn"];
 const all = [header, ...rows];
 const widths = header.map((_, i) => Math.max(...all.map((r) => [...r[i]].length)));
 for (const r of all) console.log(r.map((c, i) => c.padEnd(widths[i])).join("  "));
 const t = totals.human + totals.ai + totals.quote;
 console.log(
-  `\n合计 ${rows.length} 篇：亲笔 ${pct(totals.human, t)} · 代笔 ${pct(totals.ai, t)} · 引文 ${pct(totals.quote, t)}` +
+  `\n合计 ${rows.length} 篇：原创 ${pct(totals.human, t)} · AI ${pct(totals.ai, t)} · 引用 ${pct(totals.quote, t)}` +
     (warnings ? ` · ${warnings} 处提醒` : ""),
 );

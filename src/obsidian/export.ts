@@ -58,7 +58,7 @@ class OwnerModal extends SuggestModal<HumanChoice | null> {
     private onPick: (name: string | null) => void,
   ) {
     super(app);
-    this.setPlaceholder(t("以下人员均不在署名簿中：请选择本库的所有者，其余人员将写为引文"));
+    this.setPlaceholder(t("以下人员均不在署名簿中：请选择本库的所有者，其余人员将转为引用"));
   }
 
   getSuggestions(query: string): Array<HumanChoice | null> {
@@ -69,7 +69,7 @@ class OwnerModal extends SuggestModal<HumanChoice | null> {
 
   renderSuggestion(c: HumanChoice | null, el: HTMLElement): void {
     if (!c) {
-      el.createDiv({ text: t("均不是，全部写为引文") });
+      el.createDiv({ text: t("均不是，全部转为引用") });
       el.createEl("small", { text: t("这些人所写的文字均视为他人所作") });
       return;
     }
@@ -104,8 +104,8 @@ function convertIA(editor: Editor, authors: Record<string, Author>, owner?: stri
   }
   editor.setValue(res.text);
   const parts = [t("已转换")];
-  if (res.quotes) parts.push(t("{n} 处参考已转为引文", { n: res.quotes }));
-  if (res.others.length) parts.push(t("{names} 的文字已转为引文", { names: res.others.join(t("、")) }));
-  if (res.referenceChars) parts.push(t("另有 {n} 个字的参考无法转为引文（其中已含引号），保留为普通文字", { n: res.referenceChars }));
+  if (res.quotes) parts.push(t("{n} 处参考已转为引用", { n: res.quotes }));
+  if (res.others.length) parts.push(t("{names} 的文字已转为引用", { names: res.others.join(t("、")) }));
+  if (res.referenceChars) parts.push(t("另有 {n} 个字的参考无法转为引用（其中已含引号），保留为普通文字", { n: res.referenceChars }));
   new Notice(parts.join(t("，")));
 }

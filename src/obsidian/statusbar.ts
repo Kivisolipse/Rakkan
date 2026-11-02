@@ -10,14 +10,14 @@ export function statusText(r: ParseResult, authors: Record<string, Author> = {})
   const { human, ai, quote, aiByAuthor, quoteByKey } = r.stats;
   const total = human + ai + quote;
   if (!total) return { text: "", title: "" };
-  const parts = [t("亲笔 {x}", { x: pct(human, total) }), t("代笔 {x}", { x: pct(ai, total) })];
-  if (quote) parts.push(t("引文 {x}", { x: pct(quote, total) }));
+  const parts = [t("原创 {x}", { x: pct(human, total) }), t("AI {x}", { x: pct(ai, total) })];
+  if (quote) parts.push(t("引用 {x}", { x: pct(quote, total) }));
   if (r.diagnostics.length) parts.push(`⚠ ${r.diagnostics.length}`);
-  const lines = [t("亲笔 {n} 字", { n: human })];
+  const lines = [t("原创 {n} 字", { n: human })];
   for (const [who, n] of Object.entries(aiByAuthor).sort((a, b) => b[1] - a[1]))
     lines.push(t("{name} {n} 字", { name: who.startsWith("@") ? nameOf(who.slice(1)) : who, n }));
   for (const [key, n] of Object.entries(quoteByKey).sort((a, b) => b[1] - a[1]))
-    lines.push(t("引文 {name} {n} 字", { name: nameOf(key), n }));
+    lines.push(t("引用 {name} {n} 字", { name: nameOf(key), n }));
   if (r.diagnostics.length) lines.push(t("{n} 处提醒（点击查看）", { n: r.diagnostics.length }));
   return { text: parts.join(" · "), title: lines.join("\n") };
 }

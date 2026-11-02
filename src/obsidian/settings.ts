@@ -133,7 +133,7 @@ export class RakkanSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName(t("状态栏"))
-      .then((row) => hint(row, t("显示亲笔、代笔、引文的比例及提醒。")))
+      .then((row) => hint(row, t("显示原创、AI、引用的比例及提醒。")))
       .addToggle((t) =>
         t.setValue(s.showStatusBar).onChange(async (v) => {
           s.showStatusBar = v;
@@ -168,7 +168,7 @@ export class RakkanSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName(t("引文样式"))
+      .setName(t("引用样式"))
       .addDropdown((d) =>
         d
           .addOptions(styleOptions)
@@ -198,7 +198,7 @@ export class RakkanSettingTab extends PluginSettingTab {
       ...BUILTIN_FAMILIES,
       ...s.extraPrefixes.map((e) => ({ id: e.family, label: e.label ?? e.family })),
       { id: "generic", label: t("其他 AI") },
-      { id: "quote", label: t("引文") },
+      { id: "quote", label: t("引用") },
     ].filter((f, i, all) => all.findIndex((g) => g.id === f.id) === i);
 
     for (const f of families) {
@@ -320,7 +320,7 @@ export class RakkanSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName(t("编辑")).setHeading();
 
     new Setting(containerEl)
-      .setName(t("自动标注亲笔"))
+      .setName(t("自动标注原创"))
       .then((row) => hint(row, t("在 AI 块与 &&…&& 内输入的文字自动包入 @@…@@。使用输入法时，停顿约 0.6 秒后才处理，组字过程中不改动文档。")))
       .addToggle((t) =>
         t.setValue(s.autoAnnotate).onChange(async (v) => {
@@ -369,7 +369,7 @@ export class RakkanSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName(t("默认署名"))
-      .then((row) => hint(row, t("「标记为代笔」将整段转为 AI 块时使用的署名，例如 Claude (claude-opus-5-5)。")))
+      .then((row) => hint(row, t("「标记为 AI 生成」将整段转为 AI 块时使用的署名，例如 Claude (claude-opus-5-5)。")))
       .addText((t) =>
         t.setValue(s.defaultSignature).onChange(async (v) => {
           s.defaultSignature = v.replace(/&&/g, "").trim() || "AI";

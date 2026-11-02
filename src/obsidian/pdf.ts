@@ -120,7 +120,7 @@ export class PdfModal extends Modal {
     new Setting(contentEl).setName(t("页码")).addToggle((t) => t.setValue(this.o.pageNumbers).onChange((v) => (this.o.pageNumbers = v)));
     new Setting(contentEl)
       .setName(t("文末署名统计"))
-      .then((row) => hint(row, t("亲笔、代笔（按模型）与引文各自的字数。")))
+      .then((row) => hint(row, t("原创、AI 生成（按模型）与引用各自的字数。")))
       .addToggle((t) => t.setValue(this.o.summary).onChange((v) => (this.o.summary = v)));
     new Setting(contentEl)
       .setName(t("缩放比例"))
@@ -306,9 +306,9 @@ function addSummary(into: HTMLElement, text: string, deps: PdfDeps) {
     tr.createEl("td", { text: t("{n} 字", { n: n.toLocaleString() }) });
     tr.createEl("td", { text: `${Math.round((n / total) * 100)}%` });
   };
-  row(t("亲笔"), stats.human);
-  for (const [who, n] of Object.entries(stats.aiByAuthor).sort((a, b) => b[1] - a[1])) row(t("代笔 · {name}", { name: deps.nameOf?.(who) ?? who }), n);
-  for (const [key, n] of Object.entries(stats.quoteByKey).sort((a, b) => b[1] - a[1])) row(t("引文 · {name}", { name: deps.nameOf?.(key) ?? (key || t("无出处")) }), n);
+  row(t("原创"), stats.human);
+  for (const [who, n] of Object.entries(stats.aiByAuthor).sort((a, b) => b[1] - a[1])) row(t("AI · {name}", { name: deps.nameOf?.(who) ?? who }), n);
+  for (const [key, n] of Object.entries(stats.quoteByKey).sort((a, b) => b[1] - a[1])) row(t("引用 · {name}", { name: deps.nameOf?.(key) ?? (key || t("无出处")) }), n);
 }
 
 function withoutFrontmatter(text: string): string {

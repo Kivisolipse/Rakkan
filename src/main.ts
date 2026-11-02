@@ -126,12 +126,12 @@ export default class RakkanPlugin extends Plugin {
 
     this.addCommand({
       id: "mark-ai",
-      name: t("标记为代笔"),
+      name: t("标记为 AI 生成"),
       editorCallback: withView((view) => this.markAs(view, "ai")),
     });
     this.addCommand({
       id: "mark-human",
-      name: t("标记为亲笔"),
+      name: t("标记为原创"),
       editorCallback: withView((view) => this.markAs(view, "human")),
     });
     this.addCommand({
@@ -154,7 +154,7 @@ export default class RakkanPlugin extends Plugin {
     });
     this.addCommand({
       id: "paste-as-quote",
-      name: t("粘贴为引文"),
+      name: t("粘贴为引用"),
       editorCallback: (editor) => this.pasteAsQuote(editor),
     });
     this.addCommand({
@@ -177,7 +177,7 @@ export default class RakkanPlugin extends Plugin {
     });
     this.addCommand({
       id: "paste-as-ai",
-      name: t("粘贴为代笔"),
+      name: t("粘贴为 AI 生成"),
       editorCallback: withView((view) => void this.pasteAsAIFromClipboard(view)),
     });
     const exports: Array<[ExportKind, string]> = [
@@ -250,7 +250,7 @@ export default class RakkanPlugin extends Plugin {
 
   private markAs(view: EditorView, owner: "ai" | "human") {
     const skipped = markSelection(view, owner, this.settings.defaultSignature);
-    if (skipped) new Notice(t("{n} 行含引文或代码，未作改动", { n: skipped }));
+    if (skipped) new Notice(t("{n} 行含引用或代码，未作改动", { n: skipped }));
   }
 
   private async pasteAsAIFromClipboard(view: EditorView) {
@@ -312,15 +312,15 @@ export default class RakkanPlugin extends Plugin {
     const entries: Array<{ title: string; icon: string; run: () => void }> = [];
     if (!view.state.selection.main.empty) {
       entries.push(
-        { title: t("标记为代笔"), icon: "bot", run: () => this.markAs(view, "ai") },
-        { title: t("标记为亲笔"), icon: "user", run: () => this.markAs(view, "human") },
+        { title: t("标记为 AI 生成"), icon: "bot", run: () => this.markAs(view, "ai") },
+        { title: t("标记为原创"), icon: "user", run: () => this.markAs(view, "human") },
         { title: t("粘贴修改"), icon: "diff", run: () => this.pasteEdits(view) },
         { title: t("移除选区的标记"), icon: "eraser", run: () => stripSelection(view) },
       );
     }
     entries.push(
-      { title: t("粘贴为代笔"), icon: "clipboard-paste", run: () => void this.pasteAsAIFromClipboard(view) },
-      { title: t("粘贴为引文"), icon: "quote", run: () => this.pasteAsQuote(editor) },
+      { title: t("粘贴为 AI 生成"), icon: "clipboard-paste", run: () => void this.pasteAsAIFromClipboard(view) },
+      { title: t("粘贴为引用"), icon: "quote", run: () => this.pasteAsQuote(editor) },
       { title: t("插入 AI 块"), icon: "square-plus", run: () => insertBlock(view, this.settings.defaultSignature) },
       { title: t("导出为 PDF…"), icon: "file-output", run: () => { const f = this.app.workspace.getActiveFile(); if (f) this.openPdfExport(f); } },
     );
@@ -357,7 +357,7 @@ export default class RakkanPlugin extends Plugin {
       return;
     }
     if (r.segments.some((s) => s.attr.kind === "quote" && s.from < to && s.to > from)) {
-      new Notice(t("选区包含引文，粘贴修改会丢失出处，请避开引文"));
+      new Notice(t("选区包含引用，粘贴修改会丢失出处，请避开引用"));
       return;
     }
     const original = view.state.sliceDoc(from, to);
