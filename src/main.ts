@@ -1,4 +1,4 @@
-import { editorLivePreviewField, MarkdownView, MenuItem, normalizePath, Notice, Plugin, TFile, type Editor, type Menu } from "obsidian";
+import { editorLivePreviewField, MarkdownView, MenuItem, normalizePath, Notice, Plugin, TFile, type Component, type Editor, type Menu } from "obsidian";
 import { EditorSelection } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { Parser, parseAuthor, pasteEdits, quoteText, setBookColor, type Author, type ParseResult } from "./core";
@@ -9,7 +9,10 @@ import { processWithoutLines } from "./obsidian/embeds";
 import { DEFAULT_SETTINGS, RakkanSettingTab, type RakkanSettings } from "./obsidian/settings";
 import { colorCss } from "./cm6/colors";
 import { DiagnosticsModal, statusText } from "./obsidian/statusbar";
-import { LooseSearchModal } from "./obsidian/search";
+import { NativeSearch } from "./obsidian/search";
+import { NoteSearchModal, PlainNotes, VaultSearchModal } from "./obsidian/searchwindow";
+import { OmnisearchCompat } from "./obsidian/omnisearch";
+import { liveMath } from "./obsidian/mathview";
 import { AuthorsModal } from "./obsidian/authorsmodal";
 import { AuthorPickerModal, AuthorSuggest, createBook, loadBook } from "./obsidian/authors";
 import { exportPdf, PdfModal, previewPdf, type PdfOptions } from "./obsidian/pdf";
@@ -30,6 +33,10 @@ export default class RakkanPlugin extends Plugin {
   private statusEl: HTMLElement | null = null;
   private lastResult: ParseResult | null = null;
   private fallbackParser = new Parser();
+  /** The search parts that follow the settings: native toggles or none, Omnisearch compatibility or none. */
+  private nativeSearch: NativeSearch | null = null;
+  private omnisearchCompat: OmnisearchCompat | null = null;
+  private plainNotes = new PlainNotes(this.app);
 
   override async onload() {
     await this.loadSettings();
@@ -47,6 +54,8 @@ export default class RakkanPlugin extends Plugin {
         autoAnnotate: () => this.settings.autoAnnotate,
       }),
     );
+    this.registerEditorExtension(liveMath(() => this.styleSnapshot));
+    this.applySearch();
 
     // Colours that follow the horizontal position need to know where the reading column is.
     let anchorFrame = 0;
@@ -234,7 +243,20 @@ export default class RakkanPlugin extends Plugin {
       callback: () => {
         const editor = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor;
         const selected = editor?.getSelection().split("\n")[0] ?? "";
-        new LooseSearchModal(this.app, selected, this.settings.searchIgnoreFormat).open();
+        // Rakkan's window also stands in when Obsidian's search is turned off.
+        if (!this.nativeSearch?.open(selected)) new VaultSearchModal(this.app, this.plainNotes, selected).open();
+      },
+    });
+    this.addCommand({
+      id: "find-in-note-ignore-format",
+      name: t("在当前笔记中查找（忽略格式）"),
+      checkCallback: (checking) => {
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!view) return false;
+        if (checking) return true;
+        if (this.nativeSearch) void this.nativeSearch.find(view);
+        else new NoteSearchModal(this.app, view).open();
+        return true;
       },
     });
     this.addCommand({
@@ -512,6 +534,31 @@ export default class RakkanPlugin extends Plugin {
     if (!ok(s.quoteStyle)) s.quoteStyle = DEFAULT_SETTINGS.quoteStyle;
     if (s.forceStyle && !ok(s.forceStyle)) s.forceStyle = "";
     for (const m of [s.familyStyle, s.modelStyle]) for (const k of Object.keys(m)) if (!ok(m[k])) delete m[k];
+  }
+
+  /** Load the search parts the settings ask for, unloading the others. */
+  applySearch() {
+    this.nativeSearch = this.keep(
+      this.nativeSearch,
+      this.settings.searchMode === "native",
+      () =>
+        new NativeSearch(
+          this.app,
+          () => this.settings.searchIgnoreFormat,
+          async (on) => {
+            this.settings.searchIgnoreFormat = on;
+            await this.saveData(this.settings);
+          },
+        ),
+    );
+    this.omnisearchCompat = this.keep(this.omnisearchCompat, this.settings.omnisearchCompat, () => new OmnisearchCompat(this.app));
+  }
+
+  /** `child`, loaded when `want` (made by `make` if there is none yet); otherwise unloaded, and null. */
+  private keep<T extends Component>(child: T | null, want: boolean, make: () => T): T | null {
+    if (want) return child ?? this.addChild(make());
+    if (child) this.removeChild(child);
+    return null;
   }
 
   async saveSettings() {

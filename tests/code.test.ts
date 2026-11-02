@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { codeBlockText, escapeMathDelimiters, parse } from "../src/core";
+import { codeBlockText, escapeMathDelimiters, fenceLines, parse } from "../src/core";
 
 const FENCE = "```";
 
@@ -32,6 +32,18 @@ describe("codeBlockText", () => {
     const t = codeBlockText(r, 0)!;
     expect(t.plain).toBe(t.raw);
     expect(codeBlockText(r, 3)).toBeNull();
+  });
+
+  it("leaves out a blockquote's markers, as the rendered block does", () => {
+    const r = parse(["&& Claude", "", "> " + FENCE + "ts @@", "> let a = @@0@@", ">   return a", "> " + FENCE, "", "&&"].join("\n"));
+    expect(codeBlockText(r, 2)).toEqual({ plain: "let a = 0\n  return a", raw: "let a = @@0@@\n  return a" });
+  });
+
+  it("does the same for a formula declared in a blockquote, after a line of text", () => {
+    const r = parse(["&& Claude", "", "> 先有一行字。", ">", "> $$ %@@", "> x^2 + @@\\beta@@", "> $$", "", "&&"].join("\n"));
+    expect(r.diagnostics).toEqual([]);
+    expect(fenceLines(r, 4).map((l) => r.text.slice(l.from, l.to))).toEqual(["x^2 + @@\\beta@@"]);
+    expect(codeBlockText(r, 4)!.plain).toBe("x^2 + \\beta");
   });
 });
 

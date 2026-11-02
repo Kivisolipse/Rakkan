@@ -156,6 +156,32 @@ pre.rk-code {
   background: none;
 }
 
+/* An island in a formula: plain text colour inside the AI block's colour. */
+.math .mjx-rk-island {
+  color: var(--text-normal);
+  -webkit-text-fill-color: currentcolor;
+  background: none;
+}
+
+/* ── Search ──────────────────────────────────────────────────── */
+
+/* The ignore-markers toggle sits left of the match-case toggle. */
+.search-input-container .input-right-decorator.rk-loose-toggle {
+  inset-inline-end: calc(var(--input-icon-inset) + 28px);
+}
+
+.search-input-container input:not(:placeholder-shown) ~ .input-right-decorator.rk-loose-toggle {
+  inset-inline-end: calc(var(--input-icon-inset) + 56px);
+}
+
+.global-search-input-container.search-input-container:has(.rk-loose-toggle) input {
+  padding-inline-end: 62px;
+}
+
+.global-search-input-container.search-input-container:has(.rk-loose-toggle) input:not(:placeholder-shown) {
+  padding-inline-end: 90px;
+}
+
 /* ── Printing and PDF export ─────────────────────────────────── */
 
 @media print {

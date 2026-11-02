@@ -26,6 +26,7 @@ export const en: Record<string, string> = {
   "审阅显示": "Review display",
   "写作显示": "Writing display",
   "搜索（忽略格式）": "Search (ignore formatting)",
+  "在当前笔记中查找（忽略格式）": "Find in current note (ignore formatting)",
   "查看提醒": "Show warnings",
   "移除选区的标记": "Remove markers in selection",
 
@@ -112,9 +113,14 @@ export const en: Record<string, string> = {
   "当前设备无法直接生成 PDF，已保存为网页：{path}。请用浏览器打开，选择「打印 → 存为 PDF」": "This device can't produce a PDF directly. Saved as a web page: {path}. Open it in a browser and choose Print → Save as PDF",
 
   // search
-  "搜索": "Search",
   "忽略格式": "Ignore formatting",
-  "忽略字符之间的 && @@ ** == ~~ ` [[ ]]，例如被标记隔开的「分页@@机制@@」也能搜到。": "Skips && @@ ** == ~~ ` [[ ]] between characters, so text split by markers, like “pagi@@nation@@”, is still found.",
+  "没有找到匹配的笔记": "No matching notes",
+  "没有找到": "No matches",
+  "选择": "to navigate",
+  "打开": "to open",
+  "在新标签页打开": "to open in new tab",
+  "跳转": "to jump",
+  "关闭窗口": "to dismiss",
 
   // status bar and warnings
   "原创 {x}": "Human {x}",
@@ -206,8 +212,13 @@ export const en: Record<string, string> = {
   "在 AI 块与 &&…&& 内输入的文字自动包入 @@…@@。使用输入法时，停顿约 0.6 秒后才处理，组字过程中不改动文档。": "Text you type inside AI blocks and &&…&& is wrapped in @@…@@ automatically. With an IME the wrap happens after a pause of about 0.6 s, so the document isn't touched while you compose.",
   "复制时去除标记": "Remove markers on copy",
   "剪贴板中的纯文本不含 && @@；在库内粘贴时，按落点重新写入标记。": "The plain text on the clipboard carries no && @@; pasting inside the vault writes the markers again to suit where it lands.",
-  "搜索时忽略格式": "Ignore formatting when searching",
-  "「搜索（忽略格式）」命令默认开启此项，搜索框内也可切换。": "The “Search (ignore formatting)” command turns this on by default; the search box can toggle it too.",
+  "搜索": "Search",
+  "搜索方式": "Search method",
+  "Obsidian 搜索栏：在搜索栏与笔记的查找栏（Ctrl+F）中加入「忽略格式」开关，依赖 Obsidian 的内部实现。Rakkan 搜索窗口：独立的搜索窗口，不改动 Obsidian。": "Obsidian search: adds an “Ignore formatting” toggle to the search pane and the note’s find bar (Ctrl+F); relies on Obsidian internals. Rakkan search window: a separate search window that leaves Obsidian unchanged.",
+  "Obsidian 搜索栏": "Obsidian search",
+  "Rakkan 搜索窗口": "Rakkan search window",
+  "兼容 Omnisearch": "Omnisearch compatibility",
+  "Omnisearch 可搜到被标记隔开的词，摘要中不显示标记。": "Omnisearch finds words split by markers, and its excerpts leave the markers out.",
   "署名簿": "Author book",
   "署名簿位置": "Author book path",
   "库中的一篇笔记，每行一位作者：- @key: 名字 (标识) · 种类 · #颜色。种类为 人、AI 或 来源，颜色可省略。修改后自动重新读取。": "A note in the vault, one author per line: - @key: Name (id) · kind · #color. The kind is human, AI or source; the colour is optional. It is re-read when you change it.",

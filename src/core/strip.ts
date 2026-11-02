@@ -8,6 +8,11 @@ export interface Stripped {
 
 const BLANK_RE = /^\s*$/;
 
+/** Whether `text` may hold markers. Every marker has `&&`, `@@` or a citation's `[@`; text without them strips to itself. */
+export function mayHaveMarkers(text: string): boolean {
+  return /&&|@@|\[@/.test(text);
+}
+
 /**
  * Remove Rakkan markers from `[from, to)` of the parsed text. Everything else
  * (other Markdown, code, math, comments) is kept byte for byte. Block lines are
@@ -49,18 +54,31 @@ export function stripMarkers(r: ParseResult, from = 0, to = r.text.length): Stri
 }
 
 /**
+ * The content lines of the fenced block (code or formula) opened on
+ * `fenceLine`, as source ranges. In a blockquote each range starts after the
+ * quote markers (`> `) the fence line has, as the rendered block does.
+ */
+export function fenceLines(r: ParseResult, fenceLine: number): Array<{ from: number; to: number }> {
+  const open = r.lines[fenceLine];
+  const depth = /^[ \t]*(?:>[ \t]?)*/.exec(r.text.slice(open.from, open.to))![0].split(">").length - 1;
+  const quote = new RegExp(`^(?:[ \\t]*>[ \\t]?){0,${depth}}`);
+  const out: Array<{ from: number; to: number }> = [];
+  for (let i = fenceLine + 1; i < r.lineContexts.length && r.lineContexts[i].codeFence === fenceLine; i++) {
+    const { from, to } = r.lines[i];
+    out.push({ from: depth ? from + quote.exec(r.text.slice(from, to))![0].length : from, to });
+  }
+  return out;
+}
+
+/**
  * The content of the fenced code block opened on `fenceLine`: as written, and
  * with the markers a declaration turned on removed. Null for an empty block.
  */
 export function codeBlockText(r: ParseResult, fenceLine: number): { plain: string; raw: string } | null {
-  let first = -1;
-  let last = -1;
-  for (let i = fenceLine + 1; i < r.lineContexts.length && r.lineContexts[i].codeFence === fenceLine; i++) {
-    if (first < 0) first = i;
-    last = i;
-  }
-  if (first < 0) return null;
-  const from = r.lines[first].from;
-  const to = r.lines[last].to;
-  return { plain: stripMarkers(r, from, to).text, raw: r.text.slice(from, to) };
+  const lines = fenceLines(r, fenceLine);
+  if (!lines.length) return null;
+  return {
+    plain: lines.map((l) => stripMarkers(r, l.from, l.to).text).join("\n"),
+    raw: lines.map((l) => r.text.slice(l.from, l.to)).join("\n"),
+  };
 }

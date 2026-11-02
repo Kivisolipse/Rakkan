@@ -3,9 +3,9 @@
 // code and math elements standing in as single placeholder characters.
 
 import { Notice, type MarkdownPostProcessorContext } from "obsidian";
-import { Parser, codeBlockText, parseLine, scanInline, type Attr, type LineContext, type ParseResult } from "../core";
+import { Parser, codeBlockText, fenceLines, parseLine, scanInline, type Attr, type LineContext, type ParseResult } from "../core";
 import { resolve, type StyleSettings } from "../cm6/resolve";
-import { colourMathIslands } from "./mathview";
+import { opensFormula, styleMath } from "./mathview";
 import { t } from "../i18n";
 
 const HUMAN: Attr = { kind: "human", explicit: false };
@@ -77,14 +77,24 @@ function collectGroups(el: HTMLElement): Group[] {
   return order;
 }
 
-/** Wrap `[a, b)` of a text node in a span; pieces must be sorted and disjoint. */
+const MARK = "rk-mark";
+
 type Piece = { a: number; b: number; cls: string; title?: string; style?: string };
 
+/**
+ * Wrap `[a, b)` of a text node in a span, or cut it out when it is a marker:
+ * the page then holds only what it shows, so finding in it (Ctrl+F) and
+ * copying from it never meet markers. Pieces must be sorted and disjoint.
+ */
 function wrapText(node: Text, pieces: Piece[]) {
   for (let k = pieces.length - 1; k >= 0; k--) {
     const { a, b, cls, title, style } = pieces[k];
     if (b < node.length) node.splitText(b);
     const mid = a > 0 ? node.splitText(a) : node;
+    if (cls === MARK) {
+      mid.remove();
+      continue;
+    }
     const span = document.createElement("span");
     span.className = cls;
     if (style) span.setAttribute("style", style);
@@ -190,24 +200,25 @@ function wrapCuts(codeEl: Element, nodes: Text[], cuts: Cut[]) {
 function renderCodeIslands(pre: HTMLElement, doc: ParseResult, fenceLine: number, blockCls: string, blockStyle?: string) {
   const codeEl = pre.querySelector("code");
   if (!codeEl) return;
-  let first = -1;
-  let last = -1;
-  for (let i = fenceLine + 1; i < doc.lineContexts.length && doc.lineContexts[i].codeFence === fenceLine; i++) {
-    if (first < 0) first = i;
-    last = i;
-  }
-  if (first < 0) return;
-  const base = doc.lines[first].from;
-  const end = doc.lines[last].to;
-  const raw = doc.text.slice(base, end);
+  const lines = fenceLines(doc, fenceLine);
+  if (!lines.length) return;
 
+  // The code as rendered (its lines joined, without a blockquote's markers),
+  // and where the markers and islands are in it.
+  const segs = doc.segments.filter((s) => s.to > lines[0].from && s.from < lines[lines.length - 1].to);
+  let raw = "";
   const rawCuts: Cut[] = [];
-  for (const seg of doc.segments) {
-    if (seg.to <= base) continue;
-    if (seg.from >= end) break;
-    if (seg.role === "mark" && (seg.mark === "open" || seg.mark === "close")) rawCuts.push({ from: seg.from - base, to: seg.to - base, drop: true });
-    else if (seg.role === "text" && seg.attr.kind === "human") rawCuts.push({ from: seg.from - base, to: seg.to - base, drop: false });
-  }
+  lines.forEach(({ from, to }, k) => {
+    if (k) raw += "\n";
+    const at = raw.length - from;
+    for (const seg of segs) {
+      if (seg.to <= from || seg.from >= to) continue;
+      const cut = { from: Math.max(seg.from, from) + at, to: Math.min(seg.to, to) + at };
+      if (seg.role === "mark" && (seg.mark === "open" || seg.mark === "close")) rawCuts.push({ ...cut, drop: true });
+      else if (seg.role === "text" && seg.attr.kind === "human") rawCuts.push({ ...cut, drop: false });
+    }
+    raw += doc.text.slice(from, to);
+  });
   if (!rawCuts.some((c) => c.drop)) return;
 
   // The same islands in the text once the markers are gone.
@@ -250,12 +261,10 @@ export function processSection(el: HTMLElement, ctx: MarkdownPostProcessorContex
   let sectionSource: string[] = [];
   let codePre: HTMLElement | null = null;
   let fenceLine = -1;
-  let sectionStart = -1;
 
   if (info) {
     doc = parseCached(info.text);
     const { lineStart, lineEnd } = info;
-    sectionStart = lineStart;
     sectionSource = info.text.split("\n").slice(lineStart, lineEnd + 1);
     const pre = el.querySelector("pre");
     if (pre) {
@@ -264,10 +273,11 @@ export function processSection(el: HTMLElement, ctx: MarkdownPostProcessorContex
       fenceLine = lineStart;
     }
 
-    // Block lines are syntax only: hide them.
+    // Block lines are syntax only: take them out.
     const first = doc.segments.find((s) => s.from >= doc!.lines[lineStart].from && s.to <= doc!.lines[lineStart].to + 1);
     if (first?.role === "mark" && (first.mark === "block-open" || first.mark === "block-close") && lineStart === lineEnd) {
       el.addClass("rk-block-line", "rk-done");
+      el.empty();
       return;
     }
 
@@ -293,13 +303,12 @@ export function processSection(el: HTMLElement, ctx: MarkdownPostProcessorContex
   }
 
   // A formula inside an AI block is the AI's, apart from the islands it declares.
-  const mathEl = doc ? el.querySelector<HTMLElement>(".math.math-block") : null;
-  if (mathEl && doc && sectionStart >= 0) {
-    if (blockRes) {
-      mathEl.addClasses(blockRes.cls.split(" "));
-      if (blockRes.style) mathEl.setAttribute("style", blockRes.style);
-    }
-    if (doc.lineContexts[sectionStart + 1]?.codeFence === sectionStart) colourMathIslands(mathEl, doc, sectionStart, styles);
+  // The section (a callout, say) may start before its first formula.
+  const mathEl = el.querySelector<HTMLElement>(".math.math-block");
+  if (mathEl && doc && info) {
+    let line = info.lineStart;
+    while (line < info.lineEnd && !opensFormula(doc, line)) line++;
+    styleMath(mathEl, doc, line, styles);
   }
 
   const docLike = doc ?? { blocks: [], definitions: {} };
@@ -338,12 +347,12 @@ export function processSection(el: HTMLElement, ctx: MarkdownPostProcessorContex
     const ranges: Array<{ from: number; to: number; cls: string; title?: string; style?: string }> = [];
     if (base.kind === "quote" && base.key) {
       const m = new RegExp(`\\[@${base.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\]\\s*$`).exec(g.text);
-      if (m) ranges.push({ from: m.index, to: m.index + m[0].length, cls: "rk-mark" });
+      if (m) ranges.push({ from: m.index, to: m.index + m[0].length, cls: MARK });
     }
     for (const s of r.segments) {
       if (ranges.some((x) => s.from >= x.from && s.to <= x.to)) continue;
       if (s.role === "mark") {
-        ranges.push({ from: s.from, to: s.to, cls: "rk-mark" });
+        ranges.push({ from: s.from, to: s.to, cls: MARK });
       } else if (s.role === "text") {
         const res = resolve(s.attr, docLike, styles);
         if (res) {

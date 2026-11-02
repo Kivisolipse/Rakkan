@@ -31,5 +31,8 @@
     "tslib": "^2.8.1",
     "typescript": "5.9",
     "vitest": "^3.2.7"
+  },
+  "dependencies": {
+    "monkey-around": "3.0.0"
   }
 }

@@ -6,6 +6,7 @@ import type RakkanPlugin from "../main";
 import { DEFAULT_COLORS, type ColorPair } from "../cm6/colors";
 import { setLanguage, t, type Language } from "../i18n";
 import { hint } from "./hint";
+import { hasOmnisearch } from "./omnisearch";
 
 
 export interface RakkanSettings extends Omit<StyleSettings, "authors"> {
@@ -19,7 +20,12 @@ export interface RakkanSettings extends Omit<StyleSettings, "authors"> {
   stripOnCopy: boolean;
   /** Wrap what you type inside AI regions in `@@…@@`. */
   autoAnnotate: boolean;
+  /** The "ignore formatting" toggle in Obsidian's search boxes. */
   searchIgnoreFormat: boolean;
+  /** native: toggles in Obsidian's search boxes; window: Rakkan's own search window. */
+  searchMode: "native" | "window";
+  /** Patch Omnisearch so it finds words split by markers. */
+  omnisearchCompat: boolean;
   showStatusBar: boolean;
   /** Signature used when "mark as AI" creates a block. */
   defaultSignature: string;
@@ -46,6 +52,8 @@ export const DEFAULT_SETTINGS: RakkanSettings = {
   stripOnCopy: true,
   autoAnnotate: true,
   searchIgnoreFormat: true,
+  searchMode: "native",
+  omnisearchCompat: true,
   showStatusBar: true,
   defaultSignature: "AI",
   colors: {},
@@ -339,15 +347,39 @@ export class RakkanSettingTab extends PluginSettingTab {
         }),
       );
 
+    new Setting(containerEl).setName(t("搜索")).setHeading();
+
     new Setting(containerEl)
-      .setName(t("搜索时忽略格式"))
-      .then((row) => hint(row, t("「搜索（忽略格式）」命令默认开启此项，搜索框内也可切换。")))
-      .addToggle((t) =>
-        t.setValue(s.searchIgnoreFormat).onChange(async (v) => {
-          s.searchIgnoreFormat = v;
-          await save();
-        }),
+      .setName(t("搜索方式"))
+      .then((row) =>
+        hint(
+          row,
+          t("Obsidian 搜索栏：在搜索栏与笔记的查找栏（Ctrl+F）中加入「忽略格式」开关，依赖 Obsidian 的内部实现。Rakkan 搜索窗口：独立的搜索窗口，不改动 Obsidian。"),
+        ),
+      )
+      .addDropdown((d) =>
+        d
+          .addOptions({ native: t("Obsidian 搜索栏"), window: t("Rakkan 搜索窗口") })
+          .setValue(s.searchMode)
+          .onChange(async (v) => {
+            s.searchMode = v as RakkanSettings["searchMode"];
+            await save();
+            this.plugin.applySearch();
+          }),
       );
+
+    if (hasOmnisearch(this.app)) {
+      new Setting(containerEl)
+        .setName(t("兼容 Omnisearch"))
+        .then((row) => hint(row, t("Omnisearch 可搜到被标记隔开的词，摘要中不显示标记。")))
+        .addToggle((t) =>
+          t.setValue(s.omnisearchCompat).onChange(async (v) => {
+            s.omnisearchCompat = v;
+            await save();
+            this.plugin.applySearch();
+          }),
+        );
+    }
 
     new Setting(containerEl).setName(t("署名簿")).setHeading();
 
