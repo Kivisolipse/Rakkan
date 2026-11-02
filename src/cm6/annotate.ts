@@ -27,6 +27,7 @@ import {
 } from "@codemirror/state";
 import {
   diffChanges,
+  parse,
   rewriteCodeLine,
   rewriteLineDetailed,
   type InlineSpan,
@@ -505,6 +506,144 @@ function extrasFor(tr: Transaction, r: ParseResult, typing: boolean): TextChange
   return extras;
 }
 
+// ── Moving lines ────────────────────────────────────────────────────────
+
+/**
+ * Moving a line across an AI block's edge changes what its unmarked text
+ * means: out of a block it would turn into the user's, into one into the AI's.
+ * Re-mark every moved line so each character keeps its owner.
+ *
+ * The move-line command swaps a block of lines with the line next to it by
+ * deleting that line's text and inserting it on the other side; the lines in
+ * between shift by one.
+ */
+function moveExtras(tr: Transaction, r: ParseResult): TextChange[] {
+  const oldDoc = tr.startState.doc;
+  const newDoc = tr.newDoc;
+  const cut: Array<{ line: number; text: string }> = [];
+  const put: Array<{ line: number; text: string }> = [];
+  let odd = false;
+  tr.changes.iterChanges((fromA, toA, fromB, _toB, inserted) => {
+    const removed = oldDoc.sliceString(fromA, toA);
+    const added = inserted.toString();
+    if ((removed && added) || (!removed && !added)) odd = true;
+    else if (removed) {
+      const lead = removed.startsWith("\n") ? 1 : 0;
+      cut.push({ line: oldDoc.lineAt(fromA + lead).number - 1, text: removed.replace(/^\n|\n$/g, "") });
+    } else {
+      const lead = added.startsWith("\n") ? 1 : 0;
+      put.push({ line: newDoc.lineAt(fromB + lead).number - 1, text: added.replace(/^\n|\n$/g, "") });
+    }
+  });
+  if (odd || !put.length || put.length !== cut.length) return [];
+
+  // New line index → old line index, for every line whose position changed.
+  const from = new Map<number, number>();
+  const set = (n: number, o: number) => {
+    if (from.has(n)) odd = true;
+    from.set(n, o);
+  };
+  for (const p of put) {
+    const k = cut.findIndex((c) => c.text === p.text);
+    if (k < 0) return [];
+    const a = cut.splice(k, 1)[0].line;
+    set(p.line, a);
+    if (a > p.line) for (let i = p.line; i < a; i++) set(i + 1, i);
+    else for (let i = a + 1; i <= p.line; i++) set(i - 1, i);
+  }
+  if (odd) return [];
+
+  const nr = parse(newDoc.toString());
+  const extras: TextChange[] = [];
+  for (const [n, o] of from) {
+    const oc = r.lineContexts[o];
+    const nc = nr.lineContexts[n];
+    if (!oc || !nc || oc.mode !== "prose" || nc.mode !== "prose" || oc.pair === "quote" || nc.pair === "quote") continue;
+    if (oc.pair === nc.pair) continue;
+    const text = nr.text.slice(nr.lines[n].from, nr.lines[n].to);
+    if (!text.trim() || text !== r.text.slice(r.lines[o].from, r.lines[o].to)) continue;
+
+    type Kept = { ch: string; owner: "ai" | "human"; key?: string };
+    const found: { kept?: Kept[] } = {};
+    rewriteLineDetailed(text, oc, (chars) => {
+      found.kept = chars.map((c) => ({ ch: c.ch, owner: c.owner, key: c.key }));
+    });
+    const kept = found.kept;
+    if (!kept) continue;
+    // Islands only mean something inside an AI region, so start from the bare characters.
+    if (oc.prefix !== nc.prefix) continue;
+    const bare = text.slice(0, nc.prefix) + kept.map((c) => c.ch).join("");
+    let aligned = true;
+    const res = rewriteLineDetailed(bare, nc, (chars) => {
+      if (chars.length !== kept.length || chars.some((c, i) => c.ch !== kept[i].ch)) {
+        aligned = false;
+        return;
+      }
+      chars.forEach((c, i) => {
+        c.owner = kept[i].owner;
+        if (kept[i].key === undefined) delete c.key;
+        else c.key = kept[i].key;
+      });
+    });
+    if (!res || !aligned) continue;
+    for (const e of diffChanges(text, res.text)) {
+      extras.push({ from: nr.lines[n].from + e.from, to: nr.lines[n].from + e.to, insert: e.insert });
+    }
+  }
+  return extras;
+}
+
+// ── Pasting a run that looks like the code's marker ─────────────────────
+
+/**
+ * A code block's declaration says how long its `@` marker is; any other length
+ * is code. Pasted code that holds a run of exactly that length (a diff's
+ * `@@ -1 +1 @@`) would turn into islands, so make the marker one longer
+ * instead: the declaration and the islands already there grow by the same
+ * amount.
+ */
+function bumpExtras(tr: Transaction, r: ParseResult): TextChange[] {
+  const oldDoc = tr.startState.doc;
+  const newDoc = tr.newDoc;
+  const fences = new Map<number, number>();
+  tr.changes.iterChanges((fromA, _toA, fromB, toB, inserted) => {
+    if (!inserted.length || !inserted.toString().includes("@")) return;
+    const ctx = r.lineContexts[oldDoc.lineAt(fromA).number - 1];
+    if (!ctx || ctx.codeFence === undefined || ctx.mode !== "code" || ctx.pair !== "ai-block" || ctx.atLen < 2) return;
+    const from = newDoc.lineAt(fromB).from;
+    const to = newDoc.lineAt(toB).to;
+    for (const m of newDoc.sliceString(from, to).matchAll(/@+/g)) {
+      const at = from + m.index!;
+      if (m[0].length === ctx.atLen && at < toB && at + m[0].length > fromB) fences.set(ctx.codeFence, ctx.atLen);
+    }
+  });
+
+  const extras: TextChange[] = [];
+  for (const [fence, atLen] of fences) {
+    let last = fence;
+    while (last + 1 < r.lineContexts.length && r.lineContexts[last + 1].codeFence === fence) last++;
+    const body = newDoc.sliceString(tr.changes.mapPos(r.lines[fence + 1].from, -1), tr.changes.mapPos(r.lines[last].to, 1));
+    let longest = atLen;
+    for (const m of body.matchAll(/@+/g)) longest = Math.max(longest, m[0].length);
+    const more = "@".repeat(longest + 1 - atLen);
+
+    const fl = r.lines[fence];
+    const decl = new RegExp("\\s@{" + atLen + "}(?=\\s|$)").exec(r.text.slice(fl.from, fl.to));
+    if (!decl || overlaps(tr.changes, fl.from, fl.to)) continue;
+    extras.push({ from: tr.changes.mapPos(fl.from + decl.index + decl[0].length, -1), to: tr.changes.mapPos(fl.from + decl.index + decl[0].length, -1), insert: more });
+    for (let i = fence + 1; i <= last; i++) {
+      for (const s of spansOnLine(r, i)) {
+        if (!isIsland(s) || !plainSpan(s) || s.contentFrom - s.from !== atLen) continue;
+        if (overlaps(tr.changes, s.from, s.contentFrom) || overlaps(tr.changes, s.contentTo, s.to)) continue;
+        const open = tr.changes.mapPos(s.from, 1);
+        const close = tr.changes.mapPos(s.contentTo, -1);
+        extras.push({ from: open, to: open, insert: more }, { from: close, to: close, insert: more });
+      }
+    }
+  }
+  return extras;
+}
+
 /**
  * Chinese input methods turn `[` into 「【」. Typing `@` right after one makes
  * it `[@`, so author keys can be written without switching input method.
@@ -535,7 +674,9 @@ export function annotateFilter(cfg: AnnotateConfig): Extension {
     if (!ev) return tr;
     const typing = TYPING_EVENTS.has(ev);
     const deleting = ev.startsWith("delete");
-    if (!typing && !deleting) return tr;
+    const moving = ev === "move.line";
+    const pasting = ev === "input.paste" || ev === "input.drop";
+    if (!typing && !deleting && !moving && !pasting) return tr;
 
     const r = tr.startState.field(parseField, false);
     if (!r) return tr;
@@ -545,7 +686,7 @@ export function annotateFilter(cfg: AnnotateConfig): Extension {
       if (split) return split;
     }
 
-    const extras = extrasFor(tr, r, typing);
+    const extras = moving ? moveExtras(tr, r) : pasting ? bumpExtras(tr, r) : extrasFor(tr, r, typing);
     if (!extras.length) return tr;
 
     const extraSet = ChangeSet.of(extras, tr.newDoc.length);

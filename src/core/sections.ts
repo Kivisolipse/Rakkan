@@ -58,3 +58,44 @@ export function splitSections(r: ParseResult): Section[] {
   }
   return out;
 }
+
+/**
+ * What a piece of source and its rendering have in common: the letters and
+ * digits left once the Markdown around them (list bullets, link targets,
+ * heading hashes, markers) is gone.
+ */
+export function matchKey(text: string): string {
+  return text
+    .replace(/!\[\[[^\]]*\]\]/g, "")
+    .replace(/\[\[(?:[^\]|]*\|)?([^\]]*)\]\]/g, "$1")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^[ \t]*(?:>[ \t]*)*(?:#{1,6}[ \t]+|(?:[-*+]|\d+[.)])[ \t]+(?:\[.\][ \t]+)?)?/gm, "")
+    .replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+/**
+ * Pair rendered pieces (in document order) with the source pieces they came
+ * from. An embed or a preview is rendered without telling the post-processor
+ * where its pieces sit in the note, so find them by content. Pieces are
+ * matched in order, each source piece at most once; a rendered piece nothing
+ * matches gets null.
+ */
+export function alignSections(rendered: string[], source: string[]): Array<number | null> {
+  const out: Array<number | null> = [];
+  let cursor = 0;
+  for (const text of rendered) {
+    const key = matchKey(text);
+    let found: number | null = null;
+    if (key) {
+      for (let j = cursor; j < source.length; j++) {
+        if (matchKey(source[j]) === key) {
+          found = j;
+          break;
+        }
+      }
+    }
+    if (found !== null) cursor = found + 1;
+    out.push(found);
+  }
+  return out;
+}

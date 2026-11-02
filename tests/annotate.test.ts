@@ -580,3 +580,66 @@ describe("random typing and deleting", () => {
     }
   });
 });
+
+describe("moving lines", () => {
+  /** What moveLineUp / moveLineDown of @codemirror/commands do to one line. */
+  function moveLine(state: EditorState, line: number, forward: boolean) {
+    const block = state.doc.line(line);
+    const next = state.doc.line(forward ? line + 1 : line - 1);
+    const changes = forward
+      ? [{ from: block.to, to: next.to }, { from: block.from, insert: next.text + "\n" }]
+      : [{ from: next.from, to: block.from }, { from: block.to, insert: "\n" + next.text }];
+    return state.update({ changes, userEvent: "move.line" }).state;
+  }
+  const doc = (...lines: string[]) => lines.join("\n");
+
+  it("keeps a human line human when the block closer moves above it", () => {
+    const s = moveLine(make(doc("&& Claude", "AI 一", "&&", "人写的")), 4, false);
+    expect(s.doc.toString()).toBe(doc("&& Claude", "AI 一", "@@人写的@@", "&&"));
+  });
+
+  it("keeps an AI line AI when it moves out of its block", () => {
+    const s = moveLine(make(doc("&& Claude", "AI 一", "AI 二", "&&", "人写的")), 3, true);
+    expect(s.doc.toString()).toBe(doc("&& Claude", "AI 一", "&&", "&&AI 二&&", "人写的"));
+  });
+
+  it("keeps an island human when its line moves out of a block", () => {
+    const s = moveLine(make(doc("&& Claude", "AI 一@@我补的@@", "&&", "人写的")), 2, true);
+    expect(s.doc.toString()).toBe(doc("&& Claude", "&&", "&&AI 一&&我补的", "人写的"));
+  });
+
+  it("leaves lines alone that move within one region", () => {
+    const s = moveLine(make(doc("&& Claude", "AI 一", "AI 二", "&&")), 3, false);
+    expect(s.doc.toString()).toBe(doc("&& Claude", "AI 二", "AI 一", "&&"));
+  });
+
+  it("only acts on the move-line command", () => {
+    const st = make(doc("&& Claude", "AI 一", "&&", "人写的"));
+    const next = st.update({ changes: [{ from: st.doc.line(3).from, to: st.doc.line(4).to, insert: "人写的\n&&" }], userEvent: "input.paste" }).state;
+    expect(next.doc.toString()).toBe(doc("&& Claude", "AI 一", "人写的", "&&"));
+  });
+});
+
+describe("pasting into a declared code block", () => {
+  const FENCE = "```";
+  const code = (decl: string, ...lines: string[]) => ["&& Claude", "", FENCE + "ts" + decl, ...lines, FENCE, "", "&&"].join("\n");
+  const paste = (state: EditorState, at: number, insert: string) =>
+    state.update({ changes: { from: at, insert }, userEvent: "input.paste" }).state;
+
+  it("makes the marker longer when the pasted text has a run of the same length", () => {
+    const st = make(code(" @@", "let @@a@@ = 1", "x"));
+    const at = st.doc.toString().indexOf("x");
+    expect(paste(st, at, "@@ -1 +1 @@ ").doc.toString()).toBe(code(" @@@", "let @@@a@@@ = 1", "@@ -1 +1 @@ x"));
+  });
+
+  it("leaves other pasted text and other lengths alone", () => {
+    const st = make(code(" @@", "let @@a@@ = 1", "x"));
+    const at = st.doc.toString().indexOf("x");
+    expect(paste(st, at, "a@b @@@ ").doc.toString()).toBe(code(" @@", "let @@a@@ = 1", "a@b @@@ x"));
+  });
+
+  it("does not touch code that declares nothing", () => {
+    const st = make(code("", "x"));
+    expect(paste(st, st.doc.toString().indexOf("x"), "@@ ").doc.toString()).toBe(code("", "@@ x"));
+  });
+});

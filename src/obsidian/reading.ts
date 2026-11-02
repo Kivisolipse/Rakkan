@@ -16,7 +16,7 @@ const parser = new Parser();
 let lastText = "";
 let lastResult: ParseResult | null = null;
 
-function parseCached(text: string): ParseResult {
+export function parseCached(text: string): ParseResult {
   if (text !== lastText || !lastResult) {
     lastText = text;
     lastResult = parser.parse(text);

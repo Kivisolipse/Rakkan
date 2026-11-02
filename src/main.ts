@@ -5,6 +5,7 @@ import { Parser, parseAuthor, pasteEdits, quoteText, setBookColor, type Author, 
 import { parseField, pasteWithOwners, rakkanEditor, rangePayload, refreshEffect } from "./cm6/editor";
 import { STYLES, type StyleSettings } from "./cm6/resolve";
 import { processSection } from "./obsidian/reading";
+import { processWithoutLines } from "./obsidian/embeds";
 import { DEFAULT_SETTINGS, RakkanSettingTab, type RakkanSettings } from "./obsidian/settings";
 import { colorCss } from "./cm6/colors";
 import { DiagnosticsModal, statusText } from "./obsidian/statusbar";
@@ -53,8 +54,14 @@ export default class RakkanPlugin extends Plugin {
     this.registerMarkdownPostProcessor((el, ctx) => {
       // PDF export renders the pieces itself and colours them with their real lines.
       if (el.closest(".rk-export")) return;
-      processSection(el, ctx, { styles: () => this.styleSnapshot });
-      anchorSoon();
+      const deps = { styles: () => this.styleSnapshot };
+      if (ctx.getSectionInfo(el)) {
+        processSection(el, ctx, deps);
+        anchorSoon();
+        return;
+      }
+      // Embeds and previews come without lines: find the pieces in the note.
+      return Promise.resolve(processWithoutLines(this.app, el, ctx, deps)).then(anchorSoon);
     }, 100);
     this.registerDomEvent(window, "resize", anchorSoon);
     this.registerEvent(this.app.workspace.on("layout-change", anchorSoon));

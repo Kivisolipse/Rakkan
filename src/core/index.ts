@@ -18,5 +18,5 @@ export { toIA, fromIA, splitIA, parseIA, applyOwners, sha256Hex } from "./ia";
 export type { IAAuthor, IAParsed, IASplit, FromIA, ToIAOptions } from "./ia";
 export { exportPlain, exportPandoc } from "./export";
 export type { PandocOptions } from "./export";
-export { splitSections } from "./sections";
+export { alignSections, matchKey, splitSections } from "./sections";
 export type { Section } from "./sections";
