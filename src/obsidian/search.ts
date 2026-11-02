@@ -92,7 +92,8 @@ export class NativeSearch extends Component {
 
   override onload() {
     this.live = true;
-    const host = this;
+    const hookEditor = (editor: Editor) => this.hookEditor(editor);
+    const addFindToggle = (view: MarkdownView) => this.addFindToggle(view);
     // Every way of opening the find bar (Ctrl+F, Ctrl+H, the "Find" menu) goes
     // through showSearch. The bar searches the selection as it opens, so the
     // editor is patched first.
@@ -100,9 +101,9 @@ export class NativeSearch extends Component {
       around(MarkdownView.prototype, {
         showSearch(next) {
           return function (this: MarkdownView, replace?: boolean) {
-            const hooked = this.getMode() === "source" && host.hookEditor(this.editor);
+            const hooked = this.getMode() === "source" && hookEditor(this.editor);
             next.call(this, replace);
-            if (hooked) host.addFindToggle(this);
+            if (hooked) addFindToggle(this);
           };
         },
       }),
@@ -127,19 +128,20 @@ export class NativeSearch extends Component {
     const pane = leaves[0].view;
     if (!this.live) return;
     if (!isSearchPane(pane)) return;
-    const host = this;
+    const addPaneToggle = (p: SearchPane) => this.addPaneToggle(p);
+    const enabled = () => this.enabled();
     this.register(
       around(Object.getPrototypeOf(pane) as SearchPane, {
         onOpen(next) {
           return async function (this: SearchPane) {
             await next.call(this);
-            host.addPaneToggle(this);
+            addPaneToggle(this);
           };
         },
         startSearch(next) {
           return function (this: SearchPane) {
             const typed = this.searchComponent.getValue();
-            if (!host.enabled() || !typed.trim()) return next.call(this);
+            if (!enabled() || !typed.trim()) return next.call(this);
             // The pane reads its box here. Only this read sees the rewritten
             // query; saving the layout and recent searches still see what was
             // typed. "Match case" still applies: it sets the regexes' flags.

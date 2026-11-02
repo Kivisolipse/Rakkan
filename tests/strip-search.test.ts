@@ -97,7 +97,8 @@ describe("looseQuery", () => {
     expect(compiled('"cat"').test("category")).toBe(false);
     expect(compiled('"cat"').test("concat")).toBe(false);
     expect(compiled('"分页"').test("介绍分页机制")).toBe(true);
-    expect(compiled('"cat"').exec("a cat")?.[0]).toBe("cat");
+    // The character before comes with the match, as in Obsidian's own phrase regex.
+    expect(compiled('"cat"').exec("a cat")?.[0]).toBe(" cat");
   });
 });
 

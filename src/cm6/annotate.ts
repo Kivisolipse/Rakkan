@@ -694,7 +694,7 @@ function bumpExtras(tr: Transaction, r: ParseResult): TextChange[] {
     const from = newDoc.lineAt(fromB).from;
     const to = newDoc.lineAt(toB).to;
     for (const m of newDoc.sliceString(from, to).matchAll(/@+/g)) {
-      const at = from + m.index!;
+      const at = from + m.index;
       if (m[0].length === ctx.atLen && at < toB && at + m[0].length > fromB) fences.set(ctx.codeFence, ctx.atLen);
     }
   });

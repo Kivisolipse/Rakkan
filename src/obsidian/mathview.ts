@@ -7,6 +7,7 @@
 import { finishRenderMath, loadMathJax, renderMath } from "obsidian";
 import { ViewPlugin, type EditorView, type ViewUpdate } from "@codemirror/view";
 import { fenceLines, type ParseResult } from "../core";
+import { styleVars } from "../cm6/colors";
 import { parseField, refreshEffect } from "../cm6/editor";
 import { resolve, type StyleSettings } from "../cm6/resolve";
 
@@ -73,8 +74,10 @@ export function styleMath(mathEl: HTMLElement, doc: ParseResult, line: number, s
     mathEl.addClasses(classes(cls));
   }
   if (style !== prev.style) {
-    if (style) mathEl.setAttribute("style", style);
-    else mathEl.removeAttribute("style");
+    // Live preview sizes the widget with inline styles of its own: leave those.
+    const vars = styleVars(style);
+    for (const k of Object.keys(styleVars(prev.style))) vars[k] ??= "";
+    mathEl.setCssProps(vars);
   }
   let { stop } = prev;
   if (tex !== prev.tex) {
@@ -101,7 +104,7 @@ function colourMathIslands(mathEl: HTMLElement, island: string, plain: string): 
     try {
       let out = renderMath(island, true);
       if (out.querySelector(ERROR)) out = renderMath(plain, true);
-      finishRenderMath();
+      void finishRenderMath();
       if (!out.querySelector(ERROR)) {
         out.dataset.rk = "1";
         const old = mathEl.querySelector(":scope > mjx-container");

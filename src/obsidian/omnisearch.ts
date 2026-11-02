@@ -149,7 +149,7 @@ export class OmnisearchCompat extends Component {
       }),
     );
 
-    const api = (globalThis as { omnisearch?: Partial<OmnisearchApi> }).omnisearch;
+    const api = (window as { omnisearch?: Partial<OmnisearchApi> }).omnisearch;
     const engine = plugin?.searchEngine;
     if (typeof api?.registerOnIndexed !== "function" || typeof engine?.addFromPaths !== "function") return;
     const reindex = () => void this.reindex((paths) => engine.addFromPaths!(paths));

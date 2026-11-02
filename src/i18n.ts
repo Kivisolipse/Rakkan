@@ -9,19 +9,9 @@ export type Language = "auto" | "zh" | "en";
 
 let current: "zh" | "en" = "zh";
 
-/** What Obsidian itself is set to: it keeps its language code in localStorage. */
-export function systemLanguage(): "zh" | "en" {
-  let code = "";
-  try {
-    code = window.localStorage.getItem("language") ?? "";
-  } catch {
-    // no storage: assume English
-  }
-  return code.toLowerCase().startsWith("zh") ? "zh" : "en";
-}
-
-export function setLanguage(pref: Language) {
-  current = pref === "auto" ? systemLanguage() : pref;
+/** `system` is the language Obsidian is set to (`getLanguage()`), followed when `pref` is "auto". */
+export function setLanguage(pref: Language, system = "en") {
+  current = pref !== "auto" ? pref : system.toLowerCase().startsWith("zh") ? "zh" : "en";
 }
 
 export const language = (): "zh" | "en" => current;

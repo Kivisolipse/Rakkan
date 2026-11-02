@@ -1,4 +1,4 @@
-import { editorLivePreviewField, MarkdownView, MenuItem, normalizePath, Notice, Plugin, TFile, type Component, type Editor, type Menu } from "obsidian";
+import { editorLivePreviewField, getLanguage, MarkdownView, MenuItem, normalizePath, Notice, Plugin, TFile, type Component, type Editor, type Menu } from "obsidian";
 import { EditorSelection } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { Parser, parseAuthor, pasteEdits, quoteText, setBookColor, type Author, type ParseResult } from "./core";
@@ -7,7 +7,7 @@ import { STYLES, type StyleSettings } from "./cm6/resolve";
 import { processSection } from "./obsidian/reading";
 import { processWithoutLines } from "./obsidian/embeds";
 import { DEFAULT_SETTINGS, RakkanSettingTab, type RakkanSettings } from "./obsidian/settings";
-import { colorCss } from "./cm6/colors";
+import { colorVars } from "./cm6/colors";
 import { DiagnosticsModal, statusText } from "./obsidian/statusbar";
 import { NativeSearch } from "./obsidian/search";
 import { NoteSearchModal, PlainNotes, VaultSearchModal } from "./obsidian/searchwindow";
@@ -30,7 +30,8 @@ export default class RakkanPlugin extends Plugin {
   private styleSnapshot: StyleSettings = { ...DEFAULT_SETTINGS, authors: {} };
   /** The author book. */
   authors: Record<string, Author> = {};
-  private styleEl: HTMLStyleElement | null = null;
+  /** The colour variables set on the body, to clear what is no longer set. */
+  private colorKeys: string[] = [];
   private statusEl: HTMLElement | null = null;
   private lastResult: ParseResult | null = null;
   private fallbackParser = new Parser();
@@ -43,9 +44,10 @@ export default class RakkanPlugin extends Plugin {
     await this.loadSettings();
     await this.reloadBook();
 
-    this.styleEl = document.head.createEl("style", { attr: { id: "rakkan-colors" } });
-    this.register(() => this.styleEl?.remove());
     this.applyAppearance();
+    // The colours differ between the light and the dark theme.
+    this.registerEvent(this.app.workspace.on("css-change", () => this.applyColors()));
+    this.register(() => document.body.setCssProps(Object.fromEntries(this.colorKeys.map((k) => [k, ""]))));
 
     this.registerEditorExtension(
       rakkanEditor({
@@ -309,7 +311,7 @@ export default class RakkanPlugin extends Plugin {
 
   /** The PDF export dialog for `file`, from whatever view shows it. */
   openPdfExport(file: TFile) {
-    const pdfDeps = () => ({ styles: () => this.styleSnapshot, nameOf: (key: string) => this.allAuthors()[key]?.name });
+    const pdfDeps = () => ({ styles: () => this.styleSnapshot, colors: () => this.settings, nameOf: (key: string) => this.allAuthors()[key]?.name });
     const read = () => this.readNote(file);
     const run = async (o: PdfOptions) => {
       const css = await this.app.vault.adapter.read(normalizePath(`${this.manifest.dir}/styles.css`)).catch(() => "");
@@ -498,16 +500,23 @@ export default class RakkanPlugin extends Plugin {
   private anchorReading() {
     document.querySelectorAll<HTMLElement>(".markdown-preview-sizer").forEach((el) => {
       const r = el.getBoundingClientRect();
-      el.style.setProperty("--rk-x", `${r.left}px`);
-      el.style.setProperty("--rk-w", `${r.width}px`);
+      el.setCssProps({ "--rk-x": `${r.left}px`, "--rk-w": `${r.width}px` });
     });
   }
 
   private applyAppearance() {
     this.styleSnapshot = { ...(JSON.parse(JSON.stringify(this.settings)) as Omit<StyleSettings, "authors">), authors: this.authors };
-    if (this.styleEl) this.styleEl.textContent = colorCss(this.settings);
+    this.applyColors();
     document.body.toggleClass("rk-mode-writing", this.settings.mode === "writing");
     document.body.toggleClass("rk-mode-review", this.settings.mode === "review");
+  }
+
+  /** Set the colour variables for the current theme on the body; Obsidian copies them into popout windows. */
+  private applyColors() {
+    const vars = colorVars(this.settings, document.body.hasClass("theme-dark"));
+    const stale = this.colorKeys.filter((k) => !(k in vars));
+    document.body.setCssProps({ ...vars, ...Object.fromEntries(stale.map((k) => [k, ""])) });
+    this.colorKeys = Object.keys(vars);
   }
 
   /** Redraw editors and reading views after a settings change. */
@@ -526,8 +535,8 @@ export default class RakkanPlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-    setLanguage(this.settings.language);
+    this.settings = { ...DEFAULT_SETTINGS, ...((await this.loadData()) as Partial<RakkanSettings> | null) };
+    setLanguage(this.settings.language, getLanguage());
     // Drop style names that no longer exist (the old background styles).
     const s = this.settings;
     const ok = (v: string) => (STYLES as readonly string[]).includes(v);

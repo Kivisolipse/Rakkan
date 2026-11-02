@@ -131,17 +131,14 @@ export class AuthorsModal extends Modal {
     const reset = row.createEl("button", { cls: "clickable-icon" });
     setIcon(reset, "rotate-ccw");
     setTooltip(reset, t("恢复自动颜色"));
-    reset.addEventListener("click", async () => {
-      await this.host.setColor(a.key, null);
-      this.renderList();
-    });
+    reset.addEventListener("click", () => void this.host.setColor(a.key, null).then(() => this.renderList()));
 
     // Deleting asks twice: the first click arms the button.
     const del = row.createEl("button", { cls: "clickable-icon" });
     setIcon(del, "trash-2");
     setTooltip(del, t("删除"));
     let armed: number | undefined;
-    del.addEventListener("click", async () => {
+    del.addEventListener("click", () => {
       if (armed === undefined) {
         del.addClass("mod-warning");
         setTooltip(del, t("再次点击以删除"));
@@ -153,7 +150,7 @@ export class AuthorsModal extends Modal {
         return;
       }
       window.clearTimeout(armed);
-      if (await this.host.editBook((text) => removeBookAuthor(text, a.key))) this.renderList();
+      void this.host.editBook((text) => removeBookAuthor(text, a.key)).then((ok) => ok && this.renderList());
     });
   }
 }

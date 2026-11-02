@@ -13,7 +13,7 @@ import type {
   Stats,
 } from "./types";
 
-const HUMAN: Attr = Object.freeze({ kind: "human", explicit: false }) as Attr;
+const HUMAN: Attr = Object.freeze({ kind: "human", explicit: false });
 
 type LineType =
   | "meta"
@@ -42,7 +42,7 @@ interface LineStruct {
 }
 
 const FENCE_RE = /^(`{3,}|~{3,})(.*)$/;
-const DEF_RE = /^(?:[-*+]\s+)?@([^\s:\[\]]+):\s+(.*)$/;
+const DEF_RE = /^(?:[-*+]\s+)?@([^\s:[\]]+):\s+(.*)$/;
 const BLANK_RE = /^\s*$/;
 
 /** Leading whitespace and `>` markers (blockquotes, callouts, list indentation). */
@@ -185,7 +185,7 @@ export class Parser {
     }
 
     // ── Pass A: structure ──
-    const structs: LineStruct[] = new Array(N);
+    const structs = new Array<LineStruct>(N);
     const blocks: Block[] = [];
     let fence: { char: string; len: number; amp: number; at: number; line: number } | null = null;
     let math = false;
@@ -321,7 +321,7 @@ export class Parser {
 
     if (open) {
       // An opener that never gets closed stays literal.
-      const b = open as Block;
+      const b = open;
       diag(b.openLine, lines[b.openLine].from, lines[b.openLine].to, "unclosed-block", "AI 块缺少结尾 &&，按原样显示");
       blocks.pop();
       structs[b.openLine] = { ...structs[b.openLine], type: "prose", block: null, prefix: 0 };
@@ -347,7 +347,7 @@ export class Parser {
       while (j + 1 < N && structs[j + 1].type === "prose" && structs[j + 1].prefix > 0 && !structs[j + 1].inComment) j++;
       const last = lineText[j];
       const content = last.slice(structs[j].prefix);
-      const m = /^\[@([^\s\[\]]+)\]\s*$/.exec(content);
+      const m = /^\[@([^\s[\]]+)\]\s*$/.exec(content);
       if (m && j > i) {
         for (let k = i; k <= j; k++) structs[k].quoteKey = m[1];
         const from = structs[j].prefix;
@@ -367,7 +367,7 @@ export class Parser {
       segments.push(s);
     };
 
-    const lineContexts: LineContext[] = new Array(N);
+    const lineContexts = new Array<LineContext>(N);
     for (let i = 0; i < N; i++) {
       const st = structs[i];
       const { from, to } = lines[i];

@@ -52,7 +52,7 @@ export class AuthorSuggest extends EditorSuggest<Author> {
 
   onTrigger(cursor: EditorPosition, editor: Editor): EditorSuggestTriggerInfo | null {
     const before = editor.getLine(cursor.line).slice(0, cursor.ch);
-    const m = /[\[【]@([^\]】\s]*)$/.exec(before);
+    const m = /[[【]@([^\]】\s]*)$/.exec(before);
     if (!m) return null;
     return { start: { line: cursor.line, ch: m.index }, end: cursor, query: m[1] };
   }

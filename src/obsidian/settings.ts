@@ -1,5 +1,5 @@
 import { DEFAULT_PDF, type PdfOptions } from "./pdf";
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, getLanguage, PluginSettingTab, Setting } from "obsidian";
 import { BUILTIN_FAMILIES, type ExtraPrefix } from "../core";
 import { STYLES, type StyleName, type StyleSettings } from "../cm6/resolve";
 import type RakkanPlugin from "../main";
@@ -108,7 +108,7 @@ export class RakkanSettingTab extends PluginSettingTab {
           .setValue(s.language)
           .onChange(async (v) => {
             s.language = v as Language;
-            setLanguage(s.language);
+            setLanguage(s.language, getLanguage());
             await save();
             this.display();
           }),

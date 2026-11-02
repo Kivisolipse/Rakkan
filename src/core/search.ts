@@ -114,24 +114,16 @@ function wordClass(): string {
   return (wordClassCache = out);
 }
 
-const LOOKBEHIND = (() => {
-  try {
-    return new RegExp("(?<!a)b").test("b");
-  } catch {
-    return false;
-  }
-})();
-
 /**
  * A quoted phrase. Obsidian matches one only as whole words: an end that is a
- * letter or digit must not touch another. Where lookbehind is missing (older
- * iOS), the character before is matched too, as Obsidian's own regex does.
+ * letter or digit must not touch another. The character before is matched
+ * too, as in Obsidian's own regex: lookbehind would fail on older iOS.
  */
 function phraseSource(text: string): string {
   const w = wordClass();
   const word = new RegExp(`[${w}]`);
   const isWord = (ch: string) => word.test(ch);
-  const before = isWord(text.charAt(0)) ? (LOOKBEHIND ? `(?<![${w}])` : `(?:^|[^${w}])`) : "";
+  const before = isWord(text.charAt(0)) ? `(?:^|[^${w}])` : "";
   const after = isWord(text.charAt(text.length - 1)) ? `(?![${w}])` : "";
   return before + looseRegexSource(text) + after;
 }

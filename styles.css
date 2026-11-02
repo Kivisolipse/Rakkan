@@ -1,7 +1,8 @@
 /* Rakkan — every character, signed.
  * The text itself is coloured, the way iA Writer's Authorship colours AI text.
- * Colours come from --rk-c / --rk-c2, set per family by the plugin
- * (.rk-fam-claude, .rk-quote, …). Override them in a CSS snippet if you like.
+ * Colours come from --rk-c / --rk-c2. Each family takes them from the
+ * variables the plugin sets on the body from its settings (--rk-c-claude, …);
+ * override a family in a CSS snippet with `.rk-fam-claude { --rk-c: …; }`.
  */
 
 body {
@@ -11,9 +12,23 @@ body {
 
 /* Writing mode: colours fade towards the normal text colour. */
 body.rk-mode-writing {
-  --rk-strength: 0.35;
+  --rk-strength: var(--rk-writing-strength, 0.35);
   --rk-mark-opacity: 0.2;
 }
+
+/* The built-in families; one added in the settings is mapped on the text itself. */
+.rk-fam-claude { --rk-c: var(--rk-c-claude); --rk-c2: var(--rk-c2-claude); }
+.rk-fam-gpt { --rk-c: var(--rk-c-gpt); --rk-c2: var(--rk-c2-gpt); }
+.rk-fam-gemini { --rk-c: var(--rk-c-gemini); --rk-c2: var(--rk-c2-gemini); }
+.rk-fam-deepseek { --rk-c: var(--rk-c-deepseek); --rk-c2: var(--rk-c2-deepseek); }
+.rk-fam-grok { --rk-c: var(--rk-c-grok); --rk-c2: var(--rk-c2-grok); }
+.rk-fam-llama { --rk-c: var(--rk-c-llama); --rk-c2: var(--rk-c2-llama); }
+.rk-fam-qwen { --rk-c: var(--rk-c-qwen); --rk-c2: var(--rk-c2-qwen); }
+.rk-fam-mistral { --rk-c: var(--rk-c-mistral); --rk-c2: var(--rk-c2-mistral); }
+.rk-fam-kimi { --rk-c: var(--rk-c-kimi); --rk-c2: var(--rk-c2-kimi); }
+.rk-fam-glm { --rk-c: var(--rk-c-glm); --rk-c2: var(--rk-c2-glm); }
+.rk-fam-generic { --rk-c: var(--rk-c-generic); --rk-c2: var(--rk-c2-generic); }
+.rk-quote { --rk-c: var(--rk-c-quote); --rk-c2: var(--rk-c2-quote); }
 
 /* ── Text styles ─────────────────────────────────────────────── */
 
@@ -183,6 +198,21 @@ pre.rk-code {
 }
 
 /* ── Printing and PDF export ─────────────────────────────────── */
+
+/* A note rendered out of sight, to be saved as a web page. */
+.rk-offscreen {
+  position: absolute;
+  left: -99999px;
+  top: 0;
+  width: 760px;
+}
+
+/* A gradient the PDF export has painted one character at a time. */
+.rk-style-gradient.rk-painted,
+.rk-style-rainbow.rk-painted {
+  -webkit-text-fill-color: currentcolor;
+  background: none;
+}
 
 @media print {
   /* Fixed backgrounds and text clipping do not survive printing: one colour per phrase. */

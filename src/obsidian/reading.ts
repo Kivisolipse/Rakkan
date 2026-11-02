@@ -4,6 +4,7 @@
 
 import type { MarkdownPostProcessorContext } from "obsidian";
 import { Parser, fenceLines, parseLine, scanInline, type Attr, type LineContext, type ParseResult } from "../core";
+import { styleVars } from "../cm6/colors";
 import { resolve, type Resolved, type StyleSettings } from "../cm6/resolve";
 import { takeOverCopyButton } from "./codecopy";
 import { opensFormula, styleMath } from "./mathview";
@@ -96,10 +97,8 @@ function wrapText(node: Text, pieces: Piece[]) {
       mid.remove();
       continue;
     }
-    const span = document.createElement("span");
-    span.className = cls;
-    if (style) span.setAttribute("style", style);
-    if (title) span.setAttribute("aria-label", title);
+    const span = createSpan({ cls, attr: title ? { "aria-label": title } : {} });
+    span.setCssProps(styleVars(style));
     mid.parentNode!.insertBefore(span, mid);
     span.appendChild(mid);
   }
@@ -163,18 +162,14 @@ function wrapCuts(codeEl: Element, nodes: Text[], cuts: Cut[]) {
     const stop = start + len;
     const mine = cuts.filter((c) => c.to > start && c.from < stop).sort((a, b) => a.from - b.from);
     if (mine.length) {
-      const frag = document.createDocumentFragment();
+      const frag = createFragment();
       let cur = start;
       for (const c of mine) {
         const a = Math.max(c.from, start);
         const b = Math.min(c.to, stop);
         if (a > cur) frag.append(node.data.slice(cur - start, a - start));
         if (!c.drop && b > a) {
-          const span = document.createElement("span");
-          span.className = "rk rk-island rk-code-island";
-          span.title = t("原创");
-          span.textContent = node.data.slice(a - start, b - start);
-          frag.append(span);
+          frag.createSpan({ cls: "rk rk-island rk-code-island", text: node.data.slice(a - start, b - start), attr: { title: t("原创") } });
         }
         cur = Math.max(cur, b);
       }
@@ -227,7 +222,7 @@ function renderCodeIslands(pre: HTMLElement, doc: ParseResult, fenceLine: number
     // The block's AI colour covers the code, and the user's islands stand out in the normal text colour.
     if (block) {
       codeEl.addClasses([...block.cls.split(" "), "rk-code-text"]);
-      if (block.style) codeEl.setAttribute("style", block.style);
+      codeEl.setCssProps(styleVars(block.style));
     }
     const nodes: Text[] = [];
     const walker = document.createTreeWalker(codeEl, NodeFilter.SHOW_TEXT);
@@ -295,7 +290,10 @@ export function processSection(el: HTMLElement, ctx: MarkdownPostProcessorContex
 
   if (blockRes) {
     el.addClass("rk-in-block");
-    el.querySelectorAll("pre").forEach((pre) => pre.addClass(...blockRes.cls.split(" "), "rk-code"));
+    el.querySelectorAll("pre").forEach((pre) => {
+      pre.addClass(...blockRes.cls.split(" "), "rk-code");
+      pre.setCssProps(styleVars(blockRes.style));
+    });
   }
   if (codePre && doc) renderCodeIslands(codePre, doc, fenceLine, blockRes);
 
@@ -367,7 +365,8 @@ export function processSection(el: HTMLElement, ctx: MarkdownPostProcessorContex
       for (const rg of ranges) {
         if (rg.to <= it.start || rg.from >= itEnd) continue;
         if (it.node.nodeType !== Node.TEXT_NODE) {
-          (it.node as Element).addClasses(rg.cls.split(" "));
+          (it.node as HTMLElement).addClasses(rg.cls.split(" "));
+          (it.node as HTMLElement).setCssProps(styleVars(rg.style));
           continue;
         }
         let list = perNode.get(it.node as Text);

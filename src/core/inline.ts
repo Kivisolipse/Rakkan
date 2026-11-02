@@ -433,9 +433,9 @@ function compact(
 
 export function parseLine(text: string, ctx: LineCtx): LineResult {
   const n = text.length;
-  const role: Role[] = new Array(n).fill("text");
-  const attr: Attr[] = new Array(n).fill(ctx.base);
-  const mark: (MarkType | undefined)[] = new Array(n).fill(undefined);
+  const role = new Array<Role>(n).fill("text");
+  const attr = new Array<Attr>(n).fill(ctx.base);
+  const mark = new Array<MarkType | undefined>(n).fill(undefined);
   const result: LineResult = { segments: [], spans: [], diagnostics: [], endsInComment: false };
 
   if (ctx.mode === "plain" || n === 0) {

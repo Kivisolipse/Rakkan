@@ -2,7 +2,7 @@
 // authorship as HTML classes (exportPublish), and publish.css, written here,
 // gives those classes their colours.
 
-import { normalizePath, Notice, type App } from "obsidian";
+import { normalizePath, Notice, TFile, type App } from "obsidian";
 import { hueHex, type Attr, type Author, type ParseResult } from "../core";
 import { colorCss } from "../cm6/colors";
 import { resolve, slug, type StyleSettings } from "../cm6/resolve";
@@ -54,11 +54,11 @@ export async function writePublishCss(app: App, css: string) {
     new Notice(t("已新建 publish.css"));
     return;
   }
-  // The file is a plain text file the vault knows by path.
-  const old = await app.vault.adapter.read(path);
-  const a = old.indexOf(BEGIN);
-  const b = old.indexOf(END);
-  const next = a >= 0 && b > a ? old.slice(0, a) + css.trimEnd() + old.slice(b + END.length) : old.trimEnd() + "\n\n" + css;
-  await app.vault.adapter.write(path, next);
+  if (!(file instanceof TFile)) return;
+  await app.vault.process(file, (old) => {
+    const a = old.indexOf(BEGIN);
+    const b = old.indexOf(END);
+    return a >= 0 && b > a ? old.slice(0, a) + css.trimEnd() + old.slice(b + END.length) : old.trimEnd() + "\n\n" + css;
+  });
   new Notice(t("已更新 publish.css 中 Rakkan 的部分"));
 }

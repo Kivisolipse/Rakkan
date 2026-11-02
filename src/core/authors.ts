@@ -51,7 +51,7 @@ export function parseAuthor(key: string, raw: string, extra: ExtraPrefix[] = [])
   return author;
 }
 
-const LINE_RE = /^\s*(?:[-*+]\s+)?@([^\s:\[\]]+):\s+(.+?)\s*$/;
+const LINE_RE = /^\s*(?:[-*+]\s+)?@([^\s:[\]]+):\s+(.+?)\s*$/;
 
 /** Read the author book: every `- @key: …` line; the first definition of a key wins. */
 export function parseBook(text: string, extra: ExtraPrefix[] = []): Record<string, Author> {

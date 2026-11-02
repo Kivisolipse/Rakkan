@@ -209,12 +209,18 @@ export function applyOwners(plain: string, owners: string, keys: Array<string | 
       masked = "";
       let pos = line.from;
       for (const q of quotes) {
-        for (; pos < q.from; pos++) at.push(pos), (masked += plain[pos]);
+        for (; pos < q.from; pos++) {
+          at.push(pos);
+          masked += plain[pos];
+        }
         at.push(q.from);
         masked += HOLE;
         pos = q.to;
       }
-      for (; pos < line.to; pos++) at.push(pos), (masked += plain[pos]);
+      for (; pos < line.to; pos++) {
+        at.push(pos);
+        masked += plain[pos];
+      }
     }
     let next = rewriteLine(masked, ctx, (chars) => {
       for (const c of chars) {

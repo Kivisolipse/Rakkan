@@ -14,6 +14,7 @@ import {
   type Signature,
 } from "../core";
 import { t } from "../i18n";
+import { DEFAULT_COLORS, familyStyle } from "./colors";
 
 /** How AI and quoted text is shown. The text itself is coloured; nothing is highlighted. */
 export const STYLES = ["color", "gradient", "rainbow", "underline", "none"] as const;
@@ -104,7 +105,7 @@ export function resolve(attr: Attr, doc: Doc, s: StyleSettings): Resolved | null
     else {
       // An AI being quoted: its family colour.
       const fam = signatureFamily({ raw: "", ...(author.name ? { name: author.name } : {}), ...(author.id ? { id: author.id } : {}) }, s.extraPrefixes);
-      if (fam) out.style = `--rk-c: var(--rk-c-${fam.id}); --rk-c2: var(--rk-c2-${fam.id});`;
+      if (fam) out.style = familyStyle(fam.id);
     }
     return out;
   }
@@ -124,7 +125,9 @@ export function resolve(attr: Attr, doc: Doc, s: StyleSettings): Resolved | null
   const label = sig ? signatureLabel(sig, s.extraPrefixes) : "AI";
   const out: Resolved = { cls, label };
   const own = attr.key ? authorOf(attr.key, doc, s)?.color : undefined;
+  // styles.css maps the built-in families; one added in the settings is mapped here.
   if (own) out.style = colorStyle(own);
+  else if (!DEFAULT_COLORS[famId]) out.style = familyStyle(famId);
   if (id) out.id = id;
   if (fam) out.family = fam.id;
   return out;

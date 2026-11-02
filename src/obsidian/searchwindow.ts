@@ -88,7 +88,7 @@ export class VaultSearchModal extends SuggestModal<NoteResult> {
   }
 
   override onOpen() {
-    super.onOpen();
+    void super.onOpen();
     if (this.initial) {
       this.inputEl.value = this.initial;
       this.inputEl.dispatchEvent(new Event("input"));
@@ -126,7 +126,11 @@ export class VaultSearchModal extends SuggestModal<NoteResult> {
     if (r.count > 1) el.createDiv("suggestion-aux").createSpan({ cls: "suggestion-flair", text: String(r.count) });
   }
 
-  async onChooseSuggestion(r: NoteResult, evt: MouseEvent | KeyboardEvent) {
+  onChooseSuggestion(r: NoteResult, evt: MouseEvent | KeyboardEvent) {
+    void this.openResult(r, evt);
+  }
+
+  private async openResult(r: NoteResult, evt: MouseEvent | KeyboardEvent) {
     const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(evt));
     await leaf.openFile(r.file, { active: true });
     // Find the hit again in the note as opened, and select it there.

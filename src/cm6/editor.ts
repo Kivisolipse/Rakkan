@@ -25,12 +25,12 @@ import { resolve, type Resolved, type StyleSettings } from "./resolve";
 import { t } from "../i18n";
 
 export interface RakkanEditorConfig {
-  styles(): StyleSettings;
+  styles: () => StyleSettings;
   /** Hide markers away from the cursor (live preview). */
-  hideMarkers(state: EditorState): boolean;
-  stripOnCopy(): boolean;
+  hideMarkers: (state: EditorState) => boolean;
+  stripOnCopy: () => boolean;
   /** Wrap what the user types inside AI regions in `@@…@@`. */
-  autoAnnotate(): boolean;
+  autoAnnotate: () => boolean;
 }
 
 /** Dispatch to force a redraw after settings change. */

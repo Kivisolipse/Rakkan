@@ -9,6 +9,7 @@
 
 import { Component, MarkdownRenderer, Modal, normalizePath, Notice, Platform, Setting, type App, type MarkdownPostProcessorContext, type TFile } from "obsidian";
 import { exportPlain, parse, splitSections, type ParseResult } from "../core";
+import { colorCss, colorVars, type ColorSettings } from "../cm6/colors";
 import { processSection, type ReadingDeps } from "./reading";
 import { t } from "../i18n";
 import { hint } from "./hint";
@@ -31,8 +32,10 @@ export interface PdfOptions {
 
 /** What the PDF export needs from the plugin besides the reading view's. */
 export interface PdfDeps extends ReadingDeps {
+  /** The colour settings: the page is printed in the light theme, whatever the app shows. */
+  colors(): ColorSettings;
   /** Display name of a `[@key]` author, when the author book knows it. */
-  nameOf?(key: string): string | undefined;
+  nameOf?: (key: string) => string | undefined;
 }
 
 export const DEFAULT_PDF: PdfOptions = {
@@ -415,8 +418,7 @@ async function paintGradients(view: HTMLElement, progress?: (done: number, total
       }
       node.replaceWith(frag);
     }
-    el.style.setProperty("-webkit-text-fill-color", "currentcolor");
-    el.style.background = "none";
+    el.addClass("rk-painted");
   }
 }
 
@@ -437,6 +439,8 @@ async function layoutPage(
   preview?: () => void,
 ) {
   await sleep(200);
+  // The window copied the app's colour variables, which may be the dark theme's.
+  win.document.body.setCssProps(colorVars(deps.colors(), false));
   const [pw, ph] = PAGES[o.pageSize];
   const margin = MARGINS[o.margin];
   const scale = Math.min(2, Math.max(0.1, o.scale / 100));
@@ -602,12 +606,11 @@ export async function previewPdf(app: App, file: TFile, text: string, o: PdfOpti
 async function exportHtml(app: App, file: TFile, text: string, o: PdfOptions, deps: PdfDeps, css: string) {
   const owner = new Component();
   owner.load();
-  const holder = document.body.createDiv("markdown-preview-view markdown-rendered");
-  holder.setAttribute("style", "position:absolute;left:-99999px;top:0;width:760px;");
+  const holder = document.body.createDiv("markdown-preview-view markdown-rendered rk-offscreen");
   try {
     await renderNote(app, file, text, o, holder, owner, deps);
     await sleep(300);
-    const colors = document.getElementById("rakkan-colors")?.textContent ?? "";
+    const colors = colorCss(deps.colors());
     const title = file.basename.replace(/[<&]/g, "");
     const page = [
       "<!doctype html>",

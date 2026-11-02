@@ -61,4 +61,11 @@ describe("i18n", () => {
     expect(t("已补全 {n} 个空行", { n: 3 })).toBe("Added 3 blank lines");
     expect(t("一句没有翻译的话")).toBe("一句没有翻译的话");
   });
+
+  it("follows Obsidian's language when set to auto", () => {
+    setLanguage("auto", "zh-TW");
+    expect(language()).toBe("zh");
+    setLanguage("auto", "ja");
+    expect(language()).toBe("en");
+  });
 });
