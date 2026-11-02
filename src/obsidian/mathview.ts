@@ -57,13 +57,16 @@ const styled = new WeakMap<HTMLElement, Styled>();
 
 const classes = (cls: string) => cls.split(" ").filter(Boolean);
 
-/** Colour the rendered formula whose `$$` line is `openLine`. */
-export function styleMath(mathEl: HTMLElement, doc: ParseResult, openLine: number, styles: StyleSettings) {
-  const block = doc.lineContexts[openLine]?.base.block;
+/**
+ * Colour the rendered formula on `line` as the AI block it is in. When the
+ * formula opens on that line and declares islands, render it again with them.
+ */
+export function styleMath(mathEl: HTMLElement, doc: ParseResult, line: number, styles: StyleSettings) {
+  const block = doc.lineContexts[line]?.base.block;
   const res = block !== undefined && doc.blocks[block] ? resolve({ kind: "ai", block, explicit: false }, doc, styles) : null;
   const cls = res?.cls ?? "";
   const style = res?.style ?? "";
-  const tex = opensFormula(doc, openLine) && doc.lineContexts[openLine + 1]?.codeFence === openLine ? mathSource(doc, openLine, ISLAND) : "";
+  const tex = opensFormula(doc, line) && doc.lineContexts[line + 1]?.codeFence === line ? mathSource(doc, line, ISLAND) : "";
   const prev = styled.get(mathEl) ?? UNSTYLED;
   if (cls !== prev.cls) {
     mathEl.removeClasses(classes(prev.cls));
@@ -76,7 +79,7 @@ export function styleMath(mathEl: HTMLElement, doc: ParseResult, openLine: numbe
   let { stop } = prev;
   if (tex !== prev.tex) {
     stop();
-    stop = tex ? colourMathIslands(mathEl, tex, mathSource(doc, openLine)) : UNSTYLED.stop;
+    stop = tex ? colourMathIslands(mathEl, tex, mathSource(doc, line)) : UNSTYLED.stop;
   }
   styled.set(mathEl, { cls, style, tex, stop });
 }
@@ -137,13 +140,14 @@ export function liveMath(styles: () => StyleSettings) {
         const doc = view.state.field(parseField, false);
         if (!doc) return;
         for (const el of Array.from(view.contentDOM.querySelectorAll<HTMLElement>("div.math"))) {
+          // One inside a callout or an embed is rendered as reading view, and styled there.
+          if (el.parentElement?.closest(".cm-embed-block")) continue;
           let line: number;
           try {
             line = view.state.doc.lineAt(view.posAtDOM(el)).number - 1;
           } catch {
             continue;
           }
-          if (!opensFormula(doc, line)) continue;
           styleMath(el, doc, line, styles());
         }
       }

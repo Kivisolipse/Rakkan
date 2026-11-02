@@ -2,9 +2,10 @@
 // source (getSectionInfo); inline markers are found in the rendered text, with
 // code and math elements standing in as single placeholder characters.
 
-import { Notice, type MarkdownPostProcessorContext } from "obsidian";
-import { Parser, codeBlockText, fenceLines, parseLine, scanInline, type Attr, type LineContext, type ParseResult } from "../core";
-import { resolve, type StyleSettings } from "../cm6/resolve";
+import type { MarkdownPostProcessorContext } from "obsidian";
+import { Parser, fenceLines, parseLine, scanInline, type Attr, type LineContext, type ParseResult } from "../core";
+import { resolve, type Resolved, type StyleSettings } from "../cm6/resolve";
+import { takeOverCopyButton } from "./codecopy";
 import { opensFormula, styleMath } from "./mathview";
 import { t } from "../i18n";
 
@@ -136,23 +137,16 @@ export interface ReadingDeps {
   styles(): StyleSettings;
 }
 
-/**
- * A code block that declares markers has them in its source, and Obsidian's
- * copy button would copy them too. Copy the code without them instead.
- */
-function takeOverCopyButton(pre: HTMLElement, doc: ParseResult, fenceLine: number) {
-  const code = codeBlockText(doc, fenceLine);
-  if (!code || code.plain === code.raw) return;
-  pre.addEventListener(
-    "click",
-    (e) => {
-      if (!(e.target as HTMLElement).closest(".copy-code-button")) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      void navigator.clipboard.writeText(code.plain).then(() => new Notice(t("已复制（已移除标记）")));
-    },
-    true,
-  );
+/** Whether `line` opens a fenced code block: a fence after any blockquote markers, outside code. */
+function opensFence(doc: ParseResult, line: number): boolean {
+  const l = doc.lines[line];
+  return !!l && doc.lineContexts[line]?.codeFence === undefined && /^[ \t>]*(?:`{3,}|~{3,})/.test(doc.text.slice(l.from, l.to));
+}
+
+/** The first line from `from` to `to` that `opens`, or -1. A section (a callout, say) may start before its first block. */
+function firstOpening(doc: ParseResult, from: number, to: number, opens: (doc: ParseResult, line: number) => boolean): number {
+  for (let l = from; l <= to; l++) if (opens(doc, l)) return l;
+  return -1;
 }
 
 interface Cut {
@@ -193,11 +187,12 @@ function wrapCuts(codeEl: Element, nodes: Text[], cuts: Cut[]) {
 
 /**
  * Rendered code shows its source, markers included. Take the declared markers
- * out of the text and colour what they enclose. Obsidian highlights code after
- * this runs (and at start-up, only once the language has loaded), replacing the
- * element's classes and children, so watch the element and redo it when that happens.
+ * out of the text and, in an AI block (`block`), colour what they enclose.
+ * Obsidian highlights code after this runs (and at start-up, only once the
+ * language has loaded), replacing the element's classes and children, so watch
+ * the element and redo it when that happens.
  */
-function renderCodeIslands(pre: HTMLElement, doc: ParseResult, fenceLine: number, blockCls: string, blockStyle?: string) {
+function renderCodeIslands(pre: HTMLElement, doc: ParseResult, fenceLine: number, block: Resolved | null) {
   const codeEl = pre.querySelector("code");
   if (!codeEl) return;
   const lines = fenceLines(doc, fenceLine);
@@ -215,7 +210,7 @@ function renderCodeIslands(pre: HTMLElement, doc: ParseResult, fenceLine: number
       if (seg.to <= from || seg.from >= to) continue;
       const cut = { from: Math.max(seg.from, from) + at, to: Math.min(seg.to, to) + at };
       if (seg.role === "mark" && (seg.mark === "open" || seg.mark === "close")) rawCuts.push({ ...cut, drop: true });
-      else if (seg.role === "text" && seg.attr.kind === "human") rawCuts.push({ ...cut, drop: false });
+      else if (block && seg.role === "text" && seg.attr.kind === "human") rawCuts.push({ ...cut, drop: false });
     }
     raw += doc.text.slice(from, to);
   });
@@ -230,8 +225,10 @@ function renderCodeIslands(pre: HTMLElement, doc: ParseResult, fenceLine: number
 
   const apply = () => {
     // The block's AI colour covers the code, and the user's islands stand out in the normal text colour.
-    codeEl.addClasses([...blockCls.split(" "), "rk-code-text"]);
-    if (blockStyle) codeEl.setAttribute("style", blockStyle);
+    if (block) {
+      codeEl.addClasses([...block.cls.split(" "), "rk-code-text"]);
+      if (block.style) codeEl.setAttribute("style", block.style);
+    }
     const nodes: Text[] = [];
     const walker = document.createTreeWalker(codeEl, NodeFilter.SHOW_TEXT);
     let joined = "";
@@ -267,10 +264,10 @@ export function processSection(el: HTMLElement, ctx: MarkdownPostProcessorContex
     const { lineStart, lineEnd } = info;
     sectionSource = info.text.split("\n").slice(lineStart, lineEnd + 1);
     const pre = el.querySelector("pre");
-    if (pre) {
-      takeOverCopyButton(pre, doc, lineStart);
+    fenceLine = pre ? firstOpening(doc, lineStart, lineEnd, opensFence) : -1;
+    if (pre && fenceLine >= 0) {
+      takeOverCopyButton(pre, doc, fenceLine);
       codePre = pre;
-      fenceLine = lineStart;
     }
 
     // Block lines are syntax only: take them out.
@@ -299,16 +296,14 @@ export function processSection(el: HTMLElement, ctx: MarkdownPostProcessorContex
   if (blockRes) {
     el.addClass("rk-in-block");
     el.querySelectorAll("pre").forEach((pre) => pre.addClass(...blockRes.cls.split(" "), "rk-code"));
-    if (codePre && doc) renderCodeIslands(codePre, doc, fenceLine, blockRes.cls, blockRes.style);
   }
+  if (codePre && doc) renderCodeIslands(codePre, doc, fenceLine, blockRes);
 
   // A formula inside an AI block is the AI's, apart from the islands it declares.
-  // The section (a callout, say) may start before its first formula.
   const mathEl = el.querySelector<HTMLElement>(".math.math-block");
   if (mathEl && doc && info) {
-    let line = info.lineStart;
-    while (line < info.lineEnd && !opensFormula(doc, line)) line++;
-    styleMath(mathEl, doc, line, styles);
+    const line = firstOpening(doc, info.lineStart, info.lineEnd, opensFormula);
+    styleMath(mathEl, doc, line >= 0 ? line : info.lineStart, styles);
   }
 
   const docLike = doc ?? { blocks: [], definitions: {} };

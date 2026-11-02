@@ -20,7 +20,7 @@ export function processWithoutLines(app: App, el: HTMLElement, ctx: MarkdownPost
 function place(el: HTMLElement, ctx: MarkdownPostProcessorContext, deps: ReadingDeps, text: string) {
   const r = parseCached(text);
   // Without AI blocks or declared code there is nothing the lines would add.
-  if (!r.blocks.length) return processSection(el, ctx, deps);
+  if (!r.blocks.length && !r.lineContexts.some((c) => c.mode === "code")) return processSection(el, ctx, deps);
 
   const lines = text.split("\n");
   const pieces = splitSections(r);

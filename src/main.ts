@@ -13,6 +13,7 @@ import { NativeSearch } from "./obsidian/search";
 import { NoteSearchModal, PlainNotes, VaultSearchModal } from "./obsidian/searchwindow";
 import { OmnisearchCompat } from "./obsidian/omnisearch";
 import { liveMath } from "./obsidian/mathview";
+import { liveCodeCopy } from "./obsidian/codecopy";
 import { AuthorsModal } from "./obsidian/authorsmodal";
 import { AuthorPickerModal, AuthorSuggest, createBook, loadBook } from "./obsidian/authors";
 import { exportPdf, PdfModal, previewPdf, type PdfOptions } from "./obsidian/pdf";
@@ -54,7 +55,7 @@ export default class RakkanPlugin extends Plugin {
         autoAnnotate: () => this.settings.autoAnnotate,
       }),
     );
-    this.registerEditorExtension(liveMath(() => this.styleSnapshot));
+    this.registerEditorExtension([liveMath(() => this.styleSnapshot), liveCodeCopy()]);
     this.applySearch();
 
     // Colours that follow the horizontal position need to know where the reading column is.
