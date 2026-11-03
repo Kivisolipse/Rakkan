@@ -122,4 +122,6 @@ export interface ParseResult {
   diagnostics: Diagnostic[];
   definitions: Record<string, string>;
   stats: Stats;
+  /** The first line after the frontmatter; 0 without one. */
+  bodyStart: number;
 }

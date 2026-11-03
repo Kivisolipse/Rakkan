@@ -332,7 +332,8 @@ export class Parser {
     for (const b of blocks) {
       for (const l of [b.openLine, b.closeLine]) {
         if (l === null) continue;
-        const prevBad = l > 0 && !BLANK_RE.test(lineText[l - 1]);
+        // No table can swallow a line right below the frontmatter, so it needs no blank line above.
+        const prevBad = l > bodyStart && !BLANK_RE.test(lineText[l - 1]);
         const nextBad = l < N - 1 && !BLANK_RE.test(lineText[l + 1]);
         if (prevBad || nextBad) {
           diag(l, lines[l].from, lines[l].to, "blank-line", "&& 所在行的前后需各有一个空行");
@@ -483,7 +484,7 @@ export class Parser {
     }
 
     diagnostics.sort((a, b) => a.from - b.from);
-    return { text, lines, lineContexts, segments, spans, blocks, diagnostics, definitions, stats };
+    return { text, lines, lineContexts, segments, spans, blocks, diagnostics, definitions, stats, bodyStart };
   }
 }
 

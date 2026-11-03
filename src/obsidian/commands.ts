@@ -107,7 +107,7 @@ export function fixBlankLines(view: EditorView): number {
     for (const l of [b.openLine, b.closeLine]) {
       if (l === null) continue;
       const line = doc.line(l + 1);
-      if (line.number > 1 && !BLANK.test(doc.line(line.number - 1).text))
+      if (l > r.bodyStart && !BLANK.test(doc.line(line.number - 1).text))
         changes.push({ from: line.from, to: line.from, insert: "\n" });
       if (line.number < doc.lines && !BLANK.test(doc.line(line.number + 1).text))
         changes.push({ from: line.to, to: line.to, insert: "\n" });

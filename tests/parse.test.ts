@@ -109,6 +109,15 @@ describe("blocks", () => {
     expect(codes("&& Claude\nx\n&&")).toEqual(["blank-line", "blank-line"]);
   });
 
+  it("lets an opener sit right below the frontmatter, but nowhere else", () => {
+    expect(codes("---\ntitle: 示例\n---\n&& Claude\n\nx\n\n&&")).toEqual([]);
+    expect(codes("---\ntitle: 示例\n---\n&& Claude\nx\n\n&&")).toEqual(["blank-line"]);
+    expect(codes("---\ntitle: 示例\n---\n人写的\n&& Claude\n\nx\n\n&&")).toEqual(["blank-line"]);
+    expect(codes("| a |\n| - |\n&& Claude\n\nx\n\n&&")).toEqual(["blank-line"]);
+    // Without frontmatter an opener on the first line has nothing above it.
+    expect(codes("&& Claude\n\nx\n\n&&")).toEqual([]);
+  });
+
   it("counts code inside a block as AI", () => {
     const r = parse("&& Claude\n\n```js\nif (a && b) {}\n```\n\n&&");
     expect(owners(r)).toEqual(["A:if (a && b) {}"]);
