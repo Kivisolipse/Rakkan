@@ -26,6 +26,13 @@
 
 Without the plugin, the note still reads as ordinary Markdown. The full syntax is in [docs/SPEC.md](docs/SPEC.md) (Chinese).
 
+Select text, right-click and choose **Rakkan → Mark as AI-generated**. What you type inside AI text is marked as yours. Reading view shows only the colours.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/demo-en-dark.gif">
+  <img alt="Marking a phrase as AI from the right-click menu, typing a sentence at the end of an AI paragraph, then switching to reading view" src="docs/images/demo-en-light.gif">
+</picture>
+
 ## Features
 
 - **Colour by model.** Each model family has its own colour. Any family or model can use gradient, rainbow (as in iA Writer) or underline instead.
@@ -67,4 +74,4 @@ npm run demo    # builds and installs into demo-vault/
 
 ## License
 
-[MIT](LICENSE). Inspired by iA Writer's Authorship.
+[MIT](LICENSE). Inspired by iA Writer's Authorship. Bundles [monkey-around](https://github.com/pjeby/monkey-around) by PJ Eby (ISC).
