@@ -203,11 +203,11 @@ pre.rk-code {
   inset-inline-end: calc(var(--input-icon-inset) + 56px);
 }
 
-.global-search-input-container.search-input-container:has(.rk-loose-toggle) input {
+.global-search-input-container.search-input-container.rk-has-loose-toggle input {
   padding-inline-end: 62px;
 }
 
-.global-search-input-container.search-input-container:has(.rk-loose-toggle) input:not(:placeholder-shown) {
+.global-search-input-container.search-input-container.rk-has-loose-toggle input:not(:placeholder-shown) {
   padding-inline-end: 90px;
 }
 
@@ -226,6 +226,120 @@ pre.rk-code {
 .rk-style-rainbow.rk-painted {
   -webkit-text-fill-color: currentcolor;
   background: none;
+}
+
+/*
+ * The window a note is laid out in for Export as PDF, exactly as wide as the
+ * printed page. It copies the app's styles, this file included; the sizes
+ * come from the export options as --rk-print-width / -page / -margin.
+ */
+body.rk-print-window {
+  margin: 0;
+  background: #fff;
+}
+
+body.rk-print-window > .print {
+  position: static;
+  width: var(--rk-print-width);
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+}
+
+body.rk-print-window > .print > .markdown-preview-view {
+  width: var(--rk-print-width);
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Keep a heading with what follows, and a code block, table or quote on one page when it fits. */
+body.rk-print-window :is(h1, h2, h3, h4, h5, h6) {
+  break-after: avoid;
+}
+
+body.rk-print-window :is(pre, table, blockquote, img, .callout) {
+  break-inside: avoid;
+}
+
+body.rk-print-window .rk-summary {
+  margin-top: 2em;
+  break-inside: avoid;
+}
+
+body.rk-print-window .rk-summary td {
+  padding: 0.1em 1em 0.1em 0;
+}
+
+/* The preview: grey around the pages, a red line where each one ends, and a bar on top. */
+body.rk-print-window.rk-print-preview {
+  background: #888;
+}
+
+/* The app keeps the body's padding at 0, so the page itself clears the 40px bar. */
+body.rk-print-window.rk-print-preview > .print {
+  margin: 56px auto 16px;
+  padding: var(--rk-print-margin);
+  box-sizing: content-box;
+  background-color: #fff;
+  background-origin: content-box;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(var(--rk-print-page) - 2px),
+    #d33 calc(var(--rk-print-page) - 2px),
+    #d33 var(--rk-print-page)
+  );
+}
+
+/* The preview window has no frame: the bar is what it is dragged by. */
+.rk-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  background: #2b2b2b;
+  color: #eee;
+  font: 13px system-ui, sans-serif;
+  -webkit-app-region: drag;
+}
+
+.rk-bar .rk-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rk-bar button {
+  -webkit-app-region: no-drag;
+  background: #444;
+  color: #eee;
+  border: 0;
+  border-radius: 4px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.rk-bar button:hover {
+  background: #d33;
+}
+
+.rk-bar button.rk-primary {
+  background: #7c5cff;
+}
+
+.rk-bar button.rk-primary:hover {
+  background: #8f75ff;
 }
 
 @media print {

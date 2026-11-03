@@ -108,7 +108,12 @@ export class NativeSearch extends Component {
         },
       }),
     );
-    this.register(() => this.forEachLeaf((leaf) => leaf.view.containerEl.querySelectorAll(".rk-loose-toggle").forEach((el) => el.remove())));
+    this.register(() =>
+      this.forEachLeaf((leaf) => {
+        leaf.view.containerEl.querySelectorAll(".rk-loose-toggle").forEach((el) => el.remove());
+        leaf.view.containerEl.querySelectorAll(".rk-has-loose-toggle").forEach((el) => el.removeClass("rk-has-loose-toggle"));
+      }),
+    );
     this.app.workspace.onLayoutReady(() => void this.attach());
     this.registerEvent(this.app.workspace.on("layout-change", () => void this.attach()));
   }
@@ -227,7 +232,10 @@ export class NativeSearch extends Component {
 
   private addPaneToggle(pane: SearchPane) {
     const box = pane.containerEl.querySelector<HTMLElement>(".global-search-input-container");
-    if (box && !box.querySelector(".rk-loose-toggle")) this.addToggle(box.createDiv("input-right-decorator clickable-icon"));
+    if (!box || box.querySelector(".rk-loose-toggle")) return;
+    // The input makes room for the toggle; a class rather than :has, which is slow to match.
+    box.addClass("rk-has-loose-toggle");
+    this.addToggle(box.createDiv("input-right-decorator clickable-icon"));
   }
 
   private addFindToggle(view: MarkdownView) {

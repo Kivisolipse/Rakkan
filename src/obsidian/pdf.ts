@@ -220,7 +220,7 @@ function openPrintWindow(title: string, visible = false, width = 900): Window | 
   installHelpers(win);
   const doc = win.document;
   doc.title = title;
-  doc.head.appendChild(doc.createElement("base")).setAttribute("href", location.href);
+  doc.head.createEl("base", { attr: { href: location.href } });
   for (const node of Array.from(document.head.querySelectorAll("style, link[rel=stylesheet]"))) doc.head.appendChild(node.cloneNode(true));
   for (const a of Array.from(document.documentElement.attributes)) doc.documentElement.setAttribute(a.name, a.value);
   for (const a of Array.from(document.body.attributes)) doc.body.setAttribute(a.name, a.value);
@@ -404,17 +404,12 @@ async function paintGradients(view: HTMLElement, progress?: (done: number, total
       return { node, colors };
     });
     for (const { node, colors } of plans) {
-      const frag = doc.createDocumentFragment();
+      const frag = createFragment();
       for (let i = 0; i < node.data.length; i++) {
         // One span per character: the colour changes with every one.
         const c = colors[i];
         if (c === null) frag.append(node.data[i]);
-        else {
-          const span = doc.createElement("span");
-          span.style.setProperty("color", c, "important");
-          span.textContent = node.data[i];
-          frag.append(span);
-        }
+        else frag.createSpan({ text: node.data[i] }).style.setProperty("color", c, "important");
       }
       node.replaceWith(frag);
     }
@@ -447,23 +442,16 @@ async function layoutPage(
   const [pageW, pageH] = o.landscape ? [ph, pw] : [pw, ph];
   const contentPx = Math.floor(((pageW - 2 * margin) * 96) / scale);
   const pagePx = Math.floor(((pageH - 2 * margin) * 96) / scale);
-  const fit = win.document.head.appendChild(win.document.createElement("style"));
-  fit.textContent = [
-    "html, body { margin: 0 !important; background: #fff; }",
-    `.print { position: static !important; width: ${contentPx}px !important; max-width: none !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }`,
-    `.print .markdown-preview-view { width: ${contentPx}px !important; max-width: none !important; margin: 0 !important; padding: 0 !important; }`,
-    // Keep a heading with what follows, and a code block, table or quote on one page when it fits.
-    "h1, h2, h3, h4, h5, h6 { break-after: avoid; }",
-    "pre, table, blockquote, img, .callout { break-inside: avoid; }",
-    ".rk-summary { margin-top: 2em; break-inside: avoid; } .rk-summary td { padding: 0.1em 1em 0.1em 0; }",
-    preview
-      ? `body { background: #888 !important; } .print { margin: 16px auto !important; background: #fff; padding: ${Math.round(margin * 96 / scale)}px !important; box-sizing: content-box; background-origin: content-box; background-image: repeating-linear-gradient(to bottom, transparent 0, transparent ${pagePx - 2}px, #d33 ${pagePx - 2}px, #d33 ${pagePx}px); }`
-      : "",
-  ].join("\n");
-  const print = win.document.body.appendChild(win.document.createElement("div"));
-  print.className = "print";
-  const view = print.appendChild(win.document.createElement("div"));
-  view.className = "markdown-preview-view markdown-rendered";
+  // The layout is in styles.css, which the window copied; it takes the sizes from here.
+  win.document.body.addClass("rk-print-window");
+  win.document.body.toggleClass("rk-print-preview", !!preview);
+  win.document.body.setCssProps({
+    "--rk-print-width": `${contentPx}px`,
+    "--rk-print-page": `${pagePx}px`,
+    "--rk-print-margin": `${Math.round((margin * 96) / scale)}px`,
+  });
+  const print = win.document.body.createDiv("print");
+  const view = print.createDiv({ cls: ["markdown-preview-view", "markdown-rendered"] });
   await renderNote(app, file, text, o, view, owner, deps);
   await sleep(400);
   if (o.content === "color") await paintGradients(view, (done, all) => notice?.setMessage(t("正在为彩虹字着色… {done} / {all}", { done, all })));
@@ -541,31 +529,13 @@ export async function exportPdf(app: App, file: TFile, text: string, o: PdfOptio
 
 /** The preview window has no frame of its own to close it by: a bar to drag it by, and a close button. */
 function addPreviewBar(win: Window, name: string, pages: number, onExport: () => void) {
-  const doc = win.document;
-  const style = doc.head.appendChild(doc.createElement("style"));
-  style.textContent = [
-    "body { padding-top: 40px !important; }",
-    ".rk-bar { position: fixed; top: 0; left: 0; right: 0; height: 40px; z-index: 1000; display: flex; align-items: center; gap: 12px; padding: 0 12px; box-sizing: border-box; background: #2b2b2b; color: #eee; font: 13px system-ui, sans-serif; -webkit-app-region: drag; }",
-    ".rk-bar .rk-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }",
-    ".rk-bar button { -webkit-app-region: no-drag; background: #444; color: #eee; border: 0; border-radius: 4px; padding: 4px 12px; cursor: pointer; font: inherit; }",
-    ".rk-bar button:hover { background: #d33; }",
-    ".rk-bar button.rk-primary { background: #7c5cff; } .rk-bar button.rk-primary:hover { background: #8f75ff; }",
-  ].join(String.fromCharCode(10));
-  const bar = doc.body.appendChild(doc.createElement("div"));
-  bar.className = "rk-bar";
-  const title = bar.appendChild(doc.createElement("span"));
-  title.className = "rk-title";
-  title.textContent = t("{name} · 预览 · 约 {pages} 页（红线标出每页结束的位置）", { name, pages });
-  const exportButton = bar.appendChild(doc.createElement("button"));
-  exportButton.textContent = t("导出");
-  exportButton.className = "rk-primary";
-  exportButton.addEventListener("click", () => {
+  const bar = win.document.body.createDiv("rk-bar");
+  bar.createSpan({ cls: "rk-title", text: t("{name} · 预览 · 约 {pages} 页（红线标出每页结束的位置）", { name, pages }) });
+  bar.createEl("button", { cls: "rk-primary", text: t("导出") }).addEventListener("click", () => {
     win.close();
     onExport();
   });
-  const close = bar.appendChild(doc.createElement("button"));
-  close.textContent = t("关闭（Esc）");
-  close.addEventListener("click", () => win.close());
+  bar.createEl("button", { text: t("关闭（Esc）") }).addEventListener("click", () => win.close());
   win.addEventListener("keydown", (e) => {
     if (e.key === "Escape") win.close();
   });
