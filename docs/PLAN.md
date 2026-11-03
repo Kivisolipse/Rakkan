@@ -2,7 +2,7 @@
 
 > 每个字都有落款 · Every character, signed.
 
-本文件是开发计划，规范以 [SPEC.md](../SPEC.md) 为准。
+本文件是开发计划，规范以 [SPEC.md](SPEC.md) 为准。
 
 ## 结构
 
@@ -36,12 +36,12 @@ tests/         vitest 单元测试；tests/fixtures 是样例库（全是假数�
 | M8 | 代码块声明 + 公式 | 完成，待在 Obsidian 里手测：AI 块里的代码打字自动加声明、挑长度并包 `@@`，岛删光后连声明一起删，复制按钮（阅读视图、实时预览）去掉标记，公式吞掉标记时一键改成 \$。粘贴进已声明的代码块时，若出现和声明同长的连写（如 diff 的 `@@`），声明和已有的岛一起加长一位（有单元测试，待手测；手打的 `@` 仍当作手写标记）；公式内部精确到字：`$ %@@` 声明岛（解析、去标记、导出、打字、阅读视图重新渲染都有，阅读视图和实时预览都重新渲染，待手测） |
 | M9 | 取消 | — |
 | M10 | iA 互转 + Pandoc 过滤器 + 导出 | 基本完成，待在 Obsidian 里手测：去掉标记、Pandoc 格式（配 pandoc/rakkan.lua，PDF 带颜色）、iA 标注格式导出和导入（SHA-256 哈希、字形计数）。三个导出命令写新笔记、不动原文；导入改当前笔记（Ctrl+Z 一步撤销）。自带的「导出为 PDF…」（隐藏窗口 + 主进程的 print-to-pdf，分段渲染，待手测）。iA 的参考标注转成引用、作者名往返（`<@key>` 标识 + 补充定义）已做；多个人类作者：一库一位主人，其他人按署名簿当引用，署名簿不认识的人只要有就弹窗选主人（可选“都不是”）。均待手测；Obsidian Publish 导出（HTML 类名 + 生成 `publish.css`）已做，Publish 是否保留这些类名未验证 |
-| M11 | README、demo vault、BRAT、社区商店 | 待做 |
+| M11 | README、demo vault、GitHub 仓库与发布、BRAT、社区商店 | README、demo vault、仓库完成；BRAT、社区商店待做 |
 
 ## git 约定
 
 - `main` 保持可构建；每个里程碑一个或几个提交，提交信息用 Conventional Commits（`feat(core): …`）
-- 仓库根目录的 Markdown 一律忽略，只放行 README.md、SPEC.md、CHANGELOG.md
+- 仓库根目录的 Markdown 一律忽略，只放行 README.md、README.zh.md、CHANGELOG.md
 - 测试样例、示例、截图里的 AI 署名只用模型家族名（Claude、GPT），不拷任何真实笔记
 
 ## 测试

@@ -4,7 +4,7 @@
 # unless explicitly whitelisted below.
 /*.md
 !/README.md
-!/SPEC.md
+!/README.zh.md
 !/CHANGELOG.md
 
 
