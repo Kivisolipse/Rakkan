@@ -1,5 +1,6 @@
-// Usage: npm run stats -- <folder or file> [...more]
-// Prints the human / AI / quote share of every Markdown file.
+// Usage: npm run stats -- <folder or file> [...more] [--verbose]
+// Prints the human / AI / quote share of every Markdown file; with --verbose,
+// every warning after the table as `file:line  code  message`.
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -19,15 +20,18 @@ function* walk(path: string): Generator<string> {
 
 const pct = (n: number, total: number) => (total ? `${((n / total) * 100).toFixed(1)}%` : "-");
 
-const roots = process.argv.slice(2);
+const args = process.argv.slice(2);
+const verbose = args.includes("--verbose");
+const roots = args.filter((a) => a !== "--verbose");
 if (!roots.length) {
-  console.error("usage: npm run stats -- <folder or file> [...]");
+  console.error("usage: npm run stats -- <folder or file> [...] [--verbose]");
   process.exit(1);
 }
 
 const parser = new Parser();
 const totals = { human: 0, ai: 0, quote: 0 };
 const rows: string[][] = [];
+const notes: string[][] = [];
 let warnings = 0;
 for (const root of roots) {
   for (const file of walk(root)) {
@@ -38,8 +42,10 @@ for (const root of roots) {
     totals.ai += ai;
     totals.quote += quote;
     warnings += r.diagnostics.length;
+    const name = relative(process.cwd(), file);
+    if (verbose) for (const d of r.diagnostics) notes.push([`${name}:${d.line + 1}`, d.code, d.message]);
     rows.push([
-      relative(process.cwd(), file),
+      name,
       pct(human, total),
       pct(ai, total),
       pct(quote, total),
@@ -49,10 +55,17 @@ for (const root of roots) {
   }
 }
 
-const header = ["file", "原创", "AI", "引用", "chars", "warn"];
-const all = [header, ...rows];
-const widths = header.map((_, i) => Math.max(...all.map((r) => [...r[i]].length)));
-for (const r of all) console.log(r.map((c, i) => c.padEnd(widths[i])).join("  "));
+/** Rows as columns two spaces apart. */
+function table(all: string[][]): string[] {
+  const widths = all[0].map((_, i) => Math.max(...all.map((r) => [...r[i]].length)));
+  return all.map((r) => r.map((c, i) => c.padEnd(widths[i])).join("  "));
+}
+
+for (const line of table([["file", "原创", "AI", "引用", "chars", "warn"], ...rows])) console.log(line);
+if (notes.length) {
+  console.log();
+  for (const line of table(notes)) console.log(line.trimEnd());
+}
 const t = totals.human + totals.ai + totals.quote;
 console.log(
   `\n合计 ${rows.length} 篇：原创 ${pct(totals.human, t)} · AI ${pct(totals.ai, t)} · 引用 ${pct(totals.quote, t)}` +
