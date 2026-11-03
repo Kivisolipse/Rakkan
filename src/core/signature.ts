@@ -36,6 +36,7 @@ const FAMILIES: Array<[prefixes: string[], family: Family]> = [
   [["deepseek"], { id: "deepseek", label: "DeepSeek" }],
   [["grok"], { id: "grok", label: "Grok" }],
   [["llama"], { id: "llama", label: "Llama" }],
+  [["muse"], { id: "muse", label: "Muse" }],
   [["qwen"], { id: "qwen", label: "Qwen" }],
   [["mistral", "mixtral"], { id: "mistral", label: "Mistral" }],
   [["kimi", "moonshot"], { id: "kimi", label: "Kimi" }],
@@ -63,6 +64,8 @@ function matchPrefix(s: string, extra: ExtraPrefix[]): Family | null {
       // `o1` must not match `ollama`; require a boundary after short prefixes.
       const next = lower.charAt(p.length);
       if (p.length <= 2 && next && /[a-z]/.test(next)) continue;
+      // `muse` is also a word: `muse-spark-1.3` and `Muse`, not `museum`.
+      if (p === "muse" && next && !/[-\d]/.test(next)) continue;
       return family;
     }
   }

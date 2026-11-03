@@ -17,6 +17,7 @@ export const DEFAULT_COLORS: Record<string, ColorPair & { light2?: string; dark2
   deepseek: { light: "#4d6bfe", dark: "#7d93ff" },
   grok: { light: "#6b7280", dark: "#a1a1aa" },
   llama: { light: "#0866ff", dark: "#4c8dff" },
+  muse: { light: "#d6338a", dark: "#f06aa8" },
   qwen: { light: "#615ced", dark: "#8b87f5" },
   mistral: { light: "#fa520f", dark: "#ff7a45" },
   kimi: { light: "#0ea5e9", dark: "#38bdf8" },

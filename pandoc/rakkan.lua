@@ -16,8 +16,9 @@ local mode = "color"
 
 local colors = {
   claude = "d97757", gpt = "10a37f", gemini = "4e7ff0", deepseek = "4d6bfe",
-  grok = "6b7280", llama = "0866ff", qwen = "615ced", mistral = "fa520f",
-  kimi = "0ea5e9", glm = "14b8a6", generic = "8b5cf6", quote = "b08d57",
+  grok = "6b7280", llama = "0866ff", muse = "d6338a", qwen = "615ced",
+  mistral = "fa520f", kimi = "0ea5e9", glm = "14b8a6", generic = "8b5cf6",
+  quote = "b08d57",
 }
 
 local function has(el, class)

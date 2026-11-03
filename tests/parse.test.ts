@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parse } from "../src/core";
+import { familyOf, parse, signatureFamily } from "../src/core";
 import { codes, marks, owners } from "./helpers";
 
 describe("inline markers", () => {
@@ -75,6 +75,21 @@ describe("blocks", () => {
     expect(parse("&& 助手（gpt-5）\n\nx\n\n&&").blocks[0].signature).toMatchObject({ name: "助手", id: "gpt-5" });
     expect(parse("&& (gemini-3-pro)\n\nx\n\n&&").blocks[0].signature).toMatchObject({ id: "gemini-3-pro" });
     expect(parse("&& AI\n\nx\n\n&&").blocks[0].signature).toMatchObject({ name: "AI" });
+  });
+
+  it("knows Muse by its model IDs and name, not by words that start the same", () => {
+    for (const id of ["muse-spark-1.3", "muse-spark-1.2-contributor", "muse-wonder-1.0", "muse-image-1.0", "Muse", "Muse 助手"]) {
+      expect(familyOf(id)?.id, id).toBe("muse");
+    }
+    for (const word of ["museum", "musetalk", "Museum 导览"]) expect(familyOf(word), word).toBeNull();
+    // The other families match as before.
+    expect(["llama-4-maverick", "o3-mini", "ollama", "glm-5"].map((s) => familyOf(s)?.id ?? null)).toEqual(["llama", "gpt", null, "glm"]);
+  });
+
+  it("credits a Muse block to its family and name", () => {
+    const r = parse("&& Muse (muse-spark-1.3)\n\n四个字的\n\n&&");
+    expect(signatureFamily(r.blocks[0].signature)?.id).toBe("muse");
+    expect(r.stats.aiByAuthor).toEqual({ Muse: 4 });
   });
 
   it("treats `&& text &&` and `&&text` as inline, not blocks", () => {

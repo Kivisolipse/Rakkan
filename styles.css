@@ -23,6 +23,7 @@ body.rk-mode-writing {
 .rk-fam-deepseek { --rk-c: var(--rk-c-deepseek); --rk-c2: var(--rk-c2-deepseek); }
 .rk-fam-grok { --rk-c: var(--rk-c-grok); --rk-c2: var(--rk-c2-grok); }
 .rk-fam-llama { --rk-c: var(--rk-c-llama); --rk-c2: var(--rk-c2-llama); }
+.rk-fam-muse { --rk-c: var(--rk-c-muse); --rk-c2: var(--rk-c2-muse); }
 .rk-fam-qwen { --rk-c: var(--rk-c-qwen); --rk-c2: var(--rk-c2-qwen); }
 .rk-fam-mistral { --rk-c: var(--rk-c-mistral); --rk-c2: var(--rk-c2-mistral); }
 .rk-fam-kimi { --rk-c: var(--rk-c-kimi); --rk-c2: var(--rk-c2-kimi); }

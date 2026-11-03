@@ -124,10 +124,13 @@ Rakkan（落款）用纯文本标出一篇 Markdown 里哪些字是人写的、�
 | `deepseek` | DeepSeek |
 | `grok` | Grok |
 | `llama` | Llama |
+| `muse` | Muse |
 | `qwen` | Qwen |
 | `mistral`、`mixtral` | Mistral |
 | `kimi`、`moonshot` | Kimi |
 | `glm` | GLM |
+
+`muse` 后面只能是结尾、`-` 或数字：`muse-spark-1.3` 是 Muse，`museum` 不是。
 
 ## 4. 引用和作者
 
