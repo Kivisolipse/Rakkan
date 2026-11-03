@@ -10,8 +10,8 @@
 </p>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/screenshot-en-dark.png">
-  <img alt="A note in Obsidian: Chaucer's lines in blue as a quote, Eliot's lines in plain text, a paragraph marked as AI in rainbow text" src="docs/images/screenshot-en-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Kivisolipse/Rakkan/main/docs/images/screenshot-en-dark.png">
+  <img alt="A note in Obsidian: Chaucer's lines in blue as a quote, Eliot's lines in plain text, a paragraph marked as AI in rainbow text" src="https://raw.githubusercontent.com/Kivisolipse/Rakkan/main/docs/images/screenshot-en-light.png">
 </picture>
 
 ## Markers
@@ -29,8 +29,8 @@ Without the plugin, the note still reads as ordinary Markdown. The full syntax i
 Select text, right-click and choose **Rakkan → Mark as AI-generated**. What you type inside AI text is marked as yours. Reading view shows only the colours.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/demo-en-dark.gif">
-  <img alt="Marking a phrase as AI from the right-click menu, typing a sentence at the end of an AI paragraph, then switching to reading view" src="docs/images/demo-en-light.gif">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Kivisolipse/Rakkan/main/docs/images/demo-en-dark.gif">
+  <img alt="Marking a phrase as AI from the right-click menu, typing a sentence at the end of an AI paragraph, then switching to reading view" src="https://raw.githubusercontent.com/Kivisolipse/Rakkan/main/docs/images/demo-en-light.gif">
 </picture>
 
 ## Features

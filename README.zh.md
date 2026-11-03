@@ -10,8 +10,8 @@
 </p>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/screenshot-zh-dark.png">
-  <img alt="Obsidian 中的《赤壁赋》：标为 AI 的一段显示为彩虹字，曹操的诗句显示为引用的蓝色，其余为正文颜色" src="docs/images/screenshot-zh-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Kivisolipse/Rakkan/main/docs/images/screenshot-zh-dark.png">
+  <img alt="Obsidian 中的《赤壁赋》：标为 AI 的一段显示为彩虹字，曹操的诗句显示为引用的蓝色，其余为正文颜色" src="https://raw.githubusercontent.com/Kivisolipse/Rakkan/main/docs/images/screenshot-zh-light.png">
 </picture>
 
 ## 标记
@@ -29,8 +29,8 @@
 选中文字，右键选 **Rakkan → 标记为 AI 生成**；在 AI 文字里打的字自动记为你写的；阅读视图只留颜色。
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/demo-zh-dark.gif">
-  <img alt="用右键菜单把一句标为 AI，在 AI 段落末尾续写一句，再切到阅读视图" src="docs/images/demo-zh-light.gif">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Kivisolipse/Rakkan/main/docs/images/demo-zh-dark.gif">
+  <img alt="用右键菜单把一句标为 AI，在 AI 段落末尾续写一句，再切到阅读视图" src="https://raw.githubusercontent.com/Kivisolipse/Rakkan/main/docs/images/demo-zh-light.gif">
 </picture>
 
 ## 功能
