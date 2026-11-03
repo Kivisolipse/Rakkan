@@ -57,7 +57,7 @@ npx skills add Kivisolipse/Rakkan
 
 Or copy `skills/rakkan` into your agent's skills folder (`~/.claude/skills/` for Claude Code). For an agent without skills, paste the body of [SKILL.md](skills/rakkan/SKILL.md) into its instructions, such as `AGENTS.md` or `CLAUDE.md`.
 
-The skill brings a small command that the agent runs itself, with Node.js 18 or later. `rakkan sign` marks exactly the characters the agent changed in your text, with the same diff as **Paste revision**. `rakkan lint` checks a note for markers that don't work: blocks left open, markers without a partner, `[@key]` that nothing defines.
+The skill brings a small command that the agent runs itself, with Node.js 18 or later. `rakkan sign` marks exactly the characters the agent changed in your text, with the same diff as **Paste revision**. `rakkan lint` checks a note for markers that don't work: blocks left open, markers without a partner, `[@key]` that nothing defines. Without the skill, `npx rakkan lint path/to/notes` runs it too.
 
 What the agent writes looks like this:
 

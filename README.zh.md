@@ -57,7 +57,7 @@ npx skills add Kivisolipse/Rakkan
 
 也可以把 `skills/rakkan` 整个文件夹复制到 agent 的 skills 目录（Claude Code 是 `~/.claude/skills/`）。不支持 skill 的 agent，把 [SKILL.md](skills/rakkan/SKILL.md) 的正文贴进它的指令文件，比如 `AGENTS.md` 或 `CLAUDE.md`。Skill 用英文写成，对中文笔记同样适用。
 
-Skill 附带一个小命令，由 agent 自己运行，需要 Node.js 18 或更高版本。`rakkan sign` 只把 agent 在你文字里改动的字标出来，精确到字，用的是和「粘贴修改」同一套比对；`rakkan lint` 检查笔记里不起作用的标记：没闭合的块、没配对的标记、没有定义的 `[@key]`。
+Skill 附带一个小命令，由 agent 自己运行，需要 Node.js 18 或更高版本。`rakkan sign` 只把 agent 在你文字里改动的字标出来，精确到字，用的是和「粘贴修改」同一套比对；`rakkan lint` 检查笔记里不起作用的标记：没闭合的块、没配对的标记、没有定义的 `[@key]`。不装 skill 也可以用 `npx rakkan lint 笔记目录` 直接运行。
 
 agent 写出来是这样的：
 

@@ -9,7 +9,7 @@ compatibility: The checker in scripts/ needs Node.js 18 or later.
 
 Rakkan marks, in plain text, which characters of a note a person wrote, which an AI wrote, and which were quoted. Unmarked text counts as the person's. So every word you write into a note carries a mark, and every mark the note already has survives your edit.
 
-`scripts/rakkan.mjs` in this skill's folder does the fiddly parts: `sign` marks your changes to someone else's words, and `lint` checks a note when you are done. Below, `rakkan` stands for `node <this skill's folder>/scripts/rakkan.mjs`. Without the folder, `npx github:Kivisolipse/Rakkan` runs the same thing.
+`scripts/rakkan.mjs` in this skill's folder does the fiddly parts: `sign` marks your changes to someone else's words, and `lint` checks a note when you are done. Below, `rakkan` stands for `node <this skill's folder>/scripts/rakkan.mjs`. Without the folder, `npx rakkan` runs the same thing.
 
 ## Your model ID
 
