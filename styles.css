@@ -75,6 +75,19 @@ body.rk-mode-writing {
   background-repeat: repeat-x;
 }
 
+/* On a dark background those stops look dim and uneven: the same hues, lighter and evened out. */
+body.theme-dark .rk-style-rainbow {
+  background-image: linear-gradient(
+    90deg,
+    #ee904e 0%,
+    #ff7f73 22%,
+    #ff749f 42%,
+    #dd81eb 62%,
+    #af95ff 82%,
+    #8ba3ff 100%
+  );
+}
+
 body.rk-mode-writing .rk-style-gradient,
 body.rk-mode-writing .rk-style-rainbow {
   -webkit-text-fill-color: currentColor;

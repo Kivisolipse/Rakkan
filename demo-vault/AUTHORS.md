@@ -8,3 +8,5 @@
 - @ada: Ada Example · 人 · #3b82f6
 - @fakebook: 《一本不存在的书》 (ISBN 000-0-00-000000-0) · 来源
 - @mies: Mies Example · 人 · #958275
+- @chaucer: Geoffrey Chaucer · 人 · #3b82f6
+- @caocao: 曹操 · 人 · #3b82f6
