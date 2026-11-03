@@ -2,11 +2,15 @@
   "name": "rakkan",
   "version": "0.1.1",
   "description": "Mark which characters in a Markdown note were written by a human, by an AI, or quoted from elsewhere. Every character, signed.",
-  "private": true,
   "type": "module",
-  "main": "main.js",
   "bin": {
     "rakkan": "skills/rakkan/scripts/rakkan.mjs"
+  },
+  "files": [
+    "skills/rakkan/"
+  ],
+  "engines": {
+    "node": ">=18"
   },
   "scripts": {
     "dev": "node esbuild.config.mjs",
@@ -22,21 +26,31 @@
     "obsidian",
     "markdown",
     "authorship",
-    "ai"
+    "ai",
+    "cli",
+    "lint",
+    "agent-skills"
   ],
+  "author": "Kivisolipse",
   "license": "MIT",
+  "homepage": "https://github.com/Kivisolipse/Rakkan#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kivisolipse/Rakkan.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Kivisolipse/Rakkan/issues"
+  },
   "devDependencies": {
     "@codemirror/language": "6.11",
     "@codemirror/state": "6.7",
     "@codemirror/view": "6.43",
     "@types/node": "^22.20.5",
     "esbuild": "^0.25.12",
+    "monkey-around": "3.0.0",
     "obsidian": "1.14.4",
     "tslib": "^2.8.1",
     "typescript": "5.9",
     "vitest": "^3.2.7"
-  },
-  "dependencies": {
-    "monkey-around": "3.0.0"
   }
 }

@@ -73,15 +73,11 @@ A sentence of yours, with &&a few words the agent changed&&[@claude-opus-5-5].
 
 ## Install
 
-Requires Obsidian 1.8.7 or later, on desktop or mobile. Until Rakkan is listed in Community plugins, install it in one of two ways.
+Requires Obsidian 1.8.7 or later, on desktop or mobile.
 
-**With BRAT (recommended).** BRAT also updates Rakkan when a new version is released.
+Rakkan is in Obsidian's [community plugins](https://community.obsidian.md/plugins/rakkan). In **Settings → Community plugins**, select **Browse**, search for "Rakkan", then select **Install** and **Enable**.
 
-1. Install and enable [BRAT](https://github.com/TfTHacker/obsidian42-brat) in **Settings → Community plugins**.
-2. Run **BRAT: Add a beta plugin for testing** from the command palette.
-3. Enter `Kivisolipse/Rakkan`, choose the latest version, and select **Add plugin**.
-
-**By hand.** Download `main.js`, `manifest.json` and `styles.css` from the [latest release](../../releases/latest), put them in `<vault>/.obsidian/plugins/rakkan/`, and enable Rakkan in **Settings → Community plugins**.
+**By hand.** Download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/Kivisolipse/Rakkan/releases/latest), put them in `<vault>/.obsidian/plugins/rakkan/`, and enable Rakkan in **Settings → Community plugins**.
 
 ## Privacy
 
