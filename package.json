@@ -1,7 +1,7 @@
 {
   "name": "rakkan",
   "version": "0.1.1",
-  "description": "Every character, signed. Mark which characters in a Markdown note were written by a human, by an AI, or quoted from elsewhere.",
+  "description": "Mark which characters in a Markdown note were written by a human, by an AI, or quoted from elsewhere. Every character, signed.",
   "private": true,
   "type": "module",
   "main": "main.js",
