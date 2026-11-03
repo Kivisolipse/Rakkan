@@ -42,9 +42,15 @@ A detailed guide, in Chinese, is in [docs/GUIDE.md](docs/GUIDE.md).
 
 ## Install
 
-Requires Obsidian 1.8.7 or later, on desktop or mobile.
+Requires Obsidian 1.8.7 or later, on desktop or mobile. Until Rakkan is listed in Community plugins, install it in one of two ways.
 
-Until Rakkan is listed in Community plugins, install it by hand: download `main.js`, `manifest.json` and `styles.css` from the [latest release](../../releases/latest), put them in `<vault>/.obsidian/plugins/rakkan/`, and enable Rakkan in **Settings → Community plugins**.
+**With BRAT (recommended).** BRAT also updates Rakkan when a new version is released.
+
+1. Install and enable [BRAT](https://github.com/TfTHacker/obsidian42-brat) in **Settings → Community plugins**.
+2. Run **BRAT: Add a beta plugin for testing** from the command palette.
+3. Enter `Kivisolipse/Rakkan`, choose the latest version, and select **Add plugin**.
+
+**By hand.** Download `main.js`, `manifest.json` and `styles.css` from the [latest release](../../releases/latest), put them in `<vault>/.obsidian/plugins/rakkan/`, and enable Rakkan in **Settings → Community plugins**.
 
 ## Privacy
 

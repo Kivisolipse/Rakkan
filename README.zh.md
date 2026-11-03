@@ -42,9 +42,15 @@
 
 ## 安装
 
-需要 Obsidian 1.8.7 或更高版本，支持桌面端和移动端。
+需要 Obsidian 1.8.7 或更高版本，支持桌面端和移动端。上架社区插件之前，可用以下两种方式安装。
 
-在上架社区插件之前，请手动安装：从[最新版本](../../releases/latest)下载 `main.js`、`manifest.json`、`styles.css`，放入 `<库>/.obsidian/plugins/rakkan/`，然后在「设置 → 第三方插件」中启用 Rakkan。
+**用 BRAT 安装（推荐）**。有新版本时，BRAT 也会自动更新 Rakkan。
+
+1. 在「设置 → 第三方插件」中安装并启用 [BRAT](https://github.com/TfTHacker/obsidian42-brat)。
+2. 在命令面板中运行 **BRAT: Add a beta plugin for testing**。
+3. 填入 `Kivisolipse/Rakkan`，选择最新版本，点 **Add plugin**。
+
+**手动安装**。从[最新版本](../../releases/latest)下载 `main.js`、`manifest.json`、`styles.css`，放入 `<库>/.obsidian/plugins/rakkan/`，然后在「设置 → 第三方插件」中启用 Rakkan。
 
 ## 隐私
 
