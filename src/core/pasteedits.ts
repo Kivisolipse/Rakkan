@@ -100,6 +100,24 @@ function carryWords(original: string, owners: string, edited: string, before: st
 }
 
 /**
+ * Lines that may pair up: only those that occur once on each side, as in
+ * patience diff. A blank line or a repeated one could pair with the wrong
+ * copy and push the lines after it out of line; such lines are left to the
+ * word diff between the anchors.
+ */
+function anchors(a: string[], b: string[]): [string[], string[]] {
+  const count = (lines: string[]) => {
+    const m = new Map<string, number>();
+    for (const l of lines) m.set(l, (m.get(l) ?? 0) + 1);
+    return m;
+  };
+  const ca = count(a);
+  const cb = count(b);
+  const keep = (l: string) => ca.get(l) === 1 && cb.get(l) === 1 && /\S/.test(l);
+  return [a.map((l, i) => (keep(l) ? l : `\u0000a${i}`)), b.map((l, i) => (keep(l) ? l : `\u0000b${i}`))];
+}
+
+/**
  * Owners for `edited`, one character each: `A` where the edit changed the
  * text, elsewhere the owner of the same character in `original`. Lines are
  * matched first, so that edits far apart in a long note stay cheap, then the
@@ -115,7 +133,7 @@ export function carryOwners(original: string, owners: string, edited: string): {
     at += l.length;
   }
   start.push(at);
-  const pairs = lcs(a, b) ?? [];
+  const pairs = lcs(...anchors(a, b)) ?? [];
   pairs.push([a.length, b.length]);
   let own = "";
   let changed = 0;

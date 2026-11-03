@@ -20,7 +20,8 @@
     "test:watch": "vitest",
     "stats": "esbuild scripts/stats.ts --bundle --platform=node --format=esm --log-level=warning --outfile=dist/stats.mjs && node dist/stats.mjs",
     "demo": "npm run build && node scripts/install-demo.mjs",
-    "version": "node scripts/version-bump.mjs && git add manifest.json versions.json"
+    "version": "node scripts/version-bump.mjs && git add manifest.json versions.json",
+    "mcp": "esbuild mcp/server.ts --bundle --platform=node --format=esm --target=node22 --banner:js=\"#!/usr/bin/env node\" --log-level=warning --outfile=dist/rakkan-mcp.mjs"
   },
   "keywords": [
     "obsidian",

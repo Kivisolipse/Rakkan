@@ -131,6 +131,30 @@ function signature(chars: Char[]): string {
 }
 
 /**
+ * What makes a line a heading, list item, task or footnote: `## `, `- `,
+ * `1. `, `- [ ] `, `[^1]: `. A marker in front of it would turn the line into
+ * a paragraph, so it always belongs to the line's base owner.
+ */
+const LEADER_RE = /^[ \t]*(?:#{1,6}[ \t]+|(?:[-*+]|\d{1,9}[.)])[ \t]+(?:\[[ xX]\][ \t]+)?|\[\^[^\]\s]+\]:[ \t]*)/;
+
+/** Line leaders and table pipes stay outside markers: `## &&AI&&`, `| &&a&& | b |`. */
+function keepSyntaxOutside(chars: Char[], content: string, baseOwner: Owner) {
+  const visible = chars.map((c) => c.ch).join("");
+  const lead = LEADER_RE.exec(visible)?.[0].length ?? 0;
+  for (let i = 0; i < lead; i++) {
+    chars[i].owner = baseOwner;
+    delete chars[i].key;
+  }
+  if (!/^\s*\|/.test(visible)) return;
+  const atoms = atomicRanges(content);
+  for (const c of chars) {
+    if (c.ch !== "|" || content[c.at - 1] === "\\" || atoms.some((a) => c.at >= a.from && c.at < a.to)) continue;
+    c.owner = baseOwner;
+    delete c.key;
+  }
+}
+
+/**
  * Return `line` rewritten so that `[from, to)` (offsets within the line)
  * belongs to `owner`, or null when the line cannot be rewritten safely
  * (quotes, code, cited blockquotes).
@@ -171,6 +195,9 @@ export function rewriteLineDetailed(line: string, ctx: LineContext, edit: (chars
   if (!chars) return null;
   edit(chars);
 
+  const baseOwner: Owner = ctx.pair === "ai-block" ? "ai" : "human";
+  keepSyntaxOutside(chars, content, baseOwner);
+
   // Never split links and friends: if part of an atom changed, the atom follows.
   const byAt = new Map(chars.map((c) => [c.at, c] as const));
   for (const a of atomicRanges(content)) {
@@ -188,8 +215,6 @@ export function rewriteLineDetailed(line: string, ctx: LineContext, edit: (chars
       }
     }
   }
-
-  const baseOwner: Owner = ctx.pair === "ai-block" ? "ai" : "human";
 
   joinWhitespace(chars, baseOwner);
 

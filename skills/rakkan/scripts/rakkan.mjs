@@ -1043,6 +1043,22 @@ function serialize(chars, baseOwner, escape, marker = baseOwner === "human" ? "&
 function signature(chars) {
   return chars.map((c) => (/\s/.test(c.ch) ? "S" : c.owner === "ai" ? "A" : "H") + c.ch).join("");
 }
+var LEADER_RE = /^[ \t]*(?:#{1,6}[ \t]+|(?:[-*+]|\d{1,9}[.)])[ \t]+(?:\[[ xX]\][ \t]+)?|\[\^[^\]\s]+\]:[ \t]*)/;
+function keepSyntaxOutside(chars, content, baseOwner) {
+  const visible = chars.map((c) => c.ch).join("");
+  const lead = LEADER_RE.exec(visible)?.[0].length ?? 0;
+  for (let i = 0; i < lead; i++) {
+    chars[i].owner = baseOwner;
+    delete chars[i].key;
+  }
+  if (!/^\s*\|/.test(visible)) return;
+  const atoms = atomicRanges(content);
+  for (const c of chars) {
+    if (c.ch !== "|" || content[c.at - 1] === "\\" || atoms.some((a) => c.at >= a.from && c.at < a.to)) continue;
+    c.owner = baseOwner;
+    delete c.key;
+  }
+}
 function rewriteLineDetailed(line, ctx, edit) {
   if (ctx.mode !== "prose" || ctx.pair === "quote") return null;
   const prefix = line.slice(0, ctx.prefix);
@@ -1050,6 +1066,8 @@ function rewriteLineDetailed(line, ctx, edit) {
   const chars = ownersOf(content, ctx);
   if (!chars) return null;
   edit(chars);
+  const baseOwner = ctx.pair === "ai-block" ? "ai" : "human";
+  keepSyntaxOutside(chars, content, baseOwner);
   const byAt = new Map(chars.map((c) => [c.at, c]));
   for (const a of atomicRanges(content)) {
     let changed;
@@ -1066,7 +1084,6 @@ function rewriteLineDetailed(line, ctx, edit) {
       }
     }
   }
-  const baseOwner = ctx.pair === "ai-block" ? "ai" : "human";
   joinWhitespace(chars, baseOwner);
   const want = signature(chars);
   for (const escape of [false, true]) {
@@ -1210,6 +1227,17 @@ function carryWords(original, owners, edited, before) {
   }
   return { owners: own, changed };
 }
+function anchors(a, b) {
+  const count = (lines) => {
+    const m = /* @__PURE__ */ new Map();
+    for (const l of lines) m.set(l, (m.get(l) ?? 0) + 1);
+    return m;
+  };
+  const ca = count(a);
+  const cb = count(b);
+  const keep = (l) => ca.get(l) === 1 && cb.get(l) === 1 && /\S/.test(l);
+  return [a.map((l, i) => keep(l) ? l : `\0a${i}`), b.map((l, i) => keep(l) ? l : `\0b${i}`)];
+}
 function carryOwners(original, owners, edited) {
   const a = splitLines(original);
   const b = splitLines(edited);
@@ -1220,7 +1248,7 @@ function carryOwners(original, owners, edited) {
     at += l.length;
   }
   start.push(at);
-  const pairs = lcs(a, b) ?? [];
+  const pairs = lcs(...anchors(a, b)) ?? [];
   pairs.push([a.length, b.length]);
   let own = "";
   let changed = 0;
