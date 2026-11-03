@@ -25,7 +25,7 @@ import { setLanguage, t } from "./i18n";
 const cmOf = (editor: Editor) => (editor as unknown as { cm?: EditorView }).cm ?? null;
 
 export default class RakkanPlugin extends Plugin {
-  settings: RakkanSettings = { ...DEFAULT_SETTINGS };
+  override settings: RakkanSettings = { ...DEFAULT_SETTINGS };
   /** Immutable snapshot handed to renderers; replaced on every settings change. */
   private styleSnapshot: StyleSettings = { ...DEFAULT_SETTINGS, authors: {} };
   /** The author book. */
