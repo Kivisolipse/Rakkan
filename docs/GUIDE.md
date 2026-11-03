@@ -1,62 +1,66 @@
-# Rakkan 使用说明
+# Rakkan Guide
 
-各项功能、导出与互转、搜索和代码标记的详细说明。语法见 [SPEC.md](SPEC.md)。
+**English** · [中文](GUIDE.zh.md)
 
-## 插件能做什么
+Each feature in detail: export and conversion, search, and markers in code. The syntax is in [SPEC.md](SPEC.md).
 
-- **按模型家族上色**：Claude、GPT、Gemini、DeepSeek……各有默认颜色，字本身上色（参考 iA Writer），可以按家族、按具体模型换样式（彩色字、渐变字、彩虹字、下划线；彩虹字照 iA Writer 的画法：颜色跟着字在版面里的横向位置走，从左边的橙色经红、粉、紫到右边的蓝）
-- **实时预览**：光标不在时藏起标记和块的开合行
-- **阅读视图**：同样上色，标记不显示
-- **状态栏**：原创 72% · AI 28%，悬停看每个模型写了多少字；点击查看提醒（没闭合的代码围栏、被公式吞掉的标记、缺空行……）
-- **自动标注原创**：在 AI 块里打的字自动包进 `@@…@@`，和打的字同一步撤销；中文输入法停顿片刻后再包，组字时不动文档；Enter 不让原创岛跨行
-- **移动时署名跟着走**：交换行、拖放、拖动列表项、排序插件，同一次编辑里删掉又原样插回的字带着原来的归属；片段也按字符保持。粘贴时若出现和代码块声明同长的连写，声明自动加长一位
-- **公式里的原创岛**：公式开头写 `$$ %@@`（LaTeX 注释，不显示）就声明了岛，AI 块里的公式可以用 `@@…@@` 精确到字；阅读视图和实时预览里都按颜色重新渲染
-- **中文 / English**：设置里选语言，默认跟随 Obsidian；命令名要重新加载插件后才会换
-- **署名簿**：库里一篇笔记，一行一个作者（`- @key: 名字 (标识) · 种类 · #颜色`）。引用按作者上色，人有自己的颜色，来源调暗；状态栏悬停显示作者名。打 `[@`（中文输入法下 `【@` 也行）弹出作者列表，「粘贴为引用」命令自动加好引号和 key。在引用里打字同样自动标原创。作者多了不用手改笔记：设置里点「管理」（或命令「管理作者」）打开作者窗口，可以搜索、添加、改名、调颜色、删除，改动直接写回署名簿那几行
-- **粘贴修改**：选中原文，复制 AI 改好的版本，运行「粘贴修改」命令并选模型。只有改动的词变成 `&&…&&[@模型]`，没改的保持原来的归属。用来攒错题本、看 AI 到底改了你哪里
-- **复制时去掉标记**：粘到别的 App 里没有 `&&` `@@`；在库里粘贴时按落点重新写好标记
-- **右键菜单**：编辑时右键 → Rakkan，里面有标记为 AI 生成、标记为原创、粘贴修改、移除选区的标记（选中文字时）和粘贴为 AI 生成、粘贴为引用、插入 AI 块
-- **命令**：标记为 AI 生成、标记为原创、移除标记、插入 AI 块、补全开合行的空行、粘贴为 AI 生成、切换写作 / 审阅显示、搜索（忽略格式）、在当前笔记中查找（忽略格式）、导出和互转（见下）
+## What the plugin does
 
-## 导出和互转
+- **Colour by model family.** Claude, GPT, Gemini, DeepSeek… each has a default colour, and the text itself is coloured (after iA Writer). Each family or model can have its own style: coloured, gradient or rainbow text, or an underline. Rainbow text is drawn as in iA Writer: the colour follows a character's horizontal position on the page, from orange on the left through red, pink and purple to blue on the right.
+- **Live preview.** Markers and the opener and closer lines of blocks hide when the cursor is elsewhere.
+- **Reading view.** The same colours, with no markers.
+- **Status bar.** `Human 72% · AI 28%`. Hover to see how much each model wrote; click to see warnings (an unclosed code fence, markers swallowed by a formula, a missing blank line…).
+- **Auto-marking your own words.** What you type in an AI block is wrapped in `@@…@@`, in the same undo step as the typing. With an IME, the wrap waits until you pause and never touches the document while you compose. Enter doesn't carry a human island onto the next line.
+- **Authorship follows moved text.** Swapped lines, drag and drop, dragged list items, sorting plugins: text deleted and inserted again unchanged in one edit keeps its authors, down to the character. When a paste brings in a run as long as a code block's declaration, the declaration grows by one character.
+- **Human islands in math.** Starting a formula with `$$ %@@` (a LaTeX comment, which doesn't show) declares islands, so a formula in an AI block can mark individual characters with `@@…@@`. Both reading view and live preview render it again in colour.
+- **English and Chinese.** Choose the language in the settings; by default it follows Obsidian. Command names change after the plugin is reloaded.
+- **Author book.** A note in the vault with one author per line (`- @key: Name (ID) · kind · #colour`). Quotes take their author's colour: a person has a colour of their own, a source is dimmed, and hovering the status bar shows the authors' names. Typing `[@` (or `【@` with a Chinese IME) opens a list of authors, and **Paste as quote** adds the quotation marks and the key for you. What you type inside a quote is marked as yours too. When the authors grow many, there is no need to edit the note by hand: **Manage** in the settings (or the command **Manage authors**) opens a window where you can search, add, rename, recolour and delete authors, and the changes go straight back to their lines in the author book.
+- **Paste revision.** Select the original text, copy the AI's revised version, run **Paste revision** and choose the model. Only the changed words become `&&…&&[@model]`; the rest keep their authors. Useful for keeping a log of mistakes, or for seeing exactly what an AI changed in your text.
+- **Copy without markers.** Text pasted into another app has no `&&` or `@@`; pasted back into the vault, it gets the markers right for where it lands.
+- **Right-click menu.** While editing, right-click → Rakkan for **Mark as AI-generated**, **Mark as human-written**, **Paste revision** and **Remove markers in selection** (with text selected), and **Paste as AI-generated**, **Paste as quote**, **Insert AI block** and **Export as PDF…**.
+- **Commands.** Mark as AI-generated, Mark as human-written, Remove markers, Insert AI block, Add blank lines around block fences, Paste as AI-generated, Toggle writing / review display, Search (ignore formatting), Find in current note (ignore formatting), and the export and conversion commands below.
 
-**导出为 PDF…**：自带的导出窗口，选「带颜色」或「纯文字（没有颜色、也没有任何标记）」，再选纸张、横向、页边距、页码、缩放，可以在文末附一张署名统计（原创、各模型、引用各占多少字）。标题不会被分页拆开，代码块、表格、引用尽量不跨页。引用块末尾的 `[@key]` 在纯文字里保留为「— 出处名」。右键菜单 Rakkan 里、笔记右上角三个点的菜单里、文件列表的右键菜单里也有（阅读视图下也能用）。点「预览」会开一个窗口，按纸张宽度排好版，红线是每页结束的位置，看完再决定导不导。脚注按全篇编号收在文末。Obsidian 自带的「导出为 PDF」渲染时不告诉插件每一块来自哪几行，AI 块、代码块的颜色会丢，所以这里自己分段渲染再打印。桌面端直接生成 PDF；手机上没法打印到文件，改存成网页，用浏览器打开后「打印 → 存为 PDF」。彩虹字和渐变字按每个字在页面上的位置给每个字上色，PDF 里也是彩虹，字仍是文字。
+## Export and conversion
 
-另外有几条转换命令。导出的几条把结果写进旁边的新笔记，原笔记不动；「从 iA 标注转换」直接改当前笔记，Ctrl+Z 一步撤销：
+**Export as PDF…** opens Rakkan's own export window. Choose **In colour** or **Plain text** (no colour and no markers of any kind), then the page size, **Landscape**, **Margins**, **Page numbers** and **Scale (%)**, and optionally an **Authorship summary** at the end: how many characters are human-written, by each model, and quoted. Headings aren't split from what follows them, and code blocks, tables and blockquotes stay on one page where they can. In plain text, the `[@key]` at the end of a blockquote becomes "— source name". The command is also in the Rakkan right-click menu, in a note's three-dot menu, and in the file explorer's right-click menu (reading view included). **Preview** opens a window laid out at the page width, with red lines where each page ends, so you can look before you export. Footnotes are numbered through the whole note and collected at the end.
 
-- **导出为新笔记：移除标记**：去掉所有 `&&` `@@`、块的开合行和代码块上的声明，别的 Markdown 一字不改
-- **导出为新笔记：Pandoc 格式**：`&&…&&` 变成 `[…]{.rk-ai}`，AI 块变成 `::: {.rk-ai model="…"}` 围栏 div，引用变成 `{.rk-quote}`。配合 [pandoc/rakkan.lua](../pandoc/rakkan.lua) 就能让 AI 的字在 HTML、PDF 里带颜色（Word 里会套上叫 Rakkan AI 的样式）：
+Obsidian's own Export to PDF doesn't tell plugins which lines each part came from, so the colours of AI blocks and code blocks would be lost; Rakkan renders the note part by part itself and prints that. On desktop, it writes the PDF directly. A phone can't print to a file, so there it saves a web page instead: open it in a browser and choose Print → Save as PDF. Rainbow and gradient text colour each character by its place on the page, so the PDF shows the rainbow too, and the text is still text.
+
+Then there are the conversion commands. The exports write their result into a new note next to the original, which stays as it is; **Convert from iA Annotations** changes the current note, and Ctrl+Z undoes it in one step.
+
+- **Export as new note: markers removed.** Removes every `&&` and `@@`, the opener and closer lines of blocks, and the declarations on code blocks. The rest of the Markdown is left exactly as it was.
+- **Export as new note: Pandoc format.** `&&…&&` becomes `[…]{.rk-ai}`, an AI block becomes a fenced div `::: {.rk-ai model="…"}`, and quotes become `{.rk-quote}`. With [pandoc/rakkan.lua](../pandoc/rakkan.lua), the AI's words keep their colour in HTML and PDF (in Word, they take a style named Rakkan AI):
   ```bash
-  pandoc 笔记\ \(Pandoc\).md --lua-filter=pandoc/rakkan.lua -o 笔记.pdf
-  pandoc 笔记\ \(Pandoc\).md -M rakkan=plain --lua-filter=pandoc/rakkan.lua -o 笔记.docx   # 只留文字
+  pandoc note\ \(Pandoc\).md --lua-filter=pandoc/rakkan.lua -o note.pdf
+  pandoc note\ \(Pandoc\).md -M rakkan=plain --lua-filter=pandoc/rakkan.lua -o note.docx   # text only
   ```
-- **导出为新笔记：iA 标注格式**：正文去掉标记，末尾加上 [iA Writer 的 Markdown Annotations](https://github.com/iainc/Markdown-Annotations) 块（`@Human`、`&模型名 <标识>`、`*引用作者`，范围按字形计数，带 SHA-256），iA Writer 能直接读
-- **导出为新笔记：Obsidian Publish 用**：标记变成带类名的 `<span>`、`<div>`（Publish 不跑插件），再用「生成 Obsidian Publish 样式（publish.css）」命令把颜色写进库根目录的 `publish.css`（只改 Rakkan 自己的那一段）。Publish 会不会过滤这些类名还没验证
-- **从 iA 标注转换（当前笔记）**：把带 iA 标注块的笔记转成 Rakkan 标记。标注和正文对不上（哈希不符）时不转换。`&` 的范围变成 `&&…&&[@key]`；`*`（参考）的范围变成 `「…」[@key]` 引用
+- **Export as new note: iA Annotations format.** The text without markers, followed by a block of [iA Writer's Markdown Annotations](https://github.com/iainc/Markdown-Annotations) (`@Human`, `&Model name <ID>`, `*Quoted author`, with ranges counted in graphemes and a SHA-256 hash). iA Writer reads it as is.
+- **Export as new note: for Obsidian Publish (with style classes).** Markers become `<span>` and `<div>` elements with class names, since Publish doesn't run plugins. Then **Generate Obsidian Publish styles (publish.css)** writes the colours into `publish.css` at the root of the vault, changing only Rakkan's part of it. Whether Publish keeps these class names hasn't been checked yet.
+- **Convert from iA Annotations (current note).** Turns a note with an iA annotation block into Rakkan markers. When the annotations don't match the text (a hash mismatch), nothing is converted. `&` ranges become `&&…&&[@key]`; `*` (reference) ranges become `「…」[@key]` quotes.
 
-一个库默认只有一位主人：没有标记的人写的字就是他的，导入时不对主人做任何处理，也不用事先声明谁是主人。其他人按署名簿处理：iA 里的 `@名字` 能在署名簿里按名字或 key 找到的，写成那位作者的 `「…」[@key]` 引用；署名簿不认识的人，导入时都会弹窗问：哪一位是主人（不加标记），或者「都不是」。没选中的人写成引用，key 由名字生成，定义（`· 人`）补在笔记末尾。关掉弹窗就不转换。
+A vault has one owner by default: unmarked human text is the owner's. Converting does nothing to the owner's text, and nobody has to be declared the owner beforehand. Other people go by the author book: an `@Name` in the iA block that the author book knows, by name or by key, becomes a `「…」[@key]` quote by that author. For people the author book doesn't know, the conversion asks which of them is the owner (left unmarked), or **None of them**. The others become quotes, with keys made from their names and definitions (`· human`) added at the end of the note. Closing the dialog cancels the conversion.
 
-作者名来回都带着：导出时有 `[@key]` 的作者写成 `&名字 <@key>` 或 `*名字 <@key>`（`@` 开头的标识是 Rakkan 的 key，区别于模型 ID）。转回来时 key 取这个标识，没有的话由名字生成（`AI`、`Unknown` 这种泛称不加 key），名字和模型 ID 写进笔记末尾的补充定义（`- @key: 名字 (模型) · AI`），已有的定义不重复写。`*` 的范围里已有引号的话，只补 `[@key]`；范围里本身有引号又无法分开的，保持为普通文字，转换后会提示字数。
+Author names travel both ways. On export, an author with a `[@key]` is written `&Name <@key>` or `*Name <@key>` (an ID starting with `@` is a Rakkan key, unlike a model ID). On the way back, the key comes from that ID, or else from the name (generic names such as `AI` or `Unknown` get no key), and the name and model ID go into a definition at the end of the note (`- @key: Name (model) · AI`), without repeating one that is already there. When a `*` range is already in corner brackets `「…」`, only `[@key]` is added; one with corner brackets inside that can't be separated stays plain text, and the conversion reports how many characters.
 
-## 搜索（忽略格式）
+## Search (ignore formatting)
 
-标记会把词隔开：`分页@@机制@@` 按原文搜「分页机制」搜不到。设置里的「搜索方式」有两种：
+Markers split words: a search of the source for "word" misses `wo@@rd@@`. **Search method** in the settings offers two ways:
 
-- **Obsidian 搜索栏**（默认）：搜索栏（「区分大小写」旁）和笔记的查找栏（Ctrl+F）各多一个「忽略格式」开关，打开后每两个字之间允许出现格式字符和引注 `[@key]`。搜索框里仍是原文；`path:`、`file:`、`tag:`、属性和正则照旧，「区分大小写」照常生效，引号里的短语仍按整词匹配。阅读视图里本来就没有标记，查找栏不用开关也能搜到。Obsidian 没有开放搜索的接口，这依赖它的内部实现，Obsidian 更新后可能失效。
-- **Rakkan 搜索窗口**：独立的窗口，不改动 Obsidian。在去掉标记的笔记里搜索，结果显示不含标记的摘要，打开后选中命中的文字。
+- **Obsidian search** (the default). The search pane (next to **Match case**) and a note's find bar (Ctrl+F) each get an **Ignore formatting** toggle. With it on, formatting characters and `[@key]` citations may come between any two characters. The search box still shows what you typed; `path:`, `file:`, `tag:`, properties and regular expressions work as before, **Match case** still applies, and a phrase in quotation marks still matches whole words. Reading view has no markers to begin with, so its find bar finds words without the toggle. Obsidian has no API for search, so this relies on its internals and may break when Obsidian updates.
+- **Rakkan search window.** A separate window that leaves Obsidian unchanged. It searches the notes with their markers removed, shows excerpts without markers, and selects the matched text when it opens a note.
 
-两种方式都用「搜索（忽略格式）」「在当前笔记中查找（忽略格式）」两条命令打开；关掉了 Obsidian 的搜索插件时，「搜索（忽略格式）」打开 Rakkan 搜索窗口。装有 Omnisearch 时，「兼容 Omnisearch」让它也能搜到被标记隔开的词，摘要中不显示标记。
+Either way, the commands **Search (ignore formatting)** and **Find in current note (ignore formatting)** open them; with Obsidian's search plugin turned off, **Search (ignore formatting)** opens the Rakkan search window. With Omnisearch installed, **Omnisearch compatibility** lets it find words split by markers too, and its excerpts leave the markers out.
 
-在终端或给 AI 用同样的正则：
+In a terminal, or for an AI, use the same pattern:
 
 ```bash
 g='(?:[@&*=~`\[\]]|\[@[^\s@&*=~`\[\]][^\s\[\]]*\])*'
-rg -i "分${g}页${g}机${g}制"
+rg -i "w${g}o${g}r${g}d"
 ```
 
-## 为什么代码里有 `@@`
+## Why there is `@@` in code
 
-代码块默认不解析任何标记。要标出代码里哪几个字是人改的，在语言名后面声明：
+Code blocks parse no markers by default. To mark which characters of the code a person changed, declare the marker after the language name:
 
 ````
 ```ts @@
@@ -64,25 +68,27 @@ let count = @@0@@
 ```
 ````
 
-声明写几个字符，块里就只有恰好这么长的连写算标记；代码里本来有 `@@`（比如 diff）就声明 `@@@`。
+Only runs exactly as long as the declaration count as markers in the block. If the code already contains `@@` (in a diff, say), declare `@@@`.
 
-这些声明不用手写：在 AI 块的代码里打字，插件会自己在代码块开头加上声明、挑够长的标记，并把你打的字包起来；岛里的字删光以后，标记和不再需要的声明也一起删掉。代码块右上角的复制按钮（阅读视图和实时预览）复制出来的代码不带标记，选中一段复制同样如此。鼠标停在声明上会提示「这个代码块启用了 `@@` 标记，复制时会自动去掉」。没装插件时，按声明去掉即可，比如声明 `@@`：
+You don't have to write declarations yourself. When you type in code inside an AI block, the plugin adds the declaration to the code block, picks a marker long enough, and wraps what you type. When an island is emptied, its markers go too, and so does a declaration no longer needed. The copy button at the top right of a code block (in reading view and live preview) copies the code without markers, and so does copying a selection. Hovering a declaration shows "This code block uses the `@@` marker; it is removed when you copy". Without the plugin, remove the markers by their declaration; for `@@`:
 
 ```bash
 perl -pe 's/(?<!@)@@(?!@)//g'
 ```
 
-## 开发
+## Development
 
 ```bash
 npm install
-npm test          # core 单元测试
-npm run build     # 生成 main.js
-npm run demo      # 构建并装进 demo-vault/，用 Obsidian 打开这个文件夹试用
-npm run stats -- path/to/notes   # 统计每篇的原创、AI 生成、引用比例
+npm test          # core unit tests
+npm run build     # writes main.js
+npm run demo      # builds and installs into demo-vault/; open that folder in Obsidian to try it
+npm run stats -- path/to/notes             # the human, AI and quote share of each note
+npm run stats -- path/to/notes --verbose   # also lists every warning as file:line
+node skills/rakkan/scripts/rakkan.mjs lint path/to/notes   # the checks an agent runs (see skills/rakkan)
 ```
 
-代码分三层：`src/core`（纯 TypeScript 解析器）、`src/cm6`（只依赖 CodeMirror 6）、`src/obsidian`（设置、命令、阅读视图）。计划见 [docs/PLAN.md](PLAN.md)。
+The code has three layers: `src/core` (a parser in plain TypeScript), `src/cm6` (depends only on CodeMirror 6) and `src/obsidian` (settings, commands, reading view). `cli/rakkan.ts` is the `rakkan` command, which `npm run build` bundles into `skills/rakkan/scripts/rakkan.mjs`. The plan is in [PLAN.md](PLAN.md) (Chinese).
 
 ## License
 

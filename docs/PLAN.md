@@ -2,7 +2,7 @@
 
 > 每个字都有落款 · Every character, signed.
 
-本文件是开发计划，规范以 [SPEC.md](SPEC.md) 为准。
+本文件是开发计划，规范以 [SPEC.zh.md](SPEC.zh.md) 为准。
 
 ## 结构
 

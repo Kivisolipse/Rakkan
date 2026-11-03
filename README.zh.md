@@ -24,7 +24,7 @@
 | `@@文字@@` | AI 文字中你自己写的部分 |
 | `「文字」[@key]`、`"文字"[@key]` | 引用，归于署名簿中的作者 |
 
-不装插件，笔记仍是普通的 Markdown。完整语法见 [docs/SPEC.md](docs/SPEC.md)。
+不装插件，笔记仍是普通的 Markdown。完整语法见 [docs/SPEC.zh.md](docs/SPEC.zh.md)。
 
 选中文字，右键选 **Rakkan → 标记为 AI 生成**；在 AI 文字里打的字自动记为你写的；阅读视图只留颜色。
 
@@ -45,7 +45,31 @@
 - **导出**：带颜色或纯文字的 PDF、去掉标记的笔记、Pandoc、Obsidian Publish，以及与 iA Writer 标注格式互转。
 - **中文与英文界面**。
 
-各项功能的详细说明见 [docs/GUIDE.md](docs/GUIDE.md)。
+各项功能的详细说明见 [docs/GUIDE.zh.md](docs/GUIDE.zh.md)。
+
+## 给 AI agent
+
+Rakkan 附带一个 [Agent Skill](skills/rakkan/SKILL.md)，教 agent 给自己写的字署名：整段放进 AI 块并署上模型 ID，零星几个字用行内标记，作者原有的标记一律保留。
+
+```bash
+npx skills add Kivisolipse/Rakkan
+```
+
+也可以把 `skills/rakkan` 整个文件夹复制到 agent 的 skills 目录（Claude Code 是 `~/.claude/skills/`）。不支持 skill 的 agent，把 [SKILL.md](skills/rakkan/SKILL.md) 的正文贴进它的指令文件，比如 `AGENTS.md` 或 `CLAUDE.md`。Skill 用英文写成，对中文笔记同样适用。
+
+Skill 附带一个小命令，由 agent 自己运行，需要 Node.js 18 或更高版本。`rakkan sign` 只把 agent 在你文字里改动的字标出来，精确到字，用的是和「粘贴修改」同一套比对；`rakkan lint` 检查笔记里不起作用的标记：没闭合的块、没配对的标记、没有定义的 `[@key]`。
+
+agent 写出来是这样的：
+
+```
+&& Claude (claude-opus-5-5)
+
+agent 写的段落。
+
+&&
+
+你写的一句话，其中&&agent 改的几个字&&[@claude-opus-5-5]。
+```
 
 ## 安装
 
@@ -61,7 +85,11 @@
 
 ## 隐私
 
-Rakkan 不发出任何网络请求，也不收集任何数据。「导出为 PDF」将文件保存到你在保存对话框中选择的位置，可能位于库外。
+Rakkan 不发出任何网络请求，也不收集任何数据。
+
+- **剪贴板**：只在你运行「粘贴为 AI 生成」「粘贴为引用」「粘贴修改」时读取剪贴板；复制时，放进剪贴板的是去掉标记的文字。
+- **库**：列出库里的笔记，只用于忽略标记的搜索。
+- **PDF**：在桌面端，「导出为 PDF」与 Obsidian 自带的导出 PDF 一样通过 Electron 打印，文件保存到你在保存对话框中选择的位置，可能位于库外。
 
 ## 开发
 

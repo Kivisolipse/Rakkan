@@ -488,6 +488,20 @@ export class Parser {
   }
 }
 
+/** Index of the item holding `pos` in sorted, non-overlapping ranges, or -1. */
+export function indexAt(ranges: ReadonlyArray<{ from: number; to: number }>, pos: number, inclusiveEnd = false): number {
+  let lo = 0;
+  let hi = ranges.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const r = ranges[mid];
+    if (pos < r.from) hi = mid - 1;
+    else if (pos > r.to || (pos === r.to && !inclusiveEnd)) lo = mid + 1;
+    else return mid;
+  }
+  return -1;
+}
+
 export function parse(text: string): ParseResult {
   return new Parser().parse(text);
 }

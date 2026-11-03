@@ -24,7 +24,7 @@
 | `@@text@@` | Your own words inside AI text |
 | `"text"[@key]`, `「text」[@key]` | A quote, credited to an author |
 
-Without the plugin, the note still reads as ordinary Markdown. The full syntax is in [docs/SPEC.md](docs/SPEC.md) (Chinese).
+Without the plugin, the note still reads as ordinary Markdown. The full syntax is in [docs/SPEC.md](docs/SPEC.md).
 
 Select text, right-click and choose **Rakkan → Mark as AI-generated**. What you type inside AI text is marked as yours. Reading view shows only the colours.
 
@@ -45,7 +45,31 @@ Select text, right-click and choose **Rakkan → Mark as AI-generated**. What yo
 - **Export** to PDF in colour or plain text, to a note without markers, to Pandoc, to Obsidian Publish, and to and from iA Writer's Markdown Annotations.
 - **English and Chinese** interface.
 
-A detailed guide, in Chinese, is in [docs/GUIDE.md](docs/GUIDE.md).
+A detailed guide is in [docs/GUIDE.md](docs/GUIDE.md).
+
+## For AI agents
+
+Rakkan comes with an [Agent Skill](skills/rakkan/SKILL.md) that teaches an agent to sign what it writes: paragraphs in an AI block signed with its model ID, a few words inline, and the author's own markers left as they are.
+
+```bash
+npx skills add Kivisolipse/Rakkan
+```
+
+Or copy `skills/rakkan` into your agent's skills folder (`~/.claude/skills/` for Claude Code). For an agent without skills, paste the body of [SKILL.md](skills/rakkan/SKILL.md) into its instructions, such as `AGENTS.md` or `CLAUDE.md`.
+
+The skill brings a small command that the agent runs itself, with Node.js 18 or later. `rakkan sign` marks exactly the characters the agent changed in your text, with the same diff as **Paste revision**. `rakkan lint` checks a note for markers that don't work: blocks left open, markers without a partner, `[@key]` that nothing defines.
+
+What the agent writes looks like this:
+
+```
+&& Claude (claude-opus-5-5)
+
+Paragraphs the agent wrote.
+
+&&
+
+A sentence of yours, with &&a few words the agent changed&&[@claude-opus-5-5].
+```
 
 ## Install
 
@@ -61,7 +85,11 @@ Requires Obsidian 1.8.7 or later, on desktop or mobile. Until Rakkan is listed i
 
 ## Privacy
 
-Rakkan makes no network requests and collects no data. **Export as PDF** saves the file where you choose in the save dialog, which may be outside your vault.
+Rakkan makes no network requests and collects no data.
+
+- **Clipboard.** Rakkan reads the clipboard only when you run **Paste as AI-generated**, **Paste as quote** or **Paste revision**. When you copy, it puts the text on the clipboard without markers.
+- **Vault.** It lists the notes in your vault only to search them while ignoring markers.
+- **PDF.** On desktop, **Export as PDF** prints through Electron, as Obsidian's own Export to PDF does. It saves the file where you choose in the save dialog, which may be outside your vault.
 
 ## Development
 

@@ -1,216 +1,218 @@
-# Rakkan 规范 v0.2
+# Rakkan Specification v0.2
 
-> 每个字都有落款 · Every character, signed.
+**English** · [中文](SPEC.zh.md)
 
-Rakkan（落款）用纯文本标出一篇 Markdown 里哪些字是人写的、哪些是 AI 写的、哪些是从别处引来的，精确到每个字符。本文是语法规范；Obsidian 插件只是它的一种实现。
+> Every character, signed.
 
-本文所有示例都是虚构的。
+Rakkan marks, in plain text, which characters of a Markdown note a person wrote, which an AI wrote, and which were quoted from elsewhere, down to a single character. This document is the syntax; the Obsidian plugin is one implementation of it.
 
-## 1. 原则
+Every example here is fictional.
 
-1. **纯文本优先**：没有插件，文件照样读得懂；几条正则就能复现区分效果。
-2. **人类默认**：没标记的字都算人写的。标记的义务在 AI 那边。
-3. **简洁、能手写**：和 `**`、`~~` 是一个家族。
-4. **样式可自定义**：默认按模型家族上色，每个家族、每个模型都能单独换样式。
-5. **不锁定**：能和 iA 的 Markdown Annotations 互相转换。
-6. **精确到每个字符**：哪怕只有一个字属于另一位作者，也要能标出来。
-7. **职责边界**：会让署名悄悄丢失或认错的问题，实现要提醒；单纯的显示问题不管。
+## 1. Principles
 
-## 2. 速览
+1. **Plain text first.** The file reads fine without the plugin, and a few regular expressions reproduce the distinction.
+2. **Human by default.** Unmarked text counts as written by a person. Marking is the AI's job.
+3. **Short enough to type by hand.** The markers belong to the same family as `**` and `~~`.
+4. **Styles are yours to choose.** By default each model family has its own colour, and every family or model can have a style of its own.
+5. **No lock-in.** Notes convert to and from iA Writer's Markdown Annotations.
+6. **Down to the character.** Even one character by another author can be marked.
+7. **Warnings where authorship is at stake.** An implementation warns about problems that would silently lose or misattribute authorship, not about problems of display alone.
+
+## 2. At a glance
 
 ```
-人写的字不用标。&&这句是 AI 写的&&[@gpt]，然后又回到人。
-书上说「纸短情长」[@fakebook]，我深以为然。
+Unmarked words are the person's. &&This sentence is the AI's&&[@gpt], and then the person again.
+The book says "ink outlasts memory"[@fakebook], and I agree.
 
 && Claude (claude-opus-5-5)
 
-整段 AI，里面可以有标题、列表、表格、代码块。
-中间插一句 @@这是作者自己补的@@，再引一句 "less is more"[@mies]。
+A whole AI block, which can hold headings, lists, tables and code blocks.
+In the middle, @@a sentence the author added@@, and a quote, "less is more"[@mies].
 
 &&
 
-> 整段的引用用引用块，最后一行注明出处。
+> A quoted passage goes in a blockquote, with its source on the last line.
 > [@fakebook]
 ```
 
-| 写法 | 含义 |
+| Write | Meaning |
 |---|---|
-| `&&字&&` | 行内 AI 文字 |
-| `@@字@@` | 人写的字，在 AI 区域和带出处的引用里用（原创岛） |
-| 一行 `&& 署名`（最短 `&& AI`） | AI 块开始 |
-| 单独一行 `&&` | AI 块结束，只当结束 |
-| `「字」[@key]`、`"字"[@key]` | 引用：引号里的字归 key 指的作者 |
-| `&&字&&[@key]` | 行内 AI 文字注明是哪个模型 |
-| `\&&`、`\@@` | 转义 |
+| `&&text&&` | Inline AI text |
+| `@@text@@` | Text by a person, inside AI text and attributed quotes (a human island) |
+| A line `&& signature` (at shortest `&& AI`) | Opens an AI block |
+| A line with only `&&` | Closes an AI block, and only that |
+| `"text"[@key]`, `「text」[@key]` | A quote: the text inside the quotation marks belongs to the author `key` |
+| `&&text&&[@key]` | Inline AI text, naming the model |
+| `\&&`, `\@@` | Escapes |
 
-## 3. 标记
+## 3. Markers
 
-### 3.1 标记长度
+### 3.1 Length
 
-正文里的标记是**恰好两个**相同字符：`&&` 或 `@@`。`&&&`、`@@@` 或更长的连写按原样显示。单个 `&`、`@`（邮箱、@某人）不算。
+A marker in prose is **exactly two** of the same character: `&&` or `@@`. Runs of three or more, such as `&&&` or `@@@`, show as they are. A single `&` or `@` (an email address, an @mention) is not a marker.
 
-前面紧挨着反斜杠的连写是转义：`\&&` 显示为 `&&`，不是标记。
+A pair right after a backslash is escaped: `\&&` shows as `&&` and is not a marker.
 
-`&&` 后面紧跟 HTML 实体（`&&amp;`）时，实体优先，这两个 `&` 不算标记。
+When an HTML entity follows `&&` directly (`&&amp;`), the entity wins and the two `&` are not a marker.
 
-### 3.2 区域和上下文
+### 3.2 Regions and context
 
-一篇文章由三种区域组成：
+A note is made of three kinds of region:
 
-- **人的区域**：默认。这里 `&&` 生效，`@@` 原样显示。
-- **AI 区域**：AI 块，和行内 `&&…&&`。这里 `@@` 生效，`&&` 原样显示。
-- **带出处的引用**：`&&` 和 `@@` 都生效，用来标出引用时改动的字。
+- **Human regions**, the default. Here `&&` is a marker and `@@` shows as it is.
+- **AI regions**: AI blocks, and inline `&&…&&`. Here `@@` is a marker and `&&` shows as it is.
+- **Attributed quotes.** Both `&&` and `@@` are markers here, to mark the words changed in quoting.
 
-嵌套只有一层：
+Nesting goes one level deep:
 
-| 外层 | 生效的标记 | 内层 |
+| Outside | Markers in effect | Inside |
 |---|---|---|
-| 人的区域 | `&&` | 行内 AI |
-| 行内 AI | `@@` | 原创岛 |
-| AI 块 | `@@` | 原创岛 |
-| 引用 | `&&`、`@@` | 行内 AI（里面还可以有 `@@`）、原创岛 |
-| 原创岛 | 无 | — |
+| Human region | `&&` | Inline AI |
+| Inline AI | `@@` | Human island |
+| AI block | `@@` | Human island |
+| Quote | `&&`, `@@` | Inline AI (which can hold `@@`), human island |
+| Human island | none | — |
 
-### 3.3 配对
+### 3.3 Pairing
 
-- 行内标记不跨行。
-- 同一行里，同种标记从左到右两两配对，不看两边是什么字（不继承 CommonMark 的 flanking 规则，`说&&「我」&&是` 照样生效）。
-- 没闭合的标记按原样显示。
-- 两种标记交叉时（`&&甲@@乙&&丙@@`），后开的那一对按原样显示：这里 `&&甲@@乙&&` 是行内 AI，其中的 `@@` 原样显示。
+- Inline markers don't span lines.
+- On one line, markers of the same kind pair up from left to right, whatever characters sit on either side. CommonMark's flanking rules don't apply: `word&&"quote"&&word` still counts.
+- A marker without its pair shows as it is.
+- When the two kinds cross (`&&A@@B&&C@@`), the pair opened later shows as it is: here `&&A@@B&&` is inline AI, and the `@@` inside it shows as it is.
 
-### 3.4 AI 块
+### 3.4 AI blocks
 
 ```
 && Claude (claude-opus-5-5)
 
-块里的内容
+The block's content
 
 &&
 ```
 
-- **开头**：一行以 `&&` 开头，后面跟空白和署名。署名里不能出现 `&&`，所以 `&& 一句话 &&` 是行内，不是块。`&&一句话`（没有空白）也不是块的开头。
-- **结尾**：单独一行 `&&`。它**只当结尾**。
-- 块不嵌套。块里又遇到一个开头，就当上一块漏了结尾：上一块在这里结束，实现应提醒。
-- 没有开头的单独 `&&` 按原样显示，实现应提醒。
-- 开头一直没等到结尾（到文件末尾），这个开头按原样显示，实现应提醒。
-- 开头、结尾所在的行前后**必须空一行**。不空行，紧跟在表格下面的 `&&` 会被当成表格的一行。例外：紧贴 frontmatter 的开头，上面不用空行，下面仍要空一行。实现应提醒并能自动补空行。
-- 开头、结尾行最多缩进 3 个空格；在引用块、列表里不算。
+- **Opener:** a line that starts with `&&`, followed by whitespace and a signature. A signature can't contain `&&`, so `&& a sentence &&` is inline, not a block. `&&a sentence` (no whitespace) doesn't open a block either.
+- **Closer:** a line with only `&&`. It **only ever closes**.
+- Blocks don't nest. An opener inside a block means the previous block lost its closer: the previous block ends there, and the implementation should warn.
+- A lone `&&` with no opener shows as it is, and the implementation should warn.
+- An opener that never meets a closer before the end of the file shows as it is, and the implementation should warn.
+- The opener and closer lines **must have a blank line before and after**. Without one, a `&&` right below a table would be read as a row of the table. One exception: an opener right below the frontmatter needs no blank line above, though it still needs one below. The implementation should warn and be able to add the blank lines.
+- The opener and closer lines may be indented by at most 3 spaces. Inside a blockquote or a list they don't count.
 
-### 3.5 署名
+### 3.5 Signatures
 
-块署名写成 `显示名 (标识)`，两部分可以省一个，不能都省：
+A block's signature is written `Display name (ID)`. Either part may be left out, not both:
 
-| 署名 | 显示名 | 标识 |
+| Signature | Display name | ID |
 |---|---|---|
 | `&& Claude (claude-opus-5-5)` | Claude | claude-opus-5-5 |
-| `&& (gpt-5)` | （按标识显示家族名 GPT） | gpt-5 |
+| `&& (gpt-5)` | (the family name from the ID: GPT) | gpt-5 |
 | `&& AI` | AI | — |
-| `&& 助手（claude-sonnet-5-5）` | 助手 | claude-sonnet-5-5 |
+| `&& Assistant（claude-sonnet-5-5）` | Assistant | claude-sonnet-5-5 |
 
-- AI 的标识是模型 ID，照官方 API 的写法。
-- 全角括号也认。
-- 标识不用尖括号：Markdown 会把 `<claude-opus-5-5>` 当成 HTML 标签吞掉。
-- 整篇的作者继续用 frontmatter 的 `author`。
+- An AI's ID is its model ID, spelled as in the provider's API.
+- Full-width parentheses work too.
+- The ID takes no angle brackets: Markdown would swallow `<claude-opus-5-5>` as an HTML tag.
+- The author of the whole note is still the frontmatter's `author`.
 
-### 3.6 模型家族
+### 3.6 Model families
 
-家族从模型 ID 的前缀认，认不出时看显示名：
+The family comes from the prefix of the model ID, or from the display name when the ID doesn't tell:
 
-| 前缀 | 家族 |
+| Prefix | Family |
 |---|---|
 | `claude` | Claude |
-| `gpt`、`chatgpt`、`o1`、`o3`、`o4` | GPT |
+| `gpt`, `chatgpt`, `o1`, `o3`, `o4` | GPT |
 | `gemini` | Gemini |
 | `deepseek` | DeepSeek |
 | `grok` | Grok |
 | `llama` | Llama |
 | `muse` | Muse |
 | `qwen` | Qwen |
-| `mistral`、`mixtral` | Mistral |
-| `kimi`、`moonshot` | Kimi |
+| `mistral`, `mixtral` | Mistral |
+| `kimi`, `moonshot` | Kimi |
 | `glm` | GLM |
 
-`muse` 后面只能是结尾、`-` 或数字：`muse-spark-1.3` 是 Muse，`museum` 不是。
+`muse` must be followed by the end, `-` or a digit: `muse-spark-1.3` is Muse, `museum` is not.
 
-## 4. 引用和作者
+## 4. Quotes and authors
 
 ### 4.1 `[@key]`
 
-写法照 Pandoc 的引用语法。key 是一串不含空白和方括号的字符。
+The syntax follows Pandoc's citations. A key is a run of characters with no whitespace or square brackets.
 
-`[@key]` **紧跟在收尾符号后面**（中间最多一个空格）才算注明作者：
+`[@key]` names an author only **right after a closing mark** (at most one space between):
 
-- 收尾引号 `」` `』` `”` `"`：引号里的字归 key。往回找配对的开引号，只在同一行里找；`"` 不分左右，找同一行最近的那个。单引号不支持（和撇号分不开）。
-- 行内标记的结束符：`&&字&&[@key]` 注明这段 AI 文字的模型；`@@字@@[@key]` 注明这段人写的字是谁写的。
+- A closing quotation mark, `」` `』` `”` or `"`: the text inside the quotation marks belongs to `key`. The opening mark is searched for backwards on the same line only; `"` has no left or right, so the nearest one on the line is taken. Single quotation marks aren't supported, since they can't be told from apostrophes.
+- The end of an inline marker: `&&text&&[@key]` names the model of that AI text; `@@text@@[@key]` names the person who wrote those words.
 
-跟在别的字后面的 `[@key]` 是普通的 Pandoc 引用，不改变归属。后面紧跟 `(` 或 `:` 的不算（那是链接或链接定义）。
+A `[@key]` after anything else is an ordinary Pandoc citation and changes no authorship. One followed directly by `(` or `:` doesn't count (it is a link or a link definition).
 
-引号本身归外层；`[@key]` 是标记。
+The quotation marks themselves belong to the text around them; `[@key]` is a marker.
 
-### 4.2 引用块
+### 4.2 Blockquotes
 
-整段的引用用引用块，**最后一行**只写 `[@key]`：
+A quoted passage goes in a blockquote whose **last line** is only `[@key]`:
 
 ```
-> 第一行引用
-> 第二行引用
+> The first quoted line
+> The second quoted line
 > [@fakebook]
 ```
 
-整个引用块里的字都归 key，块里 `&&` `@@` 都生效。
+All the text in the blockquote belongs to `key`, and both `&&` and `@@` are markers inside it.
 
-### 4.3 署名簿与补充定义
+### 4.3 The author book and definitions
 
-`[@key]` 指向的作者，一行定义一个：
+Each author a `[@key]` points at is defined on a line of its own:
 
 ```
-- @key: 名字 (标识) · 种类 · #颜色
+- @key: Name (ID) · kind · #colour
 ```
 
-| 部分 | 写法 |
+| Part | How to write it |
 |---|---|
-| 名字 | 显示名，和块署名一样可以省，也可以只写标识 |
-| 标识 | 圆括号里：模型 ID、网址、ISBN……全角括号也认 |
-| 种类 | `人`、`AI`、`来源`（也认 `human`、`ai`、`source`）。不写时，标识认得出模型家族就是 AI，否则是人 |
-| 颜色 | `#rrggbb` 或 `#rgb`，可以不写 |
-| 分隔 | `·`（也认 `•`、`|`）；名字之后的部分顺序随意，每一项都可以省 |
+| Name | The display name. As in a block signature, it may be left out, leaving only the ID |
+| ID | In parentheses: a model ID, URL, ISBN… Full-width parentheses work too |
+| Kind | `human`, `AI` or `source` (also `人`, `来源`; any case). Without one, an ID with a known model family makes it AI, and anything else human |
+| Colour | `#rrggbb` or `#rgb`, optional |
+| Separator | `·` (also `•` or `\|`). After the name, the parts come in any order, and each may be left out |
 
-行首的 `- ` 可以省。种类的含义：`人` 有自己的颜色，没写颜色时由 key 算出一个固定的颜色；`AI` 用模型家族的颜色；`来源` 给不知道作者的出处（书、网页），调暗显示。
+The leading `- ` is optional. What the kinds mean: a `human` has a colour of their own, computed from the key when none is given; an `AI` takes the colour of its model family; a `source` is for a work whose author isn't known (a book, a web page), and is shown dimmed.
 
-**署名簿**是库里的一篇笔记，每个作者一行，其余内容（标题、说明）一律忽略；同一个 key 以第一次出现为准。署名簿同时是参考文献表。
+The **author book** is a note in the vault with one author per line. Everything else in it (headings, notes) is ignored, and when a key appears twice, the first wins. The author book doubles as a bibliography.
 
-单篇文件**末尾**也可以写同样的定义，文件单独发出去时也带着；和署名簿冲突时以文件自己的为准：
+A note can carry the same definitions **at its end**, so they travel with the file when it is sent on its own. Where they disagree with the author book, the note's own win:
 
 ```
 @opus: Claude (claude-opus-5-5) · AI
-@fakebook: 《一本不存在的书》 · 来源
+@fakebook: A Book That Does Not Exist · source
 ```
 
-定义不加方括号：`[@key]: …` 是 Markdown 的链接定义，会整行消失。key 找不到定义，照样算有出处的引用，只是没有专属颜色。
+Definitions take no square brackets: `[@key]: …` is a Markdown link definition, and the whole line would vanish. A key with no definition still makes an attributed quote, only without a colour of its own.
 
-## 5. 跳过的地方
+## 5. Skipped regions
 
-以下地方的 `&&` `@@` 都不是标记：
+`&&` and `@@` are not markers in these places:
 
-| 地方 | 说明 |
+| Place | Details |
 |---|---|
-| frontmatter | 文件开头 `---` 到下一个 `---` |
-| 代码块 | 围栏照 CommonMark 配对：至少 3 个 `` ` `` 或 `~`，结束围栏同种字符、不短于开头；可以缩进在列表里或待在引用块里 |
-| 行内代码 | 反引号按个数配对，只在同一行里配 |
-| 公式 | `$$…$$` 块；行内 `$…$` 照 Pandoc 规则：开头的 `$` 后面不能是空白，结尾的 `$` 前面不能是空白、后面不能紧跟数字；`\$` 是转义 |
-| Obsidian 注释 | `%%…%%`，可以跨行 |
-| 链接网址 | `[文字](网址)` 的网址部分、裸网址 `https://…` |
-| iA 标注块 | 文件末尾 `---` 后紧跟 `Annotations:` 的部分 |
+| Frontmatter | From the `---` that opens the file to the next `---` |
+| Code blocks | Fences pair as in CommonMark: at least 3 `` ` `` or `~`, closed by the same character, no fewer of them than opened. They may be indented in a list or sit in a blockquote |
+| Inline code | Backticks pair by count, on the same line only |
+| Math | `$$…$$` blocks. Inline `$…$` follows Pandoc: no whitespace after the opening `$`, none before the closing `$`, and no digit right after it. `\$` is an escape |
+| Obsidian comments | `%%…%%`, which may span lines |
+| Link URLs | The URL in `[text](URL)`, and bare URLs `https://…` |
+| iA annotation blocks | The part after a final `---` followed by `Annotations:` |
 
-跳过的地方不改变归属：AI 块里的代码整段算 AI，`&&$x^2$&&` 整条公式算 AI。
+Skipped regions don't change authorship: code in an AI block is AI-written as a whole, and so is the whole formula in `&&$x^2$&&`.
 
-**没闭合的代码围栏**会让后面整篇都变成代码，所有标记悄悄失效，实现应提醒。
+**An unclosed code fence** turns the rest of the note into code, and every marker after it silently stops working. The implementation should warn.
 
-**公式里夹着 `&&` 或 `@@`** 很可能是金额被当成了公式，实现应提醒，建议写成 `\$`。
+**`&&` or `@@` inside math** most likely means amounts of money were taken for a formula. The implementation should warn and suggest `\$`.
 
-## 6. 代码里的归属
+## 6. Authorship in code
 
-代码块默认不解析任何标记。要在代码内部精确到字，在 info string 里**声明**启用的标记：
+Code blocks parse no markers by default. To mark individual characters in code, **declare** the markers in the info string:
 
 ````
 ```ts @@
@@ -219,8 +221,8 @@ let count = @@0@@
 ```
 ````
 
-- 声明是语言名后面只由 `@` 或只由 `&` 组成、至少两个字符的词。两种可以一起声明：```` ```ts @@ &&& ````。
-- 声明写几个，块里就只有恰好这么长的连写算标记。代码里本来有 `&&`，就声明 `&&&`：
+- A declaration is a word after the language name made only of `@` or only of `&`, at least two characters long. Both kinds can be declared together: ```` ```ts @@ &&& ````.
+- Only runs exactly as long as the declaration count as markers in the block. If the code already uses `&&`, declare `&&&`:
 
   ````
   ```c &&&
@@ -228,27 +230,27 @@ let count = @@0@@
   ```
   ````
 
-- 上下文规则和正文一样：AI 块里的代码声明 `@@` 标原创岛；人的区域里的代码声明 `&&&` 标 AI。
-- 去标记时，按声明写一条正则即可。
+- The context rules are those of prose: in code inside an AI block, declare `@@` to mark human islands; in code in a human region, declare `&&&` to mark AI text.
+- To strip the markers, one regular expression per declaration is enough.
 
-## 7. 统计
+## 7. Counting
 
-原创、AI 生成、引用的字数按 Unicode 码位数，不算空白、标记、frontmatter、注释、补充定义、iA 标注块，以及代码围栏行和引用块的 `>` 前缀。
+Human, AI and quoted text are counted in Unicode code points, leaving out whitespace, markers, frontmatter, comments, definitions, iA annotation blocks, code fence lines, and the `>` of blockquotes.
 
-## 8. 读原文的程序
+## 8. Programs that read the source
 
-标记会把词隔开，按原文搜索时搜不到。宽松搜索在每两个字之间插一个「空隙」：
+Markers split words, so a search of the source misses them. A loose search puts a "gap" between every two characters:
 
 ```
 [@&*=~`\[\]]*
 ```
 
-比如「分页机制」写成 `分[@&*=~`\[\]]*页[@&*=~`\[\]]*机[@&*=~`\[\]]*制`。空隙只用字符类，不用嵌套量词，保证线性时间。
+So "word" becomes `` w[@&*=~`\[\]]*o[@&*=~`\[\]]*r[@&*=~`\[\]]*d ``. The gap is a character class with no nested quantifiers, so the search runs in linear time.
 
-## 9. 不采用的写法
+## 9. Rejected designs
 
-- 整篇默认作者（frontmatter 让整篇算 AI）
-- 零宽字符藏标记
-- 按字符位置记在文件末尾、用哈希校验
-- `++字++` 当引用标记
-- `&&[opus]…&&`、`[&opus]: …`
+- A default author for the whole note (frontmatter making the whole note AI)
+- Markers hidden in zero-width characters
+- Character positions recorded at the end of the file, checked by a hash
+- `++text++` as a quote marker
+- `&&[opus]…&&`, `[&opus]: …`

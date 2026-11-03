@@ -5,6 +5,9 @@
   "private": true,
   "type": "module",
   "main": "main.js",
+  "bin": {
+    "rakkan": "skills/rakkan/scripts/rakkan.mjs"
+  },
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "tsc --noEmit && node esbuild.config.mjs production",

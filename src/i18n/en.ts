@@ -42,6 +42,8 @@ export const en: Record<string, string> = {
   "不标注模型": "Don't name a model",
   "请先新建署名簿": "Create the author book first",
   "{n} 行含引用或代码，未作改动": "{n} lines contain quotes or code and were left unchanged",
+  "{n} 行含引用或代码，其中的改动未能标记": "{n} changed lines contain quotes or code, so their changes are not marked",
+  "{n} 行的改动在其他模型署名的 AI 块里，算作该模型所写": "{n} changed lines are in an AI block another model signed, so the changes count as that model's",
   "已标记 {n} 处改动": "Marked {n} changes",
   "已复制（已移除标记）": "Copied (markers removed)",
   "已新建 publish.css": "Created publish.css",
@@ -144,6 +146,14 @@ export const en: Record<string, string> = {
   "代码围栏未闭合：其后的署名标记全部失效": "The code fence is never closed: every marker after it is ignored",
   "AI 块缺少结尾 &&，按原样显示": "The AI block has no closing &&; shown as is",
   "&& 所在行的前后需各有一个空行": "The line holding && needs a blank line before and after it",
+
+  // lint (the rakkan command)
+  "{mark} 在这一行没有配对，按原样显示": "{mark} has no partner on this line, so it shows as is",
+  "AI 文字里的 {mark} 不是标记，按原样显示": "{mark} inside AI text is not a marker, so it shows as is",
+  "原创岛里的 {mark} 不是标记，按原样显示": "{mark} inside a human island is not a marker, so it shows as is",
+  "{mark} 只在 AI 文字和引用里标出人写的字，这里按原样显示": "{mark} marks human words only inside AI text and quotes, so here it shows as is",
+  "[@{key}] 没有定义：在笔记末尾加一行 @{key}: 名字 · 来源，或写进署名簿": "[@{key}] is not defined: add a line @{key}: Name · source at the end of the note, or to the author book",
+  "[@{key}] 没有定义，也不是认得出的模型 ID": "[@{key}] is not defined, and it is not a model ID Rakkan recognises",
 
   // author manager
   "{n} 位作者": "{n} authors",

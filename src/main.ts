@@ -1,8 +1,8 @@
 import { editorLivePreviewField, getLanguage, MarkdownView, MenuItem, normalizePath, Notice, Plugin, TFile, type Component, type Editor, type Menu } from "obsidian";
-import { EditorSelection } from "@codemirror/state";
+import { ChangeSet } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import { Parser, parseAuthor, pasteEdits, quoteText, setBookColor, type Author, type ParseResult } from "./core";
-import { parseField, pasteWithOwners, rakkanEditor, rangePayload, refreshEffect } from "./cm6/editor";
+import { diffChanges, Parser, parseAuthor, quoteText, setBookColor, signRevision, trimPaste, type Author, type ParseResult } from "./core";
+import { parseField, rakkanEditor, refreshEffect } from "./cm6/editor";
 import { STYLES, type StyleSettings } from "./cm6/resolve";
 import { processSection } from "./obsidian/reading";
 import { processWithoutLines } from "./obsidian/embeds";
@@ -367,6 +367,7 @@ export default class RakkanPlugin extends Plugin {
   /**
    * The selection is the original text, the clipboard its edited version: only
    * the words that changed are attributed to the AI (and the model, if chosen).
+   * The note is signed as `rakkan sign` signs an agent's revision.
    */
   private pasteEdits(view: EditorView) {
     const sel = view.state.selection.main;
@@ -401,15 +402,17 @@ export default class RakkanPlugin extends Plugin {
               new Notice(t("选择作者期间原文已改动，请重试"));
               return;
             }
-            const now = rangePayload(view.state.field(parseField), from, to);
-            const res = pasteEdits(now.plain, now.owners, text);
+            const doc = view.state.doc.toString();
+            const res = signRevision(doc, doc.slice(0, from) + trimPaste(original, text) + doc.slice(to), key || undefined);
             if (!res.changed) {
               new Notice(t("未发现改动"));
               return;
             }
-            view.dispatch({ selection: EditorSelection.range(from, to) });
-            pasteWithOwners(view, { plain: res.plain, owners: res.owners, ...(key ? { key } : {}) });
+            const changes = ChangeSet.of(diffChanges(doc, res.text), doc.length);
+            view.dispatch({ changes, selection: { anchor: changes.mapPos(to, 1) }, userEvent: "input.paste", scrollIntoView: true });
             new Notice(t("已标记 {n} 处改动", { n: res.changed }));
+            if (res.unmarked.length) new Notice(t("{n} 行含引用或代码，其中的改动未能标记", { n: res.unmarked.length }));
+            if (res.foreign.length) new Notice(t("{n} 行的改动在其他模型署名的 AI 块里，算作该模型所写", { n: res.foreign.length }));
           },
           t("不标注模型"),
         ).open();
