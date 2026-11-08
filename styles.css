@@ -434,3 +434,86 @@ body.rk-print-window.rk-print-preview > .print {
   padding: 12px 0;
   color: var(--text-muted);
 }
+
+/* Removing every marker from the vault, and restoring them */
+.rk-strip-modal .rk-strip-warning {
+  color: var(--text-error);
+  font-weight: var(--font-semibold);
+}
+.rk-strip-list {
+  max-height: 18em;
+  overflow-y: auto;
+  margin: 4px 0 12px;
+  padding: 4px 0;
+  font-size: var(--font-ui-small);
+}
+.rk-strip-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 2px 0;
+}
+.rk-strip-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rk-strip-count,
+.rk-strip-note {
+  color: var(--text-muted);
+}
+.rk-strip-count {
+  flex: 0 0 auto;
+}
+.rk-strip-check {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 8px 0;
+}
+.rk-strip-all {
+  font-weight: var(--font-semibold);
+  margin: 0;
+}
+.rk-strip-filter {
+  width: 100%;
+  margin: 4px 0 8px;
+}
+.rk-strip-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.rk-strip-folder-row {
+  font-weight: var(--font-semibold);
+}
+.rk-strip-folder-row .rk-strip-path {
+  cursor: pointer;
+}
+.rk-strip-toggle {
+  display: flex;
+  flex: 0 0 auto;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.rk-strip-toggle svg {
+  width: 14px;
+  height: 14px;
+}
+.rk-strip-items .rk-strip-row {
+  padding-left: 22px;
+}
+.rk-strip-group summary {
+  cursor: pointer;
+  margin: 6px 0;
+}
+.rk-strip-input {
+  width: 100%;
+}
+.rk-strip-modal button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

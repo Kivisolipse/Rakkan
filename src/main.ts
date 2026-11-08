@@ -18,6 +18,7 @@ import { AuthorsModal } from "./obsidian/authorsmodal";
 import { AuthorPickerModal, AuthorSuggest, createBook, loadBook } from "./obsidian/authors";
 import { exportPdf, PdfModal, previewPdf, type PdfOptions } from "./obsidian/pdf";
 import { exportNote, importIA, type ExportKind } from "./obsidian/export";
+import { RestoreArchiveModal, StripVaultModal } from "./obsidian/stripvault";
 import { publishCss, writePublishCss } from "./obsidian/publish";
 import { fixBlankLines, insertBlock, markSelection, pasteAsAI, stripSelection } from "./obsidian/commands";
 import { setLanguage, t } from "./i18n";
@@ -225,6 +226,11 @@ export default class RakkanPlugin extends Plugin {
       id: "write-publish-css",
       name: t("生成 Obsidian Publish 样式（publish.css）"),
       callback: () => void this.writePublishStyles(),
+    });
+    this.addCommand({
+      id: "restore-archive",
+      name: t("从署名存档恢复标记"),
+      callback: () => this.openRestoreArchive(),
     });
     this.addCommand({
       id: "import-ia",
@@ -471,6 +477,16 @@ export default class RakkanPlugin extends Plugin {
 
   async setAuthorColor(key: string, color: string | null) {
     await this.editBook((text) => setBookColor(text, key, color));
+  }
+
+  /** The dialog that removes every marker from every note, before the plugin is uninstalled. */
+  openStripVault() {
+    new StripVaultModal(this.app, (key) => this.allAuthors()[key]?.name).open();
+  }
+
+  /** Put back the markers the authorship archive holds. */
+  openRestoreArchive() {
+    new RestoreArchiveModal(this.app).open();
   }
 
   openAuthors() {
