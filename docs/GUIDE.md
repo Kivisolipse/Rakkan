@@ -42,6 +42,15 @@ A vault has one owner by default: unmarked human text is the owner's. Converting
 
 Author names travel both ways. On export, an author with a `[@key]` is written `&Name <@key>` or `*Name <@key>` (an ID starting with `@` is a Rakkan key, unlike a model ID). On the way back, the key comes from that ID, or else from the name (generic names such as `AI` or `Unknown` get no key), and the name and model ID go into a definition at the end of the note (`- @key: Name (model) · AI`), without repeating one that is already there. When a `*` range is already in corner brackets `「…」`, only `[@key]` is added; one with corner brackets inside that can't be separated stays plain text, and the conversion reports how many characters.
 
+## With Obsidian Web Clipper
+
+A page clipped with [Web Clipper](https://obsidian.md/clipper) has no markers, so Rakkan counts the whole article as your own writing. [clipper/](../clipper/) has two templates that sign the clip as it is saved:
+
+- **rakkan-clip.json** puts the article in a blockquote whose last line is `> [@domain]`, and adds a definition at the end of the note: `@domain: Title (URL) · source`. The whole article counts as quoted. A `|` or `·` in the title becomes `-`, so it isn't read as a separator in the definition.
+- **rakkan-clip-ai-summary.json** does the same and opens with an AI block holding a summary from the Interpreter, signed `&& {{model}} ({{modelId}})`: the model the Interpreter actually used. The model ID is only filled in once the Interpreter has run, so turn on **Automatically run** under Web Clipper settings → Interpreter, or run it before you save each clip.
+
+To import one: Web Clipper settings → Templates → Import, and pick the JSON file. Whatever you then write in the clipped note has no marks and counts as yours, as usual.
+
 ## Search (ignore formatting)
 
 Markers split words: a search of the source for "word" misses `wo@@rd@@`. **Search method** in the settings offers two ways:

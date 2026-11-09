@@ -43,6 +43,7 @@
 - **署名簿**：用一篇笔记列出所有作者，`- @key: 名字 (标识) · 人 / AI / 来源 · #颜色`；引用显示作者的颜色。
 - **忽略格式搜索**：在 Obsidian 的搜索栏、查找栏和 Omnisearch 中都能搜到被标记隔开的词。
 - **导出**：带颜色或纯文字的 PDF、去掉标记的笔记、Pandoc、Obsidian Publish，以及与 iA Writer 标注格式互转。
+- **Web Clipper 模板**：用 Obsidian Web Clipper 剪下的网页存成署好名的引用，可选附一段 AI 摘要，署上写它的模型。
 - **中文与英文界面**。
 
 各项功能的详细说明见 [docs/GUIDE.zh.md](docs/GUIDE.zh.md)。

@@ -43,6 +43,7 @@ Select text, right-click and choose **Rakkan → Mark as AI-generated**. What yo
 - **Author book.** One note lists every author: `- @key: Name (id) · human / AI / source · #colour`. Quotes take their author's colour.
 - **Search that ignores markers,** in Obsidian's search, the find bar and Omnisearch.
 - **Export** to PDF in colour or plain text, to a note without markers, to Pandoc, to Obsidian Publish, and to and from iA Writer's Markdown Annotations.
+- **Web Clipper templates**: pages clipped with Obsidian Web Clipper are saved as signed quotes, with an optional AI summary signed by the model that wrote it.
 - **English and Chinese** interface.
 
 A detailed guide is in [docs/GUIDE.md](docs/GUIDE.md).
