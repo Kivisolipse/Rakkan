@@ -9,7 +9,7 @@
 //   &&                            →  :::
 
 import { signatureFamily, signatureLabel } from "./signature";
-import { stripMarkers } from "./strip";
+import { stripMarkers, type Stripped } from "./strip";
 import type { Attr, Block, InlineSpan, ParseResult } from "./types";
 import { parse } from "./parse";
 
@@ -25,6 +25,14 @@ const CITE_LINE = /^[ \t]*(?:>[ \t]?)+\[@([^\]\s]+)\][ \t]*$/;
  * blockquote is the source of the quote, so it stays as `— name`.
  */
 export function exportPlain(text: string, opts: PlainOptions = {}): string {
+  return plainWithMap(text, opts).text;
+}
+
+/**
+ * `exportPlain`, and for each output character its offset in `text`, or -1
+ * for a character of a `— name` that replaced a `[@key]`.
+ */
+export function plainWithMap(text: string, opts: PlainOptions = {}): Stripped {
   const r = parse(text);
   const edits: Array<{ from: number; to: number; insert: string }> = [];
   for (const seg of r.segments) {
@@ -36,9 +44,21 @@ export function exportPlain(text: string, opts: PlainOptions = {}): string {
     if (!m || (r.lineContexts[line].pair !== "quote" && !r.claims.some((c) => c.cite.from === seg.from))) continue;
     edits.push({ from: seg.from, to: seg.to, insert: `— ${opts.nameOf?.(m[1]) ?? m[1]}` });
   }
-  let source = text;
-  for (const e of edits.reverse()) source = source.slice(0, e.from) + e.insert + source.slice(e.to);
-  return stripMarkers(edits.length ? parse(source) : r).text;
+  if (!edits.length) return stripMarkers(r);
+  edits.sort((a, b) => a.from - b.from);
+  let source = "";
+  const origin: number[] = [];
+  let at = 0;
+  for (const e of edits) {
+    source += text.slice(at, e.from) + e.insert;
+    for (let k = at; k < e.from; k++) origin.push(k);
+    for (let k = 0; k < e.insert.length; k++) origin.push(-1);
+    at = e.to;
+  }
+  source += text.slice(at);
+  for (let k = at; k < text.length; k++) origin.push(k);
+  const s = stripMarkers(parse(source));
+  return { text: s.text, map: s.map.map((k) => origin[k]) };
 }
 
 export interface PandocOptions {

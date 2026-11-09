@@ -476,6 +476,23 @@ export class RakkanSettingTab extends PluginSettingTab {
           ),
         ],
       },
+
+      {
+        type: "group",
+        heading: t("停用与卸载"),
+        items: [
+          row(
+            t("从整个库中移除标记"),
+            t("将库中的笔记改写为不含 Rakkan 语法的 Markdown，供停用插件前使用。标记位置另存于库根目录的 rakkan-authorship.json，之后可以恢复；移除后修改过的笔记无法恢复。仅卸载插件不会修改任何笔记。"),
+            (r) => r.addButton((b) => b.setButtonText(t("移除全部标记…")).setWarning().onClick(() => this.plugin.openStripVault())),
+          ),
+          row(
+            t("从署名存档恢复标记"),
+            t("按库根目录的 rakkan-authorship.json，为移除后未经修改的笔记恢复原有标记。"),
+            (r) => r.addButton((b) => b.setButtonText(t("恢复…")).onClick(() => this.plugin.openRestoreArchive())),
+          ),
+        ],
+      },
     ];
   }
 }

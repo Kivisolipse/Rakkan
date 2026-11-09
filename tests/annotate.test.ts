@@ -205,6 +205,13 @@ describe("typing in code blocks of an AI block", () => {
     expect(show(type(make(code("js", "x|")), "@"))).toBe(code("js", "x@|"));
   });
 
+  it("declares @@ beside &&&, and wraps text typed inside an idle &&& pair", () => {
+    const s = type(make(code("c &&&", "return &&&fall|back()&&&;")), "x");
+    expect(show(s)).toBe(code("c &&& @@", "return &&&fall@@x|@@back()&&&;"));
+    const t = type(make(code("c @@ &&&", "return &&&fall|back()&&&;")), "x");
+    expect(show(t)).toBe(code("c @@ &&&", "return &&&fall@@x|@@back()&&&;"));
+  });
+
   it("types inside an island without touching it", () => {
     const s = type(make(code("ts @@", "let @@a|c@@")), "b");
     expect(show(s)).toBe(code("ts @@", "let @@ab|c@@"));

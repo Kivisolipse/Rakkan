@@ -9,7 +9,7 @@ exports[`fixtures > sample.md 1`] = `
   "H:」，我深以为然。",
   "A:分页把地址空间切成固定大小的页，",
   "h:很好理解。",
-  "A:if (a && b) return &&&fallback()&&&;再引一句 "less is more"。",
+  "A:if (a && b) return fallback();再引一句 "less is more"。",
   "Q@fakebook:整段的引用用引用块。最后一行注明出处。",
   "H:预算约 $3.8 万，",
   "A:按汇率粗算",
@@ -19,11 +19,11 @@ exports[`fixtures > sample.md 1`] = `
 
 exports[`fixtures > sample.md 2`] = `
 {
-  "ai": 76,
+  "ai": 70,
   "aiByAuthor": {
     "@gpt": 7,
     "AI": 5,
-    "Claude": 64,
+    "Claude": 58,
   },
   "human": 50,
   "quote": 23,

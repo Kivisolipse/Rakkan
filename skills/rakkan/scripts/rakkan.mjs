@@ -518,7 +518,19 @@ function parseLine(text, ctx) {
       applyPairs(p.children, a);
     }
   };
-  applyPairs(pairTokens(zones.get(-1) ?? [], ctx.pair), ctx.base);
+  const top = zones.get(-1) ?? [];
+  const topPairs = pairTokens(top, ctx.pair);
+  applyPairs(topPairs, ctx.base);
+  if (!prose) {
+    const inPair = (t2) => topPairs.some((p) => t2.from >= p.open.from && t2.to <= p.close.to);
+    const idle = top.filter((t2) => !isActive(ctx.pair, t2.type) && !inPair(t2));
+    for (let i = 0; i + 1 < idle.length; i += 2) {
+      const [open, close] = [idle[i], idle[i + 1]];
+      setMark(open.from, open.to, "open", ctx.base);
+      setMark(close.from, close.to, "close", ctx.base);
+      result.spans.push({ from: open.from, to: close.to, contentFrom: open.to, contentTo: close.from, attr: ctx.base, type: "marker" });
+    }
+  }
   quotes.forEach((q, qi) => {
     if (mixed.has(qi)) {
       result.diagnostics.push({
@@ -2210,7 +2222,52 @@ var en = {
   "\u5E93\u4E2D\u7684\u4E00\u7BC7\u7B14\u8BB0\uFF0C\u6BCF\u884C\u4E00\u4F4D\u4F5C\u8005\uFF1A- @key: \u540D\u5B57 (\u6807\u8BC6) \xB7 \u79CD\u7C7B \xB7 #\u989C\u8272\u3002\u79CD\u7C7B\u4E3A \u4EBA\u3001AI \u6216 \u6765\u6E90\uFF0C\u989C\u8272\u53EF\u7701\u7565\u3002\u4FEE\u6539\u540E\u81EA\u52A8\u91CD\u65B0\u8BFB\u53D6\u3002": "A note in the vault, one author per line: - @key: Name (id) \xB7 kind \xB7 #color. The kind is human, AI or source; the colour is optional. It is re-read when you change it.",
   "\u65B0\u5EFA": "Create",
   "\u9ED8\u8BA4\u7F72\u540D": "Default signature",
-  "\u300C\u6807\u8BB0\u4E3A AI \u751F\u6210\u300D\u5C06\u6574\u6BB5\u8F6C\u4E3A AI \u5757\u65F6\u4F7F\u7528\u7684\u7F72\u540D\uFF0C\u4F8B\u5982 Claude (claude-opus-5-5)\u3002": "The signature \u201CMark as AI-generated\u201D uses when it turns a passage into an AI block, e.g. Claude (claude-opus-5-5)."
+  "\u300C\u6807\u8BB0\u4E3A AI \u751F\u6210\u300D\u5C06\u6574\u6BB5\u8F6C\u4E3A AI \u5757\u65F6\u4F7F\u7528\u7684\u7F72\u540D\uFF0C\u4F8B\u5982 Claude (claude-opus-5-5)\u3002": "The signature \u201CMark as AI-generated\u201D uses when it turns a passage into an AI block, e.g. Claude (claude-opus-5-5).",
+  // removing every marker from the vault, and the authorship archive
+  "\u505C\u7528\u4E0E\u5378\u8F7D": "Disable and uninstall",
+  "\u4ECE\u6574\u4E2A\u5E93\u4E2D\u79FB\u9664\u6807\u8BB0": "Remove markers from the entire vault",
+  "\u5C06\u5E93\u4E2D\u7684\u7B14\u8BB0\u6539\u5199\u4E3A\u4E0D\u542B Rakkan \u8BED\u6CD5\u7684 Markdown\uFF0C\u4F9B\u505C\u7528\u63D2\u4EF6\u524D\u4F7F\u7528\u3002\u6807\u8BB0\u4F4D\u7F6E\u53E6\u5B58\u4E8E\u5E93\u6839\u76EE\u5F55\u7684 rakkan-authorship.json\uFF0C\u4E4B\u540E\u53EF\u4EE5\u6062\u590D\uFF1B\u79FB\u9664\u540E\u4FEE\u6539\u8FC7\u7684\u7B14\u8BB0\u65E0\u6CD5\u6062\u590D\u3002\u4EC5\u5378\u8F7D\u63D2\u4EF6\u4E0D\u4F1A\u4FEE\u6539\u4EFB\u4F55\u7B14\u8BB0\u3002": "Rewrite the notes in the vault as Markdown without Rakkan syntax, for use before you stop using the plugin. Where the markers were is saved to rakkan-authorship.json at the root of the vault, so they can be restored later; a note changed after removal cannot be restored. Uninstalling the plugin alone changes no notes.",
+  "\u79FB\u9664\u5168\u90E8\u6807\u8BB0\u2026": "Remove all markers\u2026",
+  "\u4ECE\u7F72\u540D\u5B58\u6863\u6062\u590D\u6807\u8BB0": "Restore markers from the authorship archive",
+  "\u6309\u5E93\u6839\u76EE\u5F55\u7684 rakkan-authorship.json\uFF0C\u4E3A\u79FB\u9664\u540E\u672A\u7ECF\u4FEE\u6539\u7684\u7B14\u8BB0\u6062\u590D\u539F\u6709\u6807\u8BB0\u3002": "Restore the original markers, from rakkan-authorship.json at the root of the vault, to the notes not changed since they were removed.",
+  "\u6062\u590D\u2026": "Restore\u2026",
+  "\u6B63\u5728\u626B\u63CF\u5E93\u4E2D\u7684\u7B14\u8BB0\u2026": "Scanning the notes in the vault\u2026",
+  "\u5E93\u4E2D\u6CA1\u6709\u542B Rakkan \u6807\u8BB0\u7684\u7B14\u8BB0\u3002": "No note in the vault has Rakkan markers.",
+  "\u79FB\u9664\u540E\u4FEE\u6539\u8FC7\u7684\u7B14\u8BB0\uFF0C\u6807\u8BB0\u5C06\u6C38\u4E45\u4E22\u5931\u3002": "The markers of a note changed after removal are lost permanently.",
+  "\u4EE5\u4E0B {n} \u7BC7\u7B14\u8BB0\u542B\u6709 Rakkan \u6807\u8BB0\u3002\u52FE\u9009\u7684\u7B14\u8BB0\u5C06\u88AB\u6539\u5199\uFF1A\u5220\u9664\u5168\u90E8 && \u4E0E @@ \u6807\u8BB0\u3001AI \u5757\u7684\u5F00\u5408\u884C\u548C\u4EE3\u7801\u5757\u4E0A\u7684\u58F0\u660E\uFF0C\u5F15\u7528\u672B\u5C3E\u7684 [@key] \u6539\u4E3A\u300C\u2014 \u540D\u5B57\u300D\u3002\u5176\u4F59 Markdown \u4E0D\u53D8\u3002": "These {n} notes have Rakkan markers. The ones ticked will be rewritten: every && and @@ marker, every AI block fence and every code block declaration is removed, and the [@key] that ends a quote becomes \u201C\u2014 name\u201D. All other Markdown stays as it is.",
+  "\u6539\u5199\u524D\uFF0C\u5404\u7B14\u8BB0\u7684\u6807\u8BB0\u4F4D\u7F6E\u5C06\u5199\u5165\u5E93\u6839\u76EE\u5F55\u7684 {path}\uFF08\u4E0D\u542B\u6B63\u6587\uFF09\u3002\u4E4B\u540E\u53EF\u7528\u547D\u4EE4\u300C\u4ECE\u7F72\u540D\u5B58\u6863\u6062\u590D\u6807\u8BB0\u300D\u6062\u590D\uFF0C\u524D\u63D0\u662F\u7B14\u8BB0\u5728\u6B64\u671F\u95F4\u672A\u7ECF\u4FEE\u6539\u3002\u8BF7\u52FF\u5220\u9664\u8BE5\u6587\u4EF6\u3002": "Before that, where each note's markers are is written to {path} at the root of the vault (without the text of the notes). The command \u201CRestore markers from the authorship archive\u201D can put them back, provided the note has not been changed in the meantime. Do not delete that file.",
+  "\u5168\u9009": "Select all",
+  "\u6309\u8DEF\u5F84\u7B5B\u9009": "Filter by path",
+  "\u5E93\u6839\u76EE\u5F55": "Vault root",
+  "{n} / {m} \u7BC7": "{n} / {m}",
+  "\u5DF2\u9009 {n} / \u5171 {m} \u7BC7": "{n} of {m} selected",
+  "{n} \u5904": "{n} places",
+  "\u53E6\u6709 {n} \u7BC7\u7B14\u8BB0\u7684\u6807\u8BB0\u65E0\u6CD5\u5B8C\u6574\u8BB0\u5F55\uFF0C\u4E0D\u4F1A\u88AB\u4FEE\u6539\u3002": "The markers of {n} more notes cannot be recorded exactly; those notes will not be changed.",
+  "\u4EC5\u5378\u8F7D\u63D2\u4EF6\u4E0D\u4F1A\u4FEE\u6539\u4EFB\u4F55\u7B14\u8BB0\uFF0C\u6807\u8BB0\u5C06\u4EE5\u539F\u6587\u4FDD\u7559\uFF0C\u91CD\u65B0\u5B89\u88C5\u540E\u5373\u53EF\u6062\u590D\u663E\u793A\u3002": "Uninstalling the plugin alone changes no notes: the markers stay in the text as written and display again once the plugin is reinstalled.",
+  "\u6211\u786E\u8BA4\uFF1A\u79FB\u9664\u540E\u4FEE\u6539\u8FC7\u7684\u7B14\u8BB0\uFF0C\u7F72\u540D\u4FE1\u606F\u65E0\u6CD5\u6062\u590D\u3002": "I understand that the authorship of a note changed after removal cannot be restored.",
+  "\u6211\u786E\u8BA4\uFF1A\u5DF2\u5BF9\u672C\u5E93\u505A\u597D\u5907\u4EFD\u3002": "I confirm that this vault has been backed up.",
+  "\u8BF7\u8F93\u5165\u5E93\u540D\u79F0\u300C{name}\u300D\u4EE5\u786E\u8BA4\uFF1A": "Type the vault name \u201C{name}\u201D to confirm:",
+  "\u79FB\u9664 {n} \u7BC7\u7B14\u8BB0\u4E2D\u7684\u6807\u8BB0": "Remove markers from {n} notes",
+  "\u6B63\u5728\u5904\u7406 {i} / {n}\u2026": "Processing {i} / {n}\u2026",
+  "{path} \u65E0\u6CD5\u8BFB\u53D6\uFF0C\u672A\u4FEE\u6539\u4EFB\u4F55\u7B14\u8BB0\u3002\u8BF7\u5148\u79FB\u8D70\u6216\u4FEE\u590D\u8BE5\u6587\u4EF6\u3002": "{path} cannot be read; no note was changed. Move or repair that file first.",
+  "\u7F72\u540D\u5B58\u6863\u5199\u5165\u5931\u8D25\uFF0C\u672A\u4FEE\u6539\u4EFB\u4F55\u7B14\u8BB0\u3002": "The authorship archive could not be written; no note was changed.",
+  "\u5DF2\u79FB\u9664 {n} \u7BC7\u7B14\u8BB0\u4E2D\u7684\u6807\u8BB0\uFF0C\u7F72\u540D\u5B58\u6863\u4F4D\u4E8E {path}\u3002": "Removed markers from {n} notes. The authorship archive is at {path}.",
+  "\u5DF2\u79FB\u9664 {n} \u7BC7\u7B14\u8BB0\u4E2D\u7684\u6807\u8BB0\uFF0C\u7F72\u540D\u5B58\u6863\u4F4D\u4E8E {path}\u3002{m} \u7BC7\u672A\u4FEE\u6539\uFF08\u626B\u63CF\u540E\u88AB\u7F16\u8F91\u6216\u5199\u5165\u5931\u8D25\uFF09\uFF1A{paths}": "Removed markers from {n} notes. The authorship archive is at {path}. {m} notes were not changed (edited after the scan, or could not be written): {paths}",
+  "\u6B63\u5728\u8BFB\u53D6\u7F72\u540D\u5B58\u6863\u2026": "Reading the authorship archive\u2026",
+  "\u5E93\u6839\u76EE\u5F55\u6CA1\u6709\u7F72\u540D\u5B58\u6863\uFF08{path}\uFF09\u3002": "There is no authorship archive ({path}) at the root of the vault.",
+  "{path} \u65E0\u6CD5\u8BFB\u53D6\uFF1A\u683C\u5F0F\u4E0D\u7B26\u6216\u5DF2\u635F\u574F\u3002": "{path} cannot be read: it is not in the expected format, or it is damaged.",
+  "\u5B58\u6863\u4E2D\u5171\u6709 {n} \u7BC7\u7B14\u8BB0\u7684\u7F72\u540D\u4FE1\u606F\u3002": "The archive holds the authorship of {n} notes.",
+  "{path}\uFF08\u539F\u4E3A {old}\uFF09": "{path} (was {old})",
+  "\u53EF\u6062\u590D\uFF1A{n} \u7BC7": "Can be restored: {n}",
+  "\u79FB\u9664\u540E\u5DF2\u4FEE\u6539\uFF0C\u65E0\u6CD5\u6062\u590D\uFF1A{n} \u7BC7": "Changed since removal, cannot be restored: {n}",
+  "\u672A\u627E\u5230\u5BF9\u5E94\u7B14\u8BB0\uFF1A{n} \u7BC7": "No matching note: {n}",
+  "\u591A\u7BC7\u7B14\u8BB0\u5185\u5BB9\u76F8\u540C\uFF0C\u65E0\u6CD5\u786E\u5B9A\u5BF9\u5E94\u5173\u7CFB\uFF1A{n} \u7BC7": "Several notes have the same content, so the match is unclear: {n}",
+  "\u65E0\u6CD5\u6062\u590D\u7684\u6761\u76EE\u4FDD\u7559\u5728\u5B58\u6863\u4E2D\u3002": "Entries that cannot be restored stay in the archive.",
+  "\u6062\u590D {n} \u7BC7\u7B14\u8BB0\u7684\u6807\u8BB0": "Restore markers to {n} notes",
+  "\u5DF2\u6062\u590D {n} \u7BC7\u7B14\u8BB0\u7684\u6807\u8BB0": "Restored markers to {n} notes",
+  "{m} \u7BC7\u4ECD\u4FDD\u7559\u5728\u5B58\u6863\u4E2D": "{m} remain in the archive",
+  "\u7F72\u540D\u5B58\u6863\u5DF2\u5220\u9664": "the authorship archive has been deleted",
+  "\u7F72\u540D\u5B58\u6863\u672A\u80FD\u66F4\u65B0\uFF0C\u5176\u4E2D\u4ECD\u542B\u5DF2\u6062\u590D\u7684\u6761\u76EE": "the authorship archive could not be updated and still lists the restored notes"
 };
 
 // src/i18n.ts

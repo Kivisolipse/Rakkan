@@ -108,10 +108,13 @@ export function zoneAt(r: ParseResult, lineIdx: number, pos: number): Zone | nul
     // the block's declared marker.
     const quoted = ctx.base.kind === "quote" && ctx.pair === "quote";
     if (!quoted && (ctx.base.kind !== "ai" || ctx.pair !== "ai-block")) return null;
-    if (ctx.mode === "code") {
-      if (ctx.atLen < 2 || innermost(spansOnLine(r, lineIdx), pos)) return null;
+    if (ctx.mode === "code" && ctx.atLen >= 2) {
+      // Inside an island the text is already the user's; a run declared but idle here (`&&&`) changes nothing.
+      const span = innermost(spansOnLine(r, lineIdx), pos);
+      if (span && span.attr.kind !== "ai") return null;
       return { kind: "code" };
     }
+    // No `@@` declared yet, though `&&&` may be.
     return { kind: "codeDeclare", fenceLine: ctx.codeFence, len: declaredLength(r, ctx.codeFence) };
   }
   if (ctx.mode !== "prose") return null;
