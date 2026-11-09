@@ -509,8 +509,13 @@ const alone = (t: string) => md.render(/[\r\n]$/.test(t) ? t : t + "\n");
 /** The P6 property for one text, counting what it can't judge in `exempted`. */
 function showsAsAlone(t: string, k: string, exempted: Record<string, number>, forms: Record<string, number>) {
   const q = quoteText(t, k);
+  // Nothing to quote: nothing to compare.
+  if (!q) {
+    forms.empty = (forms.empty ?? 0) + 1;
+    return;
+  }
   // One line in the line: the quote renders as `「…」[@key]` around what the line renders as, a paragraph.
-  if (q && !q.startsWith(">")) {
+  if (!q.startsWith(">")) {
     forms.inline = (forms.inline ?? 0) + 1;
     const p = /^<p>([^]*)<\/p>\n$/.exec(alone(t));
     expect(p, "on its own, a paragraph").not.toBeNull();
@@ -518,14 +523,13 @@ function showsAsAlone(t: string, k: string, exempted: Record<string, number>, fo
     expect(md.render(quoteText(t, "k") + "\n")).toBe(`<p>「${p![1]}」[@k]</p>\n`);
     return;
   }
-  forms.blockquote = (forms.blockquote ?? 0) + 1;
   const why = exempt(t);
   if (why) {
     exempted[why] = (exempted[why] ?? 0) + 1;
     return;
   }
-  const got = shown(t, k);
-  if (got === null) return;
+  forms.blockquote = (forms.blockquote ?? 0) + 1;
+  const got = shown(t, k)!;
   // A raw HTML block loses its last line break inside a blockquote: whitespace only.
   const inner = /^<blockquote>\n([^]*)<\/blockquote>\n$/.exec(got)?.[1] ?? got;
   // Math left open runs to the end, as the closer the quote adds there says.
@@ -534,10 +538,17 @@ function showsAsAlone(t: string, k: string, exempted: Record<string, number>, fo
   expect(dom(inner)).toBe(dom(alone(ref)));
 }
 
+// Passages are compared about 64% of the time and single lines about 97% (20000 runs); the floors leave room
+// for the spread of a few hundred runs.
+const MIN_PASSAGES = 0.5;
+const MIN_LINE = 0.9;
+
 describe("P6 Markdown quotes", () => {
-  for (const [name, arb] of [
-    ["passages", A.markdown],
-    ["one line", A.markdownLine],
+  // The least share of texts actually compared, inline or as a blockquote: below it, the generator has
+  // drifted into what P6 can't judge, and a pass would say little.
+  for (const [name, arb, least] of [
+    ["passages", A.markdown, MIN_PASSAGES],
+    ["one line", A.markdownLine, MIN_LINE],
   ] as const)
     it(
       `show as the text shows on its own: ${name}`,
@@ -552,8 +563,18 @@ describe("P6 Markdown quotes", () => {
           }),
           A.params(),
         );
-        // Isolation wins over looks in these; how often, so a rise shows.
-        console.log(`P6 ${name}: of ${runs} texts`, forms, "not compared:", exempted);
+        // Isolation wins over looks in the exempted ones; how often, so a rise shows.
+        const n = (r: Record<string, number>, key: string) => r[key] ?? 0;
+        const skipped = Object.values(exempted).reduce((a, b) => a + b, 0);
+        const compared = n(forms, "inline") + n(forms, "blockquote");
+        console.log(
+          `P6 ${name}: ${runs} texts = ${n(forms, "inline")} compared inline + ${n(forms, "blockquote")} compared as a blockquote` +
+            ` (${n(forms, "closed")} of them with math closed) + ${skipped} not compared + ${n(forms, "empty")} empty;` +
+            ` compared ${((100 * compared) / runs).toFixed(1)}%. Not compared:`,
+          exempted,
+        );
+        expect(compared + skipped + n(forms, "empty"), "every text counted once").toBe(runs);
+        expect(compared / runs, "share of texts compared").toBeGreaterThanOrEqual(least);
       },
       TIMEOUT,
     );

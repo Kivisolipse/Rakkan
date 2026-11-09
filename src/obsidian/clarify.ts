@@ -3,7 +3,7 @@
 import { Notice, SuggestModal, type App } from "obsidian";
 import { EditorSelection } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import { clarifications, clarifyQuote, nextMixedQuote, quoteAt, type Clarification, type QuoteRef } from "../core";
+import { clarifyOptions, clarifyQuote, nextMixedQuote, quoteAt, type Clarification, type ClarifyRefusal } from "../core";
 import { parseField } from "../cm6/editor";
 import { t } from "../i18n";
 
@@ -21,10 +21,17 @@ function label(how: Clarification, name: string): string {
   }
 }
 
+/** Why the quote can't be clarified, as the notice says it. */
+function refusalText(why: ClarifyRefusal): string {
+  return why === "unpaired-marker"
+    ? t("引文旁有不成对的 && 或 @@ 标记，无法自动澄清，请先手动处理")
+    : t("这段引文的写法无法自动改写，请手动处理");
+}
+
 class ClarifyModal extends SuggestModal<Clarification> {
   constructor(
     app: App,
-    private q: QuoteRef,
+    private choices: Clarification[],
     private name: string,
     private onPick: (how: Clarification) => void,
   ) {
@@ -34,7 +41,7 @@ class ClarifyModal extends SuggestModal<Clarification> {
 
   getSuggestions(query: string): Clarification[] {
     const s = query.trim().toLowerCase();
-    return clarifications(this.q).filter((how) => label(how, this.name).toLowerCase().includes(s));
+    return this.choices.filter((how) => label(how, this.name).toLowerCase().includes(s));
   }
 
   renderSuggestion(how: Clarification, el: HTMLElement): void {
@@ -61,13 +68,19 @@ export function clarifyAtCursor(app: App, view: EditorView, deps: ClarifyDeps) {
     new Notice(t("光标不在引文上"));
     return;
   }
-  new ClarifyModal(app, q, deps.nameOf(q.key) ?? q.key, (how) => {
+  // Only the choices that can be written are offered.
+  const { choices, refusal } = clarifyOptions(r, q, { blockOpener: deps.blockOpener() });
+  if (refusal) {
+    new Notice(refusalText(refusal));
+    return;
+  }
+  new ClarifyModal(app, choices.map((c) => c.how), deps.nameOf(q.key) ?? q.key, (how) => {
     // The note may have changed while the menu was open: read it again.
     const now = view.state.field(parseField);
     const same = quoteAt(now, view.state.selection.main.head);
     const change = same && same.from === q.from && same.to === q.to ? clarifyQuote(now, same, how, { blockOpener: deps.blockOpener() }) : null;
     if (!change) {
-      new Notice(t("无法按所选方式改写这段引文"));
+      new Notice(t("引文在菜单打开期间已改动，请重新澄清"));
       return;
     }
     view.dispatch({ changes: change, userEvent: "input.rakkan", scrollIntoView: true });

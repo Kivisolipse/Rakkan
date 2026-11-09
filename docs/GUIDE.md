@@ -33,6 +33,8 @@ When the parts of one quote were written by different authors (the quotation mar
 - **Remove quote markup.** The quotation marks and the `[@key]` are removed, and each word keeps its author.
 - **Remove quote markup and mark as human-written.** As above, and the words become an explicit `@@…@@` human island. Offered only in AI text: in human-written text, the words are human-written already.
 
+The menu lists only the choices that can be written. A few quotes can't be rewritten automatically, for example one with an unpaired `&&` or `@@` next to it; then no menu opens, a notice gives the reason, and the quote is left to be fixed by hand.
+
 A cited blockquote is handled the same way: marked as an AI citation, it goes into an AI block; confirmed inside an AI block, it moves out of the block, which continues after it. The result is written back into the note as ordinary markers: it stays with the note and is not lost in another app. **Go to next unclarified quote** moves the cursor to the next flagged quote, and after the last one starts again from the top. In the status bar warnings, a flagged quote has a **Clarify quote** button.
 
 ## Export and conversion

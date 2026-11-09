@@ -20,7 +20,10 @@ export const en: Record<string, string> = {
   "移除引用标记并标为人写": "Remove quote markup and mark as human-written",
   "光标不在引文上": "The cursor is not on a quote",
   "没有待澄清的引文": "No unclarified quotes",
-  "无法按所选方式改写这段引文": "This quote cannot be rewritten as chosen",
+  "引文旁有不成对的 && 或 @@ 标记，无法自动澄清，请先手动处理":
+    "An unpaired && or @@ next to the quote prevents clarifying it; fix it by hand first",
+  "这段引文的写法无法自动改写，请手动处理": "This quote is written in a way that cannot be rewritten automatically; edit it by hand",
+  "引文在菜单打开期间已改动，请重新澄清": "The quote changed while the menu was open; clarify it again",
   "这段引文的各部分出自不同作者，目前按出处标记的书写者归属，可用「澄清引文」确定":
     "The parts of this quote come from different authors and are currently attributed by who wrote the source marker; Clarify quote can settle this",
   "粘贴修改（仅将改动处标记为模型所写）": "Paste revision (mark only the changed parts as the model's)",

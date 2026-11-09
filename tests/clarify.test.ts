@@ -1,7 +1,7 @@
 // Clarify quote: the person settles a quote, and the answer is written into the note as markers.
 
 import { describe, expect, it } from "vitest";
-import { clarifications, clarifyQuote, lint, nextMixedQuote, parse, quoteAt, signRevision, type Clarification } from "../src/core";
+import { clarifications, clarifyOptions, clarifyQuote, lint, nextMixedQuote, parse, quoteAt, quotesOf, signRevision, type Clarification } from "../src/core";
 import { owners } from "./helpers";
 
 /** `text` with the quote at `at` clarified as `how`. */
@@ -36,6 +36,29 @@ describe("a quote whose parts have different writers", () => {
     expect(second.from).toBeGreaterThan(first.from);
     expect(nextMixedQuote(r, second.from)!.from).toBe(first.from);
     expect(nextMixedQuote(parse("我引「原话」[@y]"), 0)).toBeNull();
+  });
+});
+
+/** The choices offered for the quote of `text` that is exactly `quote`, or why there are none. */
+function offered(text: string, quote: string) {
+  const r = parse(text);
+  const q = quotesOf(r).find((x) => text.slice(x.from, x.to) === quote);
+  if (!q) throw new Error("no such quote");
+  const o = clarifyOptions(r, q);
+  return o.refusal ?? o.choices.map((c) => c.how);
+}
+
+describe("the Clarify quote menu", () => {
+  it("offers only the choices that can be written", () => {
+    expect(offered("我引「原话」[@x]", "「原话」[@x]")).toEqual(["confirm", "ai", "remove"]);
+    expect(offered(MIXED, "「@@模型的话@@」[@x]")).toEqual(["confirm", "ai", "remove", "human"]);
+    // A claim right behind the quote's cite: as the model's citation the two would run together.
+    expect(offered("「原」[@x][@m]", "「原」[@x]")).toEqual(["confirm", "remove"]);
+  });
+
+  it("says why, when none can", () => {
+    expect(offered("@@“@@&&@@” [@x]模型@@&&", "“@@&&@@” [@x]")).toBe("unpaired-marker");
+    expect(offered("「「」[@x]话」[@m]", "「」[@x]")).toBe("other");
   });
 });
 

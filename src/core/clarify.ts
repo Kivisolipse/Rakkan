@@ -3,6 +3,7 @@
 // After any of the four, the quote has one author, or is no quote.
 
 import { parseLine } from "./inline";
+import { lint } from "./lint";
 import { blockLine, indexAt, parse } from "./parse";
 import { rewriteLineDetailed, writeLine, type Char, type Owner } from "./rewrite";
 import type { Attr, LineContext, ParseResult } from "./types";
@@ -102,6 +103,27 @@ export function clarifyQuote(r: ParseResult, q: QuoteRef, how: Clarification, op
   if (!c) return null;
   const after = r.text.slice(0, c.from) + c.insert + r.text.slice(c.to);
   return sameOutside(r.text, q, how, after) ? c : null;
+}
+
+/** Why no choice can be written: a lone marker by the quote, or something else in how it is written. */
+export type ClarifyRefusal = "unpaired-marker" | "other";
+
+/** Each choice for `q` that can be written, with its change; when there is none, why. */
+export function clarifyOptions(
+  r: ParseResult,
+  q: QuoteRef,
+  opts: ClarifyOptions = {},
+): { choices: Array<{ how: Clarification; change: Change }>; refusal?: ClarifyRefusal } {
+  const choices: Array<{ how: Clarification; change: Change }> = [];
+  for (const how of clarifications(q)) {
+    const change = clarifyQuote(r, q, how, opts);
+    if (change) choices.push({ how, change });
+  }
+  if (choices.length) return { choices };
+  const first = indexAt(r.lines, q.from);
+  const last = indexAt(r.lines, q.to, true);
+  const lone = lint(r).some((i) => (i.code === "unpaired-marker" || i.code === "inert-marker") && i.line >= first && i.line <= last);
+  return { choices, refusal: lone ? "unpaired-marker" : "other" };
 }
 
 /** Every visible character with its author; whitespace is nobody's. */
