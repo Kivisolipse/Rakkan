@@ -145,14 +145,7 @@ describe("open Q1: quoteText's default output does not escape", () => {
   });
 });
 
-describe("open Q4: escapes (SPEC §3.1)", () => {
-  // Today a backslash escapes the next character, whatever it is, as in CommonMark: `\\@@` is a backslash
-  // shown as such, then a live marker. Read word for word, §3.1 ("a pair right after a backslash") says escaped.
-  it("pins: \\\\@@ is a live marker", () => {
-    expect(owners(`> ${B}${B}@@x${B}${B}@@\n> [@k]`)).toEqual([`Q@k:${B}${B}`, `h:x${B}${B}`]);
-    expect(owners(`${B}${B}&&x${B}${B}&&`)).toEqual([`H:${B}${B}`, `A:x${B}${B}`]);
-  });
-
+describe("open Q4b: escapes in a signature (SPEC §3.4)", () => {
   // §3.4: a signature can't contain &&. Today an escaped `\&&` counts too, so the line is no opener.
   it("pins: \\&& in an opener line keeps it from opening an AI block", () => {
     expect(parse(`&& 签名 ${B}&&\n\n正文\n\n&&`).blocks).toHaveLength(0);

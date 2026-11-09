@@ -55,7 +55,7 @@ A line ends at CR LF, CR or LF, as in CommonMark. An implementation reads the li
 
 A marker in prose is **exactly two** of the same character: `&&` or `@@`. Runs of three or more, such as `&&&` or `@@@`, show as they are. A single `&` or `@` (an email address, an @mention) is not a marker.
 
-A pair right after a backslash is escaped: `\&&` shows as `&&` and is not a marker.
+A pair after an odd number of backslashes is escaped: `\&&` shows as `&&` and is not a marker. Backslashes pair up first, as in CommonMark: `\\` is one literal backslash, so in `\\&&` the backslash shows and the `&&` is a marker, while `\\\&&` shows as `\&&`.
 
 When an HTML entity follows `&&` directly (`&&amp;`), the entity wins and the two `&` are not a marker.
 

@@ -67,6 +67,21 @@ describe("Q3 (§7): what can't be seen isn't counted", () => {
   });
 });
 
+describe("Q4a (§3.1): a pair is escaped after an odd number of backslashes", () => {
+  const B = "\\";
+
+  it("reads \\\\ as one literal backslash, so the pair after it is a marker", () => {
+    expect(owners(`${B}${B}&&x${B}${B}&&`)).toEqual([`H:${B}${B}`, `A:x${B}${B}`]);
+    expect(owners(`> ${B}${B}@@x${B}${B}@@\n> [@k]`)).toEqual([`Q@k:${B}${B}`, `h:x${B}${B}`]);
+  });
+
+  it("escapes the pair after one or three backslashes", () => {
+    expect(owners(`${B}&&x&&`)).toEqual([`H:${B}&&x&&`]);
+    expect(owners(`${B}${B}${B}&&x&&`)).toEqual([`H:${B}${B}${B}&&x&&`]);
+    expect(owners(`> ${B}${B}${B}@@x@@\n> [@k]`)).toEqual([`Q@k:${B}${B}${B}@@x@@`]);
+  });
+});
+
 describe("Q2 (§3): a line ends at CR LF, CR or LF, as in CommonMark", () => {
   it("ends a line at a lone CR, as the editor does", () => {
     expect(owners("> a\rb\n> [@k]")).toEqual(owners("> a\nb\n> [@k]"));
