@@ -166,6 +166,33 @@ describe("Q5c: text that leaves a block with a name and no model ID keeps the na
   });
 });
 
+describe("Q8: an atom holding two authors' words", () => {
+  it("is split as the original's markers split it when the model did not change it", () => {
+    const s = signRevision("前&&!&&[t](u)\n", "前![t](u)\n", "m");
+    expect(s.text).toBe("前&&!&&[t](u)\n");
+    expect(s.unmarked).toEqual([]);
+    expect(owners(s.text)).toEqual(["H:前", "A:!", "H:[t](u)"]);
+  });
+
+  it("keeps the original line when the model also changed something in it (Q5b)", () => {
+    const o = "前&&!&&[t](u)\n";
+    const s = signRevision(o, "前![t2](u)\n", "m");
+    expect(s.text).toBe(o);
+    expect(s.rejected).toEqual([{ line: 0, count: 1, original: 0, revised: "前![t2](u)" }]);
+  });
+});
+
+describe("Q5b: a change sign can't mark keeps the original", () => {
+  it("puts back the line, and says what the revision had", () => {
+    const o = "前文\n\n「原话」[@k]\n\n后文\n";
+    const s = signRevision(o, "前文改\n\n「原话改」[@k]\n\n后文\n", "m");
+    expect(s.text).toBe("前文&&改&&[@m]\n\n「原话」[@k]\n\n后文\n");
+    expect(s.rejected).toEqual([{ line: 2, count: 1, original: 2, revised: "「原话改」[@k]" }]);
+    // 前文, 后文 and the quotation marks, which belong to the text around them (§4.1).
+    expect(parse(s.text).stats.human).toBe(6);
+  });
+});
+
 describe("Q2 (§3): a line ends at CR LF, CR or LF, as in CommonMark", () => {
   it("ends a line at a lone CR, as the editor does", () => {
     expect(owners("> a\rb\n> [@k]")).toEqual(owners("> a\nb\n> [@k]"));

@@ -71,12 +71,12 @@ describe("fixed: signRevision", () => {
     expect(signRevision(o, once, "m").text).toBe(once);
   });
 
-  it("reports a link the revision made out of two authors' words, the same way each time", () => {
+  it("signs a link the revision made out of two authors' words the same way each time", () => {
     // `&&!&&[t](u)` reads `![t](u)`, an image. The whole image went to the model, and signing that
-    // again gave it all to the person. Whose it should be is open (Q8).
+    // again gave it all to the person. Since Q8 it is split as the original's markers split it.
     const o = "&&!&&[t](u)\n";
     const once = signRevision(o, "![t](u)\n", "m");
-    expect(once.unmarked).toEqual([0]);
+    expect(once.text).toBe(o);
     expect(signRevision(o, once.text, "m").text).toBe(once.text);
   });
 
@@ -152,21 +152,10 @@ describe("open Q5: signRevision", () => {
     expect(s.text).toBe("前文。&&「新加的话」[@x]&&[@m]");
   });
 
-  // An inline AI span can't start or end next to a literal & (the runs merge, SPEC §3.1). sign then reports
-  // the line as unmarked and leaves it as revised, so the AI text that was kept counts as the person's.
+  // An inline AI span can't start or end next to a literal & (the runs merge, SPEC §3.1). sign then can't
+  // mark the line, and keeps the original there (Q5b): the model's change is not taken.
   it.fails("keeps the marks of AI text that starts with &", () => {
     const s = signRevision("&& & x&&\n", "甲  & x\n", "m");
-    expect(s.unmarked).toEqual([]);
-  });
-});
-
-describe("open Q8: a link or the like holding two authors' words", () => {
-  // sign never splits an atom. When the revision dropped the markers inside one (here `!` and the link
-  // became an image), it can't keep both owners: today the line is reported and left as revised, so the
-  // AI's `!` counts as the person's. Options: the larger share wins, the model's wins, or split it as before.
-  it.fails("keeps both authors of an atom the model did not change", () => {
-    const s = signRevision("&&!&&[t](u)\n", "![t](u)\n", "m");
-    expect(owners(s.text)).toEqual(["A:!", "H:[t](u)"]);
     expect(s.unmarked).toEqual([]);
   });
 });

@@ -19,7 +19,7 @@ export interface Signed {
   changed: number;
   /**
    * Lines (from 0) of the result where a change could not be marked: a quote, code without a declaration,
-   * or a link or the like holding kept text of two authors. What can't be marked is not taken: these lines
+   * or a change inside a link or the like that holds kept text of two authors. What can't be marked is not taken: these lines
    * keep what the original had, and `rejected` says what the revision had instead.
    */
   unmarked: number[];
@@ -139,28 +139,34 @@ export function signRevision(original: string, revised: string, key?: string): S
   // A line rewrite never splits a link, cite or the like: when part of one changed, all of it is
   // the model's. Say so here as well, or signing the result again would hand the change back to its
   // neighbours' owner.
-  // An atom the model did not change can still hold kept text of two authors, when the revision dropped
-  // the markers between them (`&&!&&[t](u)` read as the image `![t](u)`). It can't keep both without
-  // being split, so the line is reported.
+  // An atom can also hold kept text of two authors, when the revision dropped the markers between them
+  // (`&&!&&[t](u)` read as the image `![t](u)`). Such an atom is split as the original's markers split it
+  // (Q8), unless the model changed something in it too: then the line is reported, and keeps the original.
   const changedText = whos.get("A")!;
   const mixed = new Set<number>();
+  const split = new Map<number, Set<number>>(); // line → atoms (by start in the line's content) to split
   for (let n = 0; n < after.lines.length; n++) {
     const ctx = after.lineContexts[n];
     if (ctx.mode !== "prose") continue;
     const from = after.lines[n].from + ctx.prefix;
     for (const atom of atomicRanges(revised.slice(from, after.lines[n].to))) {
       let changed = false;
+      let two = false;
       let first: Who | undefined;
       for (let k = from + atom.from; k < from + atom.to; k++) {
         const w = want.get(k);
         if (!w) continue;
         if (w === changedText) changed = true;
         else if (/\S/.test(revised[k])) {
-          if (first && w !== first) mixed.add(n);
+          if (first && w !== first) two = true;
           first ??= w;
         }
       }
-      if (changed) for (let k = from + atom.from; k < from + atom.to; k++) if (want.has(k)) want.set(k, changedText);
+      if (two && changed) mixed.add(n);
+      else if (two) {
+        if (!split.has(n)) split.set(n, new Set());
+        split.get(n)!.add(atom.from);
+      } else if (changed) for (let k = from + atom.from; k < from + atom.to; k++) if (want.has(k)) want.set(k, changedText);
     }
   }
 
@@ -208,7 +214,7 @@ export function signRevision(original: string, revised: string, key?: string): S
       quoted || mixed.has(n)
       ? null
       : ctx.mode === "prose"
-        ? rewriteLineDetailed(line, ctx, edit(ctx.prefix))
+        ? rewriteLineDetailed(line, ctx, edit(ctx.prefix), split.get(n))
         : ctx.mode === "code" && ctx.pair !== "quote" // sign leaves quotes to the person (reported as unmarked)
           ? rewriteCodeLine(line, ctx, edit(0))
           : null;

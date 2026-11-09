@@ -194,7 +194,8 @@ export interface Rewritten {
   map: Map<number, number>;
 }
 
-export function rewriteLineDetailed(line: string, ctx: LineContext, edit: (chars: Char[]) => void): Rewritten | null {
+/** `split`: atoms, by where they start in the line's content, that keep each character's owner instead. */
+export function rewriteLineDetailed(line: string, ctx: LineContext, edit: (chars: Char[]) => void, split?: ReadonlySet<number>): Rewritten | null {
   if (ctx.mode !== "prose" || ctx.pair === "quote") return null;
   const prefix = line.slice(0, ctx.prefix);
   const content = line.slice(ctx.prefix);
@@ -208,6 +209,7 @@ export function rewriteLineDetailed(line: string, ctx: LineContext, edit: (chars
   // Never split links and friends: if part of an atom changed, the atom follows.
   const byAt = new Map(chars.map((c) => [c.at, c] as const));
   for (const a of atomicRanges(content)) {
+    if (split?.has(a.from)) continue;
     let changed: Char | undefined;
     for (let k = a.from; k < a.to; k++) {
       const c = byAt.get(k);
