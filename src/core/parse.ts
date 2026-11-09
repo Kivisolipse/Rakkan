@@ -78,15 +78,12 @@ function blockLine(line: string): { type: "open"; sig: string } | { type: "close
   return { type: "open", sig: rest.trim() };
 }
 
+/** What isn't counted (SPEC \u00a77): whitespace, and characters that show nothing (a BOM, zero-width spaces, joiners). */
+export const UNCOUNTED = /^[\p{White_Space}\p{Default_Ignorable_Code_Point}]$/u;
+
 function codePoints(s: string, from: number, to: number): number {
   let count = 0;
-  for (let i = from; i < to; i++) {
-    const code = s.charCodeAt(i);
-    if (code >= 0xdc00 && code <= 0xdfff) continue; // low surrogate
-    const c = s[i];
-    if (c === " " || c === "\t" || c === "\u3000" || c === "\r" || c === "\n") continue;
-    count++;
-  }
+  for (const c of s.slice(from, to)) if (!UNCOUNTED.test(c)) count++;
   return count;
 }
 

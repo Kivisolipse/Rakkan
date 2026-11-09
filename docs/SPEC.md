@@ -241,6 +241,8 @@ let count = @@0@@
 
 Human, AI and quoted text are counted in Unicode code points, leaving out whitespace, markers, frontmatter, comments, definitions, iA annotation blocks, code fence lines, the `>` of blockquotes, and line syntax.
 
+**Whitespace** is every character with the Unicode property White_Space (no-break spaces, U+2028, U+0085 included). Characters with the property Default_Ignorable_Code_Point (a byte order mark, zero-width spaces and joiners, variation selectors, soft hyphens) aren't counted either: what can't be seen isn't written.
+
 **Line syntax** is Markdown that doesn't show as text once rendered: the leader of a heading, list item, task or footnote (`## `, `- `, `1. `, `- [x] `, `[^1]: `), and in a line that starts with `|`, its pipes, or all of it for a delimiter row (`|---|:-:|`). It belongs to no one.
 
 **Known limitation:** a task's box is line syntax, so who ticked or unticked it isn't recorded. An implementation that signs a revision reports the tasks the model ticked or unticked.

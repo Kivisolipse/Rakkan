@@ -47,6 +47,26 @@ describe("§7 known limitation: who ticks a task is not recorded, so sign report
   });
 });
 
+describe("Q3 (§7): what can't be seen isn't counted", () => {
+  it.each([
+    ["no-break space", " "],
+    ["line separator", " "],
+    ["next line", "\u0085"],
+    ["ideographic space", "　"],
+    ["byte order mark", "﻿"],
+    ["zero-width space", "​"],
+    ["zero-width joiner", "‍"],
+    ["variation selector", "️"],
+    ["soft hyphen", "­"],
+  ])("leaves out a %s", (_name, c) => {
+    expect(parse(`a${c}b`).stats.human).toBe(2);
+  });
+
+  it("counts an emoji joined from three as three", () => {
+    expect(parse("\u{1f468}‍\u{1f469}‍\u{1f467}").stats.human).toBe(3);
+  });
+});
+
 describe("Q2 (§3): a line ends at CR LF, CR or LF, as in CommonMark", () => {
   it("ends a line at a lone CR, as the editor does", () => {
     expect(owners("> a\rb\n> [@k]")).toEqual(owners("> a\nb\n> [@k]"));

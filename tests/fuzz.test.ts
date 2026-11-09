@@ -15,7 +15,8 @@ const SLOW_MS = 200;
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-const WS = /\s/u;
+/** Not counted, so no one's (SPEC §7): Unicode whitespace and default-ignorable characters. */
+const WS = /[\p{White_Space}\p{Default_Ignorable_Code_Point}]/u;
 
 function segAt(r: ParseResult, pos: number): Segment | undefined {
   const i = indexAt(r.segments, pos);
@@ -30,12 +31,7 @@ const describeAt = (r: ParseResult, pos: number) => {
 /** The counting rule of the implementation, used to check that stats agree with segments. */
 function countLikeParser(text: string, from: number, to: number): number {
   let n = 0;
-  for (let i = from; i < to; i++) {
-    const code = text.charCodeAt(i);
-    if (code >= 0xdc00 && code <= 0xdfff) continue;
-    if (" \t　\r\n".includes(text[i])) continue;
-    n++;
-  }
+  for (const c of text.slice(from, to)) if (!WS.test(c)) n++;
   return n;
 }
 

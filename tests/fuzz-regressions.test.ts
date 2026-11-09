@@ -145,12 +145,6 @@ describe("open Q1: quoteText's default output does not escape", () => {
   });
 });
 
-describe("open Q3: SPEC §7 says whitespace is not counted", () => {
-  it.fails("leaves out no-break spaces, U+2028 and U+0085 as well", () => {
-    for (const ws of [" ", " ", "\u0085"]) expect(parse(`a${ws}b`).stats.human).toBe(2);
-  });
-});
-
 describe("open Q4: escapes (SPEC §3.1)", () => {
   // Today a backslash escapes the next character, whatever it is, as in CommonMark: `\\@@` is a backslash
   // shown as such, then a live marker. Read word for word, §3.1 ("a pair right after a backslash") says escaped.
