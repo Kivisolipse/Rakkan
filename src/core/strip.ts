@@ -2,7 +2,7 @@ import type { ParseResult } from "./types";
 
 export interface Stripped {
   text: string;
-  /** map[i] = offset in the source of output character i. */
+  /** map[i] = offset in the source of output character i; -1 when it is not from the source (see plainWithMap). */
   map: number[];
 }
 

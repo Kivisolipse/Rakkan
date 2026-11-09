@@ -106,10 +106,13 @@ export function zoneAt(r: ParseResult, lineIdx: number, pos: number): Zone | nul
   if (ctx.codeFence !== undefined) {
     // Code inside an AI block: the typed text is the user's, written with the block's declared marker.
     if (ctx.base.kind !== "ai" || ctx.pair !== "ai-block") return null;
-    if (ctx.mode === "code") {
-      if (ctx.atLen < 2 || innermost(spansOnLine(r, lineIdx), pos)) return null;
+    if (ctx.mode === "code" && ctx.atLen >= 2) {
+      // Inside an island the text is already the user's; a run declared but idle here (`&&&`) changes nothing.
+      const span = innermost(spansOnLine(r, lineIdx), pos);
+      if (span && span.attr.kind !== "ai") return null;
       return { kind: "code" };
     }
+    // No `@@` declared yet, though `&&&` may be.
     return { kind: "codeDeclare", fenceLine: ctx.codeFence, len: declaredLength(r, ctx.codeFence) };
   }
   if (ctx.mode !== "prose") return null;

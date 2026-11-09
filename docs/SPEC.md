@@ -231,6 +231,7 @@ let count = @@0@@
   ````
 
 - The context rules are those of prose: in code inside an AI block, declare `@@` to mark human islands; in code in a human region, declare `&&&` to mark AI text.
+- A declared run is never shown as code. Where it has nothing to mark (`&&&` in an AI block, `@@` in a human region, as after a code block moves into or out of an AI block), it still pairs, is hidden, and is removed when copying or stripping; it just changes no owner. Inside a human island, `&&&` stays as written, with a warning.
 - To strip the markers, one regular expression per declaration is enough.
 
 ## 7. Counting
@@ -246,6 +247,28 @@ Markers split words, so a search of the source misses them. A loose search puts 
 ```
 
 So "word" becomes `` w[@&*=~`\[\]]*o[@&*=~`\[\]]*r[@&*=~`\[\]]*d ``. The gap is a character class with no nested quantifiers, so the search runs in linear time.
+
+### 8.1 The authorship archive
+
+Removing every marker from a vault (Settings → Disable and uninstall) first writes `rakkan-authorship.json` at the root of the vault. It keeps none of the text of the notes, only what was removed from each:
+
+```json
+{
+  "format": "rakkan-authorship",
+  "version": 1,
+  "about": "…",
+  "notes": [
+    {"path":"Note.md","sha256":"…","edits":[[4,0,"&&"],[8,0,"&&"]]}
+  ]
+}
+```
+
+- `sha256` is the hash of the note without markers, line breaks written as `
+`.
+- An edit `[at, length, text]` replaces `length` characters at `at` with `text`. Offsets are UTF-16 code units in the note without markers. Applied from the last edit to the first, they give back the note as it was (line breaks as `
+`). The example is `人写的，&&模型补的&&，又是人。`.
+- A note is restored only while its hash still matches: once it has changed, there is no telling where its markers would go. When no note is at the path any more, the one note with that hash is taken instead; when several share it, none is.
+- The newest entry for a note wins; entries that could not be restored stay in the file.
 
 ## 9. Rejected designs
 

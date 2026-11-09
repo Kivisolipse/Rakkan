@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { familyOf, parse, signatureFamily } from "../src/core";
+import { familyOf, parse, signatureFamily, stripMarkers } from "../src/core";
 import { codes, marks, owners } from "./helpers";
 
 describe("inline markers", () => {
@@ -216,6 +216,20 @@ describe("skipped regions", () => {
       "A:fallback()",
       "H:;",
     ]);
+  });
+
+  it("hides declared runs that have nothing to mark, without changing owners", () => {
+    // `&&&` in an AI block, `@@` in human text: still markers, as the declaration says.
+    const ai = "&& Claude\n\n```c &&&\nif (a && b) return &&&fallback()&&&;\n```\n\n&&";
+    expect(owners(ai)).toEqual(["A:if (a && b) return fallback();"]);
+    expect(stripMarkers(parse(ai)).text).toBe("```c\nif (a && b) return fallback();\n```\n\n");
+    expect(owners("```ts @@\nlet a = @@0@@\n```")).toEqual(["H:let a = 0"]);
+  });
+
+  it("keeps idle runs literal inside an island, and a lone one too", () => {
+    const src = "&& C\n\n```ts @@ &&&\nx @@a &&&b&&& c@@ &&&d @@e@@ f&&& &&&g\n```\n\n&&";
+    expect(stripMarkers(parse(src)).text).toBe("```ts\nx a &&&b&&& c d e f &&&g\n```\n\n");
+    expect(owners(src)).toEqual(["A:x ", "h:a &&&b&&& c", "A: d ", "h:e", "A: f &&&g"]);
   });
 
   it("skips inline math and warns when it swallows markers", () => {
