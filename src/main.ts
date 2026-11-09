@@ -20,6 +20,7 @@ import { exportPdf, PdfModal, previewPdf, type PdfOptions } from "./obsidian/pdf
 import { exportNote, importIA, type ExportKind } from "./obsidian/export";
 import { publishCss, writePublishCss } from "./obsidian/publish";
 import { fixBlankLines, insertBlock, markSelection, pasteAsAI, stripSelection } from "./obsidian/commands";
+import { clarifyAtCursor, gotoNextMixedQuote } from "./obsidian/clarify";
 import { setLanguage, t } from "./i18n";
 
 const cmOf = (editor: Editor) => (editor as unknown as { cm?: EditorView }).cm ?? null;
@@ -170,6 +171,16 @@ export default class RakkanPlugin extends Plugin {
       editorCallback: (editor) => this.pasteAsQuote(editor),
     });
     this.addCommand({
+      id: "clarify-quote",
+      name: t("澄清引文"),
+      editorCallback: withView((view) => this.clarifyQuote(view)),
+    });
+    this.addCommand({
+      id: "next-unclarified-quote",
+      name: t("跳到下一处待澄清的引文"),
+      editorCallback: withView((view) => gotoNextMixedQuote(view)),
+    });
+    this.addCommand({
       id: "paste-edits",
       name: t("粘贴修改（仅将改动处标记为模型所写）"),
       editorCallback: (editor) => {
@@ -278,6 +289,13 @@ export default class RakkanPlugin extends Plugin {
     if (skipped) new Notice(t("{n} 行含引用或代码，未作改动", { n: skipped }));
   }
 
+  private clarifyQuote(view: EditorView) {
+    clarifyAtCursor(this.app, view, {
+      nameOf: (key) => this.allAuthors()[key]?.name,
+      blockOpener: () => this.settings.defaultSignature,
+    });
+  }
+
   private async pasteAsAIFromClipboard(view: EditorView) {
     try {
       const text = await navigator.clipboard.readText();
@@ -346,6 +364,7 @@ export default class RakkanPlugin extends Plugin {
     entries.push(
       { title: t("粘贴为 AI 生成"), icon: "clipboard-paste", run: () => void this.pasteAsAIFromClipboard(view) },
       { title: t("粘贴为引用"), icon: "quote", run: () => this.pasteAsQuote(editor) },
+      { title: t("澄清引文"), icon: "message-square-quote", run: () => this.clarifyQuote(view) },
       { title: t("插入 AI 块"), icon: "square-plus", run: () => insertBlock(view, this.settings.defaultSignature) },
       { title: t("导出为 PDF…"), icon: "file-output", run: () => { const f = this.app.workspace.getActiveFile(); if (f) this.openPdfExport(f); } },
     );

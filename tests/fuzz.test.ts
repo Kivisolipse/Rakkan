@@ -6,7 +6,7 @@
 import fc from "fast-check";
 import MarkdownIt from "markdown-it";
 import { describe, expect, it } from "vitest";
-import { atomicRanges, exportPlain, parse, Parser, keyFromName, quoteText, signRevision, stripMarkers, type ParseResult, type Segment } from "../src/core";
+import { atomicRanges, clarifications, clarifyQuote, exportPlain, parse, Parser, keyFromName, quotesOf, quoteText, signRevision, stripMarkers, type ParseResult, type Segment } from "../src/core";
 import { scanInline } from "../src/core/inline";
 import { indexAt } from "../src/core/parse";
 import { quoteMarkdown } from "../src/core/quote";
@@ -636,3 +636,109 @@ describe("P5 signRevision", () => {
     TIMEOUT,
   );
 });
+
+// ── P5: clarifying a quote ──────────────────────────────────────────────
+
+/** Every visible character with its author: the letter, kind, key and whether marked explicitly. A backslash
+ * that keeps a pair of markers from pairing renders as nothing. */
+function visibleAuthors(r: ParseResult, from: number, to: number) {
+  const out: Array<{ ch: string; kind: string; key?: string; explicit: boolean; at: number }> = [];
+  for (const s of r.segments) {
+    if (s.role !== "text" || s.to <= from || s.from >= to) continue;
+    for (let k = Math.max(s.from, from); k < Math.min(s.to, to); k++) {
+      if (r.text[k] === "\\" && /^(&&|@@)/.test(r.text.slice(k + 1))) continue;
+      out.push({ ch: r.text[k], kind: s.attr.kind, key: s.attr.key, explicit: s.attr.explicit, at: k });
+    }
+  }
+  return out;
+}
+// Whitespace may move outside markers: it is nobody's.
+const sig = (xs: ReturnType<typeof visibleAuthors>) => xs.map((x) => (/\s/.test(x.ch) ? x.ch : `${x.ch}${x.kind}${x.key ?? ""}${x.explicit ? "!" : ""}`)).join("|");
+
+describe("P5 Clarify quote", () => {
+  it(
+    "changes only the quote; only d makes words human, and as an explicit island",
+    () => {
+      let done = 0;
+      let refused = 0;
+      fc.assert(
+        fc.property(A.quoteNote, fc.nat(), fc.nat(), (text, n, m) => {
+          const r = parse(text);
+          const qs = quotesOf(r);
+          if (!qs.length) return;
+          const q = qs[n % qs.length];
+          const choices = clarifications(q);
+          const how = choices[m % choices.length];
+          const c = clarifyQuote(r, q, how);
+          if (!c) {
+            refused++;
+            return;
+          }
+          done++;
+          const next = text.slice(0, c.from) + c.insert + text.slice(c.to);
+          const after = parse(next);
+
+          // Outside the quote, every word keeps its author.
+          const before = sig(visibleAuthors(r, 0, q.from));
+          const behind = sig(visibleAuthors(r, q.to, text.length));
+          const all = visibleAuthors(after, 0, next.length);
+          const all_ = sig(all);
+          if (!all_.startsWith(before)) throw new Error(`before the quote: ${JSON.stringify(next)}`);
+          if (!all_.endsWith(behind)) throw new Error(`after the quote: ${JSON.stringify(next)}`);
+          const nb = visibleAuthors(r, 0, q.from).length;
+          const na = visibleAuthors(r, q.to, text.length).length;
+          const middle = all.slice(nb, all.length - na);
+
+          // The quote's words, quotation marks left out. Its marks and the space before `[@key]` are the text
+          // around it.
+          const words = visibleAuthors(r, q.kind === "inline" ? q.from + 1 : q.from, q.close);
+          const MARKS = /["「」『』“”]/;
+          switch (how) {
+            case "confirm":
+              for (const x of middle) if (!(x.kind === "quote" && x.key === q.key) && !((MARKS.test(x.ch) || /\s/.test(x.ch)) && x.kind === "human")) throw new Error(`not the source's: ${JSON.stringify(next)}`);
+              break;
+            case "ai":
+              for (const x of middle) if (x.kind !== "ai") throw new Error(`not the model's: ${JSON.stringify(next)}`);
+              break;
+            case "remove":
+            case "human": {
+              // Whitespace may move outside markers, or out of a line's indent: it is nobody's.
+              const ink = (xs: typeof words) => xs.filter((x) => !/\s/.test(x.ch));
+              words.splice(0, words.length, ...ink(words));
+              const shown = ink(middle);
+              middle.splice(0, middle.length, ...shown);
+              const at = alignWords(middle.map((x) => x.ch).join(""), words.map((x) => x.ch).join(""));
+              if (!at) throw new Error(`the words changed: ${JSON.stringify(next)}`);
+              words.forEach((w, i) => {
+                const x = middle[at[i]];
+                if (how === "human") {
+                  if (x.kind !== "human" || !x.explicit) throw new Error(`not an explicit island: ${JSON.stringify(next)}`);
+                } else if (x.kind === "quote" || (w.kind !== "quote" && (x.kind !== w.kind || (x.kind === "ai" && x.key !== w.key)))) {
+                  throw new Error(`a word changed author: ${JSON.stringify(next)}`);
+                }
+              });
+              break;
+            }
+          }
+          // Signed again with nothing changed, the note stays as it is.
+          expect(signRevision(next, next, MODEL).text).toBe(next);
+        }),
+        A.params(),
+      );
+      console.log(`P5 Clarify quote: ${done} clarified, ${refused} refused`);
+    },
+    TIMEOUT,
+  );
+});
+
+/** Where each character of `want` is in `got`, which may add a backslash before `&&` or `@@`. */
+function alignWords(got: string, want: string): number[] | null {
+  const out: number[] = [];
+  let g = 0;
+  for (let i = 0; i < want.length; i++, g++) {
+    if (got[g] !== want[i] && got[g] === "\\" && /^(&&|@@)/.test(got.slice(g + 1))) g++;
+    if (got[g] !== want[i]) return null;
+    out.push(g);
+  }
+  return g === got.length ? out : null;
+}

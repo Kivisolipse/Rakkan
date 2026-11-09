@@ -317,6 +317,33 @@ export function rewriteLineDetailed(line: string, ctx: LineContext, edit: (chars
   return null;
 }
 
+/**
+ * Characters with their owners written out as a line in `ctx`, after `prefix`, with the fewest markers;
+ * null when no way of writing them reads back with the same owners.
+ */
+export function writeLine(prefix: string, given: ReadonlyArray<{ ch: string; owner: Owner; key?: string }>, ctx: LineContext): string | null {
+  const chars: Char[] = given.map((c, at) => ({ ch: c.ch, owner: c.owner, ...(c.key ? { key: c.key } : {}), at, orig: c.owner + (c.key ?? "") }));
+  const content = chars.map((c) => c.ch).join("");
+  const baseOwner: Owner = ctx.pair === "ai-block" ? "ai" : "human";
+  keepSyntaxOutside(chars, content, baseOwner);
+  joinWhitespace(chars, baseOwner);
+  const want = signature(chars);
+  const lineCtx = { ...ctx, prefix: 0 };
+  for (const [escape, spacesInside] of [
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true],
+  ]) {
+    const out = serialize(chars, baseOwner, escape, undefined, spacesInside);
+    const check = ownersOf(out, lineCtx, false, true);
+    if (!check) continue;
+    const visible = escape ? check.filter((c) => c.fixed || !(c.ch === "\\" && /[&@]/.test(out[c.at + 1] ?? ""))) : check;
+    if (signature(visible) === want) return prefix + out;
+  }
+  return null;
+}
+
 /** Smallest single replacement turning `a` into `b`. */
 export function minimalChange(a: string, b: string): { from: number; to: number; insert: string } | null {
   if (a === b) return null;

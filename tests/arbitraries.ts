@@ -131,3 +131,25 @@ export const KNOWN_QUOTES: Array<[string, string]> = [
   ["读数 %% 开始", "heater"],
   ["结束 %% 读数", "heater"],
 ];
+
+// ── Quotes to clarify ─────────────────────────────────────────────────────
+
+const Q_WORDS = ["前", "模型", "话", "字", " ", "，", "&&", "@@", "&&", "@@", "[@m]", "\\&&", "\\@@", "「", "」"];
+const qPiece = fc.array(fc.constantFrom(...Q_WORDS), { maxLength: 4 }).map((ws) => ws.join(""));
+/** A line with a quote whose parts may have different writers: markers on either side of its marks. */
+export const quoteLine = fc
+  .tuple(qPiece, fc.constantFrom(["「", "」"], ['"', '"'], ["“", "”"]), qPiece, fc.constantFrom("[@x]", " [@x]"), qPiece)
+  .map(([a, [o, c], b, cite, d]) => `${a}${o}${b}${c}${cite}${d}`);
+/** A note with quotes in a person's text, in AI blocks, and as cited blockquotes. */
+export const quoteNote = fc
+  .array(
+    fc.oneof(
+      { weight: 4, arbitrary: quoteLine.map((l) => [l]) },
+      { weight: 2, arbitrary: quoteLine.map((l) => ["&& AI", "", l, "", "&&"]) },
+      { weight: 1, arbitrary: fc.tuple(qPiece, qPiece).map(([a, b]) => [`> ${a}字`, `> - ${b}话`, "> [@x]"]) },
+      { weight: 1, arbitrary: fc.tuple(qPiece, qPiece).map(([a, b]) => ["&& AI", "", `模型${a}`, "", `> ${b}字`, "> [@x]", "", "&&"]) },
+      { weight: 1, arbitrary: soup(6).map((l) => [l]) },
+    ),
+    { minLength: 1, maxLength: 4 },
+  )
+  .map((parts) => parts.map((p) => p.join("\n")).join("\n\n"));

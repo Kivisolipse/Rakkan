@@ -69,7 +69,7 @@ function quotePrefix(line: string): number {
 }
 
 /** `&& sig` → opener, `&&` → closer, else null. Up to 3 spaces of indent. */
-function blockLine(line: string): { type: "open"; sig: string } | { type: "close" } | null {
+export function blockLine(line: string): { type: "open"; sig: string } | { type: "close" } | null {
   let i = 0;
   while (i < 3 && line[i] === " ") i++;
   if (line[i] !== "&" || line[i + 1] !== "&" || line[i + 2] === "&") return null;

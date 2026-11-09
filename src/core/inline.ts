@@ -721,6 +721,14 @@ export function parseLine(text: string, ctx: LineCtx): LineResult {
   applyPairs(pairTokens(zones.get(-1) ?? [], ctx.pair), ctx.base);
 
   quotes.forEach((q, qi) => {
+    if (mixed.has(qi)) {
+      result.diagnostics.push({
+        from: q.open,
+        to: q.cite.to,
+        code: "mixed-quote",
+        message: "这段引文的各部分出自不同作者，目前按出处标记的书写者归属，可用「澄清引文」确定",
+      });
+    }
     // A quote is a claim (SPEC §4.4). One a person wrote counts: the words are the author's. One a model
     // wrote, its `[@key]` in AI text, needs a check first: the words stay the AI's, and the claim is kept.
     const writer = attr[q.cite.from];

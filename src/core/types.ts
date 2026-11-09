@@ -85,7 +85,8 @@ export type DiagnosticCode =
   | "implicit-close"
   | "unclosed-block"
   | "blank-line"
-  | "math-swallow";
+  | "math-swallow"
+  | "mixed-quote";
 
 export interface Diagnostic {
   from: number;

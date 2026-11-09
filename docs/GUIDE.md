@@ -17,8 +17,23 @@ Each feature in detail: export and conversion, search, and markers in code. The 
 - **Author book.** A note in the vault with one author per line (`- @key: Name (ID) · kind · #colour`). Quotes take their author's colour: a person has a colour of their own, a source is dimmed, and hovering the status bar shows the authors' names. Typing `[@` (or `【@` with a Chinese IME) opens a list of authors, and **Paste as quote** puts the clipboard in a blockquote ending in the key: it shows as the original does, and no marker in it gets out. What you type inside a quote is marked as yours too. When the authors grow many, there is no need to edit the note by hand: **Manage** in the settings (or the command **Manage authors**) opens a window where you can search, add, rename, recolour and delete authors, and the changes go straight back to their lines in the author book.
 - **Paste revision.** Select the original text, copy the AI's revised version, run **Paste revision** and choose the model. Only the changed words become `&&…&&[@model]`; the rest keep their authors. Useful for keeping a log of mistakes, or for seeing exactly what an AI changed in your text. A change it can't mark (inside a quote or code) isn't pasted: those lines keep the original, and a notice says so.
 - **Copy without markers.** Text pasted into another app has no `&&` or `@@`; pasted back into the vault, it gets the markers right for where it lands.
-- **Right-click menu.** While editing, right-click → Rakkan for **Mark as AI-generated**, **Mark as human-written**, **Paste revision** and **Remove markers in selection** (with text selected), and **Paste as AI-generated**, **Paste as quote**, **Insert AI block** and **Export as PDF…**.
-- **Commands.** Mark as AI-generated, Mark as human-written, Remove markers, Insert AI block, Add blank lines around block fences, Paste as AI-generated, Toggle writing / review display, Search (ignore formatting), Find in current note (ignore formatting), and the export and conversion commands below.
+- **Right-click menu.** While editing, right-click → Rakkan for **Mark as AI-generated**, **Mark as human-written**, **Paste revision** and **Remove markers in selection** (with text selected), and **Paste as AI-generated**, **Paste as quote**, **Clarify quote**, **Insert AI block** and **Export as PDF…**.
+- **Commands.** Mark as AI-generated, Mark as human-written, Remove markers, Insert AI block, Add blank lines around block fences, Paste as AI-generated, Toggle writing / review display, Search (ignore formatting), Find in current note (ignore formatting), Clarify quote, Go to next unclarified quote, and the export and conversion commands below.
+
+## Clarify quote
+
+Who a quote's words belong to depends only on who wrote its `[@key]`. Where the person wrote it (in their own text, or in a `@@…@@` island), the words are the source's. Where the model wrote it, the words count as the model's, and the `[@key]` is kept as the model's claim, for checking. Who typed the quotation marks makes no difference.
+
+When the parts of one quote were written by different authors (the quotation marks by the person and the words between them by the model, for example), the quote is attributed by the same rule and flagged for clarification: the status bar warnings and lint report it as `mixed-quote`.
+
+**Clarify quote** (in the Rakkan right-click menu and the command palette) works with the cursor on any quote, flagged or not. It offers:
+
+- **Confirm as quote from {name}.** The whole quote is rewritten as written by the person, and the words are the source's. A quote given by the model is confirmed the same way (the manual confirmation in SPEC §4.4).
+- **Mark as AI citation.** The whole quote is rewritten as written by the model: the words count as the model's, and the citation is kept.
+- **Remove quote markup.** The quotation marks and the `[@key]` are removed, and each word keeps its author.
+- **Remove quote markup and mark as human-written.** As above, and the words become an explicit `@@…@@` human island. Offered only in AI text: in human-written text, the words are human-written already.
+
+A cited blockquote is handled the same way: marked as an AI citation, it goes into an AI block; confirmed inside an AI block, it moves out of the block, which continues after it. The result is written back into the note as ordinary markers: it stays with the note and is not lost in another app. **Go to next unclarified quote** moves the cursor to the next flagged quote, and after the last one starts again from the top. In the status bar warnings, a flagged quote has a **Clarify quote** button.
 
 ## Export and conversion
 
