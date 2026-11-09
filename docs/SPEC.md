@@ -94,7 +94,7 @@ The block's content
 &&
 ```
 
-- **Opener:** a line that starts with `&&`, followed by whitespace and a signature. A signature can't contain `&&`, so `&& a sentence &&` is inline, not a block. `&&a sentence` (no whitespace) doesn't open a block either.
+- **Opener:** a line that starts with `&&`, followed by whitespace and a signature. A signature can't contain `&&`, so `&& a sentence &&` is inline, not a block. Escapes work as in prose (§3.1): `&& Name \&& Co (id)` opens a block signed `Name && Co`. `&&a sentence` (no whitespace) doesn't open a block either.
 - **Closer:** a line with only `&&`. It **only ever closes**.
 - Blocks don't nest. An opener inside a block means the previous block lost its closer: the previous block ends there, and the implementation should warn.
 - A lone `&&` with no opener shows as it is, and the implementation should warn.

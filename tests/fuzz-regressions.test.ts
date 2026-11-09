@@ -145,14 +145,6 @@ describe("open Q1: quoteText's default output does not escape", () => {
   });
 });
 
-describe("open Q4b: escapes in a signature (SPEC §3.4)", () => {
-  // §3.4: a signature can't contain &&. Today an escaped `\&&` counts too, so the line is no opener.
-  it("pins: \\&& in an opener line keeps it from opening an AI block", () => {
-    expect(parse(`&& 签名 ${B}&&\n\n正文\n\n&&`).blocks).toHaveLength(0);
-    expect(parse("&& 签名 xy\n\n正文\n\n&&").blocks).toHaveLength(1);
-  });
-});
-
 describe("open Q5: signRevision", () => {
   // A quote the model writes into its revision credits the quoted author: the model can put words in
   // someone else's mouth. Other options: credit the model, or report the line.

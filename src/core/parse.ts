@@ -74,8 +74,30 @@ function blockLine(line: string): { type: "open"; sig: string } | { type: "close
   const rest = line.slice(i + 2);
   if (BLANK_RE.test(rest)) return { type: "close" };
   if (rest[0] !== " " && rest[0] !== "\t" && rest[0] !== "\u3000") return null;
-  if (rest.includes("&&")) return null;
-  return { type: "open", sig: rest.trim() };
+  if (pairIn(rest)) return null;
+  return { type: "open", sig: unescapePairs(rest.trim()) };
+}
+
+/** `\&&` reads `&&`; every other backslash stays as written. */
+function unescapePairs(s: string): string {
+  let out = "";
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === "\\" && s[i + 1] === "&" && s[i + 2] === "&") continue;
+    out += s[i];
+    if (s[i] === "\\") out += s[++i] ?? "";
+  }
+  return out;
+}
+
+/** Whether `s` holds `&&` (or a longer run) that no backslash escapes, read as in prose (SPEC §3.1). */
+function pairIn(s: string): boolean {
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === "\\") {
+      if (s[i + 1] === "&") while (s[i + 1] === "&") i++;
+      else i++;
+    } else if (s[i] === "&" && s[i + 1] === "&") return true;
+  }
+  return false;
 }
 
 /** What isn't counted (SPEC \u00a77): whitespace, and characters that show nothing (a BOM, zero-width spaces, joiners). */

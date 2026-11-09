@@ -302,12 +302,6 @@ describe("P4 escapes", () => {
           // The control is an escaped punctuation mark and a plain one, as in `\&&`: letters would change what
           // comes next (a bare URL only starts after a non-word character).
           const b = pre + l.slice(0, p) + "\\--" + l.slice(p) + post;
-          // Open question (report, Q4b): whether `\&&` keeps a line from opening an AI block, as `&&` does.
-          // Pinned in fuzz-regressions; lines that could open a block are left out here until it is decided.
-          const opener = /^ {0,3}&&[ \t　]/;
-          const ins = pre.length + p;
-          const lineAt = (s: string) => s.slice(s.lastIndexOf("\n", ins - 1) + 1).split("\n")[0];
-          fc.pre(!opener.test(lineAt(a)) && !opener.test(lineAt(b)));
           const ra = parse(a);
           const rb = parse(b);
           for (let i = 0; i < a.length; i++) {

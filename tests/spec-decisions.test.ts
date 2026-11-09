@@ -82,6 +82,21 @@ describe("Q4a (§3.1): a pair is escaped after an odd number of backslashes", ()
   });
 });
 
+describe("Q4b (§3.4): escapes in a signature work as in prose", () => {
+  const B = "\\";
+
+  it("opens a block when the signature's && is escaped, and reads it unescaped", () => {
+    const r = parse(`&& 甲 ${B}&& 乙 (m)\n\n正文\n\n&&`);
+    expect(r.blocks).toHaveLength(1);
+    expect(r.blocks[0].signature).toMatchObject({ name: "甲 && 乙", id: "m" });
+  });
+
+  it("opens no block when the && is not escaped", () => {
+    expect(parse("&& 甲 && 乙\n\n正文\n\n&&").blocks).toHaveLength(0);
+    expect(parse(`&& 甲 ${B}${B}&& 乙\n\n正文\n\n&&`).blocks).toHaveLength(0);
+  });
+});
+
 describe("Q2 (§3): a line ends at CR LF, CR or LF, as in CommonMark", () => {
   it("ends a line at a lone CR, as the editor does", () => {
     expect(owners("> a\rb\n> [@k]")).toEqual(owners("> a\nb\n> [@k]"));
