@@ -95,7 +95,10 @@ npm install
 npm test
 npm run build   # 生成 main.js
 npm run demo    # 构建并安装到 demo-vault/
+npm run fuzz    # 完整长度的性质测试
 ```
+
+除单元测试外，还有一套基于性质的模糊测试，用 Rakkan 和 Markdown 语法拼出的随机文本检查解析、签名、引用和澄清引文：共 16 个性质，发版前每个跑 10 万次。
 
 ## 许可
 

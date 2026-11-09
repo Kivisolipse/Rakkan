@@ -1,7 +1,7 @@
 {
   "id": "rakkan",
   "name": "Rakkan",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "minAppVersion": "1.8.7",
   "description": "Mark which characters were written by you, by an AI, or quoted from elsewhere, with plain-text inline markers. Every character, signed.",
   "author": "Kivisolipse",

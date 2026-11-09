@@ -95,7 +95,10 @@ npm install
 npm test
 npm run build   # writes main.js
 npm run demo    # builds and installs into demo-vault/
+npm run fuzz    # the property-based tests at full length
 ```
+
+Besides the unit tests, a property-based fuzz suite checks the parser, signing, quoting and Clarify quote against random text built from Rakkan's and Markdown's syntax: 16 properties, each run 100 000 times before a release.
 
 ## License
 
