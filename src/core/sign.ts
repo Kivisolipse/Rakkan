@@ -170,6 +170,29 @@ export function signRevision(original: string, revised: string, key?: string): S
     }
   }
 
+  // A quote is a claim (SPEC §4.4), written out as it is. One the revision kept as it was stays whose it
+  // was; one the model added, or changed a word of, is the model's claim: it goes in the model's marks.
+  const same = (w: Who | undefined, pos: number) => {
+    const at = attrAt(after, pos);
+    const cur = at ? whoOf(at, after) : undefined;
+    return !w || (!!cur && w.owner === cur.owner && w.key === cur.key && !w.quote === !cur.quote);
+  };
+  const units: Array<[number, number, number]> = [
+    ...after.spans.filter((x) => x.type === "quote").map((x) => [x.from, x.contentFrom, x.contentTo] as [number, number, number]),
+    // Inline claims: a cited blockquote in an AI block is the block's lines.
+    ...after.claims
+      .filter((c) => c.from > 0 && indexAt(after.lines, c.from - 1) === indexAt(after.lines, c.cite.from))
+      .map((c) => [c.from - 1, c.from, c.to] as [number, number, number]),
+  ];
+  const claimed = new Set<number>(); // what the model's claims now hold, kept quoted words among them
+  for (const [head, from, to] of units) {
+    let kept = same(want.get(head), head);
+    for (let pos = from; pos < to && kept; pos++) kept = same(want.get(pos), pos);
+    if (kept) continue;
+    want.set(head, changedText);
+    for (let pos = from; pos < to; pos++) claimed.add(pos);
+  }
+
   // Lines where some text's owner is not the one it should have. In an AI block all AI text is the
   // block's model's, so a change in a block that another model signed is reported instead.
   const dirty = new Set<number>();
@@ -209,12 +232,15 @@ export function signRevision(original: string, revised: string, key?: string): S
     // Kept quoted text whose quote the revision dropped: sign can't write the quote back. Nor can it
     // name text from a block whose signature makes no key.
     let quoted = false;
-    for (let pos = from; pos < to && !quoted; pos++) quoted = want.get(pos)?.quote === true || want.get(pos)?.nokey === true;
+    for (let pos = from; pos < to && !quoted; pos++) {
+      const w = want.get(pos);
+      quoted = (w?.quote === true && !same(w, pos) && !claimed.has(pos)) || w?.nokey === true;
+    }
     const done =
       quoted || mixed.has(n)
       ? null
       : ctx.mode === "prose"
-        ? rewriteLineDetailed(line, ctx, edit(ctx.prefix), split.get(n))
+        ? rewriteLineDetailed(line, ctx, edit(ctx.prefix), { split: split.get(n), units: true })
         : ctx.mode === "code" && ctx.pair !== "quote" // sign leaves quotes to the person (reported as unmarked)
           ? rewriteCodeLine(line, ctx, edit(0))
           : null;

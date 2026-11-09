@@ -174,8 +174,10 @@ describe("quotes", () => {
     ]);
   });
 
-  it("works inside AI blocks", () => {
-    expect(owners('&& Claude\n\n引一句 "avoid it"[@x]。\n\n&&')).toEqual(['A:引一句 "', "Q@x:avoid it", 'A:"。']);
+  it("is the model's claim inside AI blocks, its words the AI's (§4.4)", () => {
+    const r = parse('&& Claude\n\n引一句 "avoid it"[@x]。\n\n&&');
+    expect(owners(r)).toEqual(['A:引一句 "avoid it"。']);
+    expect(r.claims.map((c) => [r.text.slice(c.from, c.to), c.key])).toEqual([["avoid it", "x"]]);
   });
 
   it("attributes cited blockquotes", () => {

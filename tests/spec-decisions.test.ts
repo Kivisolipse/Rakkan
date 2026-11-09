@@ -1,7 +1,7 @@
 // The SPEC changes decided after the fuzz report, one regression test (or a few) each.
 
 import { describe, expect, it } from "vitest";
-import { parse, parseBook, signRevision, toIA } from "../src/core";
+import { exportPandoc, exportPlain, parse, parseBook, signRevision, toIA } from "../src/core";
 import { owners } from "./helpers";
 
 describe("the rule above all: when in doubt, not the person's", () => {
@@ -166,6 +166,53 @@ describe("Q5c: text that leaves a block with a name and no model ID keeps the na
   });
 });
 
+describe("Q5a (§4.4): a quote is a claim; whose words they are depends on who wrote the [@key]", () => {
+  it("counts a person's claim: in their text, and in a human island in AI text", () => {
+    expect(owners("我引「原话」[@x]")).toEqual(["H:我引「", "Q@x:原话", "H:」"]);
+    expect(owners("&& AI\n\n模型 @@我引「原话」[@x]@@\n\n&&")).toEqual(["A:模型 ", "h:我引「", "Q@x:原话", "h:」"]);
+    expect(owners("&&模型@@补「原话」[@x]@@&&")).toEqual(["A:模型", "h:补「", "Q@x:原话", "h:」"]);
+  });
+
+  it("leaves a model's claim the AI's, and keeps the claim", () => {
+    const r = parse("前&&模型说「新话」[@x]&&[@m]");
+    expect(owners(r)).toEqual(["H:前", "A@m:模型说「新话」"]);
+    expect(r.claims.map((c) => [r.text.slice(c.from, c.to), c.key, r.text.slice(c.cite.from, c.cite.to)])).toEqual([["新话", "x", "[@x]"]]);
+    expect(r.stats.quote).toBe(0);
+  });
+
+  it("makes a cited blockquote in an AI block a claim too", () => {
+    const r = parse("&& AI\n\n> 第一行\n> 第二行\n> [@x]\n\n&&");
+    expect(owners(r)).toEqual(["A:第一行第二行"]);
+    expect(r.claims.map((c) => [r.text.slice(c.from, c.to), c.key])).toEqual([["> 第一行\n> 第二行", "x"]]);
+  });
+
+  it("wraps a quote the model added in its marks, so it is the model's claim", () => {
+    const o = "前文。";
+    const s = signRevision(o, "前文。「新加的话」[@x]", "m");
+    expect(s.text).toBe("前文。&&「新加的话」[@x]&&[@m]");
+    expect(owners(s.text)).toEqual(["H:前文。", "A@m:「新加的话」"]);
+    expect(signRevision(o, s.text, "m").text).toBe(s.text);
+  });
+
+  it("makes a quote the model changed a word of the model's claim", () => {
+    const o = "前「原话」[@k]后";
+    const s = signRevision(o, "前「原话改」[@k]后", "m");
+    expect(s.text).toBe("前&&「原话改」[@k]&&[@m]后");
+    expect(signRevision(o, s.text, "m").text).toBe(s.text);
+  });
+
+  it("keeps the source of a model's claim in exports", () => {
+    expect(exportPandoc("&&模型说「新话」[@x]&&")).toContain("「新话」[@x]");
+    expect(exportPlain("&& AI\n\n> 第一行\n> [@x]\n\n&&\n")).toContain("> — x");
+  });
+
+  it("does not let the model turn the person's words into a quote", () => {
+    const s = signRevision("我的话\n", "「我的话」[@x]\n", "m");
+    expect(parse(s.text).stats.quote).toBe(0);
+    expect(parse(s.text).stats.human).toBe(0);
+  });
+});
+
 describe("Q8: an atom holding two authors' words", () => {
   it("is split as the original's markers split it when the model did not change it", () => {
     const s = signRevision("前&&!&&[t](u)\n", "前![t](u)\n", "m");
@@ -184,10 +231,11 @@ describe("Q8: an atom holding two authors' words", () => {
 
 describe("Q5b: a change sign can't mark keeps the original", () => {
   it("puts back the line, and says what the revision had", () => {
+    // The revision dropped the quote's [@k], and sign can't write it back.
     const o = "前文\n\n「原话」[@k]\n\n后文\n";
-    const s = signRevision(o, "前文改\n\n「原话改」[@k]\n\n后文\n", "m");
+    const s = signRevision(o, "前文改\n\n「原话」又\n\n后文\n", "m");
     expect(s.text).toBe("前文&&改&&[@m]\n\n「原话」[@k]\n\n后文\n");
-    expect(s.rejected).toEqual([{ line: 2, count: 1, original: 2, revised: "「原话改」[@k]" }]);
+    expect(s.rejected).toEqual([{ line: 2, count: 1, original: 2, revised: "「原话」又" }]);
     // 前文, 后文 and the quotation marks, which belong to the text around them (§4.1).
     expect(parse(s.text).stats.human).toBe(6);
   });

@@ -4,6 +4,7 @@ import { lineSyntax } from "./syntax";
 import type {
   Attr,
   Block,
+  Claim,
   Diagnostic,
   LineContext,
   LineInfo,
@@ -372,6 +373,7 @@ export class Parser {
       if (s.type === "prose") return s.prefix > 0;
       return (s.type === "fence" || s.type === "code" || s.type === "plain") && quotePrefix(lineText[k]) > 0;
     };
+    const claims: Claim[] = [];
     for (let i = 0; i < N; i++) {
       if (!quoted(i)) continue;
       let j = i;
@@ -379,9 +381,13 @@ export class Parser {
       const content = lineText[j].slice(structs[j].prefix);
       const m = structs[j].type === "prose" ? /^\[@([^\s[\]]+)\]\s*$/.exec(content) : null;
       if (m && j > i) {
-        for (let k = i; k <= j; k++) structs[k].quoteKey = m[1];
         const from = structs[j].prefix;
         structs[j].citeLine = [from, from + m[0].trimEnd().length];
+        // A `[@key]` line in an AI block is the model's: a claim, and the lines stay the block's (SPEC §4.4).
+        if (structs[j].block !== null) {
+          const cite = lines[j].from + from;
+          claims.push({ from: lines[i].from, to: lines[j - 1].to, key: m[1], cite: { from: cite, to: cite + m[1].length + 3 } });
+        } else for (let k = i; k <= j; k++) structs[k].quoteKey = m[1];
       }
       i = j;
     }
@@ -511,6 +517,7 @@ export class Parser {
             if (at < s.to) push(o + at, o + s.to, "text", s.attr);
           }
           for (const s of r.spans) spans.push({ ...s, from: o + s.from, to: o + s.to, contentFrom: o + s.contentFrom, contentTo: o + s.contentTo });
+          for (const c of r.claims) claims.push({ ...c, from: o + c.from, to: o + c.to, cite: { from: o + c.cite.from, to: o + c.cite.to } });
           for (const d of r.diagnostics) diag(i, o + d.from, o + d.to, d.code, d.message);
           continue;
         }
@@ -541,7 +548,8 @@ export class Parser {
     }
 
     diagnostics.sort((a, b) => a.from - b.from);
-    return { text, lines, lineContexts, segments, spans, blocks, diagnostics, definitions, stats, bodyStart };
+    claims.sort((x, y) => x.from - y.from);
+    return { text, lines, lineContexts, segments, spans, claims, blocks, diagnostics, definitions, stats, bodyStart };
   }
 }
 

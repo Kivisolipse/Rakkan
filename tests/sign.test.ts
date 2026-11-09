@@ -59,12 +59,19 @@ describe("signRevision", () => {
     expect(signRevision(block, revised).foreign).toEqual([]);
   });
 
+  it("marks the model's words on a line with a quote it kept", () => {
+    const r = sign('She said "hello"[@fakebook].\n', 'She said "hello"[@fakebook] twice.\n');
+    expect(r.text).toBe(`She said "hello"[@fakebook] &&twice&&[@${MODEL}].\n`);
+    expect(r.unmarked).toEqual([]);
+  });
+
   it("reports changed lines it cannot mark and keeps the original there (Q5b)", () => {
+    // The revision dropped the quote's [@fakebook]: sign can't write the quote back.
     const o = 'She said "hello"[@fakebook].\n';
-    const r = sign(o, 'She said "hello"[@fakebook] twice.\n');
+    const r = sign(o, 'She said "hello" twice.\n');
     expect(r.text).toBe(o);
     expect(r.unmarked).toEqual([0]);
-    expect(r.rejected).toEqual([{ line: 0, count: 1, original: 0, revised: 'She said "hello"[@fakebook] twice.' }]);
+    expect(r.rejected).toEqual([{ line: 0, count: 1, original: 0, revised: 'She said "hello" twice.' }]);
     const code = sign("```js\nlet a = 1\n```\n", "```js\nlet a = 2\n```\n");
     expect(code.text).toBe("```js\nlet a = 1\n```\n");
     expect(code.unmarked).toEqual([1]);

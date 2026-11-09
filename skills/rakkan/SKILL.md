@@ -63,7 +63,7 @@ The author's sentence, with &&a few words of yours&&[@claude-opus-5-5] in it.
 
 ## Quoting
 
-Credit a source you quote word for word: `"quoted words"[@key]` or `「…」[@key]`, with `[@key]` right after the closing quotation mark. For a passage, use a blockquote whose last line is only `> [@key]`. If the vault doesn't define the key yet, define it on a line at the very end of the note: `@key: Title or author · source` (use `· human` for a person).
+Credit a source you quote word for word: `"quoted words"[@key]` or `「…」[@key]`, with `[@key]` right after the closing quotation mark. For a passage, use a blockquote whose last line is only `> [@key]`. If the vault doesn't define the key yet, define it on a line at the very end of the note: `@key: Title or author · source` (use `· human` for a person). A quote inside your own marked text is your claim about the source: the words still count as yours until someone checks them against it, so quote only words you have in front of you.
 
 ## Where marks don't apply
 

@@ -22,7 +22,7 @@
 | `&&text&&` | Written by an AI; `&&text&&[@gpt]` names the model |
 | `&& Claude (claude-opus-5-5)` … `&&` | A whole AI block, each marker on a line of its own |
 | `@@text@@` | Your own words inside AI text |
-| `"text"[@key]`, `「text」[@key]` | A quote, credited to an author |
+| `"text"[@key]`, `「text」[@key]` | A quote, credited to an author (a model's quote stays the model's until checked) |
 
 Without the plugin, the note still reads as ordinary Markdown. The full syntax is in [docs/SPEC.md](docs/SPEC.md).
 

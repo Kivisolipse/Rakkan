@@ -38,6 +38,10 @@ tests/         vitest 单元测试；tests/fixtures 是样例库（全是假数�
 | M10 | iA 互转 + Pandoc 过滤器 + 导出 | 基本完成，待在 Obsidian 里手测：去掉标记、Pandoc 格式（配 pandoc/rakkan.lua，PDF 带颜色）、iA 标注格式导出和导入（SHA-256 哈希、字形计数）。三个导出命令写新笔记、不动原文；导入改当前笔记（Ctrl+Z 一步撤销）。自带的「导出为 PDF…」（隐藏窗口 + 主进程的 print-to-pdf，分段渲染，待手测）。iA 的参考标注转成引用、作者名往返（`<@key>` 标识 + 补充定义）已做；多个人类作者：一库一位主人，其他人按署名簿当引用，署名簿不认识的人只要有就弹窗选主人（可选“都不是”）。均待手测；Obsidian Publish 导出（HTML 类名 + 生成 `publish.css`）已做，Publish 是否保留这些类名未验证 |
 | M11 | README、demo vault、GitHub 仓库与发布、BRAT、社区商店 | 完成：已上架社区插件（[community.obsidian.md/plugins/rakkan](https://community.obsidian.md/plugins/rakkan)） |
 
+## 待办
+
+- **已核对的引文**（SPEC §4.4）：模型写的引文是模型的声明，字仍算模型的；有证据的可以升级，字归 key。证据三种来源：MCP 加一个 quote 工具，由工具自己读原文、确认是子串后写入，出处标记由工具写；引文链接到库里的原文（块引用、剪藏快照），lint 逐字比对；人在插件里手动确认。写法未定。现在解析结果里的 `claims`（范围 + key）就是给它留的位置
+
 ## git 约定
 
 - `main` 保持可构建；每个里程碑一个或几个提交，提交信息用 Conventional Commits（`feat(core): …`）

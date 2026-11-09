@@ -1,7 +1,7 @@
 // Inline scanning: one line at a time, character by character (no lookbehind
 // regexes, so it runs on old iOS WebKit too).
 
-import type { Attr, DiagnosticCode, InlineSpan, MarkType, Role } from "./types";
+import type { Attr, Claim, DiagnosticCode, InlineSpan, MarkType, Role } from "./types";
 
 export type SkipType = "code" | "math" | "comment" | "url";
 
@@ -522,6 +522,7 @@ export interface LineSegment {
 export interface LineResult {
   segments: LineSegment[];
   spans: InlineSpan[];
+  claims: Claim[];
   diagnostics: Array<{ from: number; to: number; code: DiagnosticCode; message: string }>;
   endsInComment: boolean;
 }
@@ -555,7 +556,7 @@ export function parseLine(text: string, ctx: LineCtx): LineResult {
   const role = new Array<Role>(n).fill("text");
   const attr = new Array<Attr>(n).fill(ctx.base);
   const mark = new Array<MarkType | undefined>(n).fill(undefined);
-  const result: LineResult = { segments: [], spans: [], diagnostics: [], endsInComment: false };
+  const result: LineResult = { segments: [], spans: [], claims: [], diagnostics: [], endsInComment: false };
 
   if (ctx.mode === "plain" || n === 0) {
     result.segments = n ? [{ from: 0, to: n, role: "text", attr: ctx.base }] : [];
@@ -679,6 +680,15 @@ export function parseLine(text: string, ctx: LineCtx): LineResult {
   applyPairs(pairTokens(zones.get(-1) ?? [], ctx.pair), ctx.base);
 
   quotes.forEach((q, qi) => {
+    // A quote is a claim (SPEC §4.4). One a person wrote counts: the words are the author's. One a model
+    // wrote, its `[@key]` in AI text, needs a check first: the words stay the AI's, and the claim is kept.
+    const writer = attr[q.cite.from];
+    if (writer.kind === "ai") {
+      setMark(q.cite.from, q.cite.to, "cite", writer);
+      result.claims.push({ from: q.open + 1, to: q.close, key: q.cite.key, cite: { from: q.cite.from, to: q.cite.to } });
+      applyPairs(pairTokens(zones.get(qi) ?? [], "ai-inline"), writer);
+      return;
+    }
     const a: Attr = { kind: "quote", key: q.cite.key, explicit: true };
     if (ctx.base.block !== undefined) a.block = ctx.base.block;
     fill(q.open + 1, q.close, a);

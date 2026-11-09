@@ -29,7 +29,7 @@ The book says "ink outlasts memory"[@fakebook], and I agree.
 && Claude (claude-opus-5-5)
 
 A whole AI block, which can hold headings, lists, tables and code blocks.
-In the middle, @@a sentence the author added@@, and a quote, "less is more"[@mies].
+In the middle, @@a sentence the author added@@, and a quote the model says is by mies, "less is more"[@mies].
 
 &&
 
@@ -43,7 +43,7 @@ In the middle, @@a sentence the author added@@, and a quote, "less is more"[@mie
 | `@@text@@` | Text by a person, inside AI text and attributed quotes (a human island) |
 | A line `&& signature` (at shortest `&& AI`) | Opens an AI block |
 | A line with only `&&` | Closes an AI block, and only that |
-| `"text"[@key]`, `「text」[@key]` | A quote: the text inside the quotation marks belongs to the author `key` |
+| `"text"[@key]`, `「text」[@key]` | A quote: the text inside the quotation marks belongs to the author `key` when a person wrote the `[@key]`, and stays the model's when a model did (§4.4) |
 | `&&text&&[@key]` | Inline AI text, naming the model |
 | `\&&`, `\@@` | Escapes |
 
@@ -65,7 +65,7 @@ A note is made of three kinds of region:
 
 - **Human regions**, the default. Here `&&` is a marker and `@@` shows as it is.
 - **AI regions**: AI blocks, and inline `&&…&&`. Here `@@` is a marker and `&&` shows as it is.
-- **Attributed quotes.** Both `&&` and `@@` are markers here, to mark the words changed in quoting.
+- **Attributed quotes**, those whose `[@key]` a person wrote (§4.4). Both `&&` and `@@` are markers here, to mark the words changed in quoting. A quote a model wrote is part of its AI region.
 
 Nesting goes one level deep:
 
@@ -146,7 +146,7 @@ The syntax follows Pandoc's citations. A key is a run of characters with no whit
 
 `[@key]` names an author only **right after a closing mark** (at most one space between):
 
-- A closing quotation mark, `」` `』` `”` or `"`: the text inside the quotation marks belongs to `key`. The opening mark is searched for backwards on the same line only; `"` has no left or right, so the nearest one on the line is taken. Single quotation marks aren't supported, since they can't be told from apostrophes.
+- A closing quotation mark, `」` `』` `”` or `"`: the text inside the quotation marks is quoted from `key`. Whose words they count as depends on who wrote the `[@key]` (§4.4). The opening mark is searched for backwards on the same line only; `"` has no left or right, so the nearest one on the line is taken. Single quotation marks aren't supported, since they can't be told from apostrophes.
 - The end of an inline marker: `&&text&&[@key]` names the model of that AI text; `@@text@@[@key]` names the person who wrote those words.
 
 A `[@key]` after anything else is an ordinary Pandoc citation and changes no authorship. One followed directly by `(` or `:` doesn't count (it is a link or a link definition).
@@ -163,7 +163,7 @@ A quoted passage goes in a blockquote whose **last line** is only `[@key]`:
 > [@fakebook]
 ```
 
-All the text in the blockquote belongs to `key`, and both `&&` and `@@` are markers inside it.
+All the text in the blockquote belongs to `key`, and both `&&` and `@@` are markers inside it. In an AI block it is the model's claim instead (§4.4).
 
 ### 4.3 The author book and definitions
 
@@ -195,6 +195,28 @@ A note can carry the same definitions **at its end**, so they travel with the fi
 ```
 
 Definitions take no square brackets: `[@key]: …` is a Markdown link definition, and the whole line would vanish. A key with no definition still makes an attributed quote, only without a colour of its own.
+
+### 4.4 Quotes are claims
+
+A quote is a claim: whoever writes the `[@key]` says the words came from `key`. **A person's claim counts as it stands; a model's claim needs evidence.** So what decides is who wrote the `[@key]`:
+
+- **In a person's text**, a human island included, it is the person's claim, and the words inside the quotation marks belong to `key`. That covers a quote typed by hand into an AI block (`@@「…」[@x]@@`), and quotation marks and a `[@x]` the person put around a model's sentence.
+- **In a model's text** (inline AI, or an AI block, a cited blockquote in one included) it is the model's claim. The words inside the quotation marks stay the model's, `&&` shows as it is and `@@` marks a human island, as in the rest of the AI text. The claim is kept: an implementation records its range and its key, so that lint and gateways can check it. The `[@key]` is still a marker.
+
+```
+I quote 「ink outlasts memory」[@fakebook].      ← the person's claim: the words are fakebook's
+&&It is often said 「less is more」[@mies].&&    ← the model's claim: the words are the model's
+```
+
+An implementation that signs a model's revision follows from this. A quote the model adds, or a quote it changes a word of, becomes the model's text and so the model's claim; it never becomes the person's or the source's on the model's word.
+
+**To do: verified claims.** A model's claim that comes with evidence will be able to be upgraded, so that its words belong to `key`. Three kinds of evidence are planned, none of them implemented yet:
+
+1. A quoting tool (for example an MCP tool) that reads the source itself, checks that the words are in it, and writes the quote and its `[@key]` itself.
+2. A link from the quote to the source in the vault (a block reference, a clipped page), which lint compares word for word.
+3. The person confirming it by hand in the plugin.
+
+How a verified claim is written is not decided yet.
 
 ## 5. Skipped regions
 

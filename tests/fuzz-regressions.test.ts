@@ -146,12 +146,6 @@ describe("open Q1: quoteText's default output does not escape", () => {
 });
 
 describe("open Q5: signRevision", () => {
-  // A quote the model writes into its revision is put back since Q5b; Q5a wraps it in the model's marks.
-  it.fails("wraps a quote the model added in its marks", () => {
-    const s = signRevision("前文。", "前文。「新加的话」[@x]", "m");
-    expect(s.text).toBe("前文。&&「新加的话」[@x]&&[@m]");
-  });
-
   // An inline AI span can't start or end next to a literal & (the runs merge, SPEC §3.1). sign then can't
   // mark the line, and keeps the original there (Q5b): the model's change is not taken.
   it.fails("keeps the marks of AI text that starts with &", () => {
