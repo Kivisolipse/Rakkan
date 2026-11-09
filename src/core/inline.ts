@@ -85,22 +85,59 @@ function hasMarkerRun(text: string, from: number, to: number): boolean {
   return false;
 }
 
-/** Find the `)` closing a link destination that starts at `open` (`(`). */
-function linkDestinationEnd(text: string, open: number): number {
-  let depth = 0;
-  for (let j = open; j < text.length; j++) {
-    const c = text[j];
-    if (c === "\\") {
-      j++;
-      continue;
-    }
-    if (c === "(") depth++;
-    else if (c === ")") {
-      depth--;
-      if (depth === 0) return j + 1;
+/**
+ * Whether the character at each offset follows an odd run of backslashes.
+ * A scan that starts on a character other than `\` and skips the character
+ * after each `\` skips exactly these, wherever it starts.
+ */
+function escapedMask(text: string): Uint8Array {
+  const out = new Uint8Array(text.length + 1);
+  for (let i = 1; i <= text.length; i++) out[i] = text[i - 1] === "\\" && !out[i - 1] ? 1 : 0;
+  return out;
+}
+
+/** First item of the sorted `list` greater than `x`, or -1. */
+function firstAfter(list: number[], x: number): number {
+  let lo = 0;
+  let hi = list.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (list[mid] > x) hi = mid;
+    else lo = mid + 1;
+  }
+  return lo < list.length ? list[lo] : -1;
+}
+
+/**
+ * Where link destinations end. A destination that starts at `open` (`(`) ends
+ * after the first unescaped `)` that brings the paren depth back to where it
+ * was before `open`; computed for the whole line at once, so a line full of
+ * unclosed `](` stays linear.
+ */
+class LinkEnds {
+  private depth: Int32Array;
+  private closesAt = new Map<number, number[]>();
+  constructor(text: string, escaped: Uint8Array) {
+    this.depth = new Int32Array(text.length);
+    let d = 0;
+    for (let j = 0; j < text.length; j++) {
+      if (!escaped[j] && text[j] !== "\\") {
+        if (text[j] === "(") d++;
+        else if (text[j] === ")") {
+          d--;
+          let list = this.closesAt.get(d);
+          if (!list) this.closesAt.set(d, (list = []));
+          list.push(j);
+        }
+      }
+      this.depth[j] = d;
     }
   }
-  return -1;
+  /** The end of the destination opened at `open`, or -1 when it never closes. */
+  end(open: number): number {
+    const close = firstAfter(this.closesAt.get(this.depth[open] - 1) ?? [], open);
+    return close < 0 ? -1 : close + 1;
+  }
 }
 
 function urlEnd(text: string, i: number): number {
@@ -137,6 +174,23 @@ export function scanInline(text: string, opts: ScanOptions): InlineScan {
   };
   const n = text.length;
   let i = 0;
+  // Built on first use, for the whole line, so no construct rescans the rest of the line.
+  let escapedAt: Uint8Array | undefined;
+  const escaped = () => (escapedAt ??= escapedMask(text));
+  let linkEnds: LinkEnds | undefined;
+  let closes: number[] | undefined;
+  /** Offsets of every `$` that can close inline math (Pandoc rules), opener aside. */
+  const dollarCloses = () => {
+    if (closes) return closes;
+    const esc = escaped();
+    closes = [];
+    for (let j = 1; j < n; j++) {
+      if (text[j] !== "$" || esc[j] || isSpace(text[j - 1])) continue;
+      const next = text[j + 1];
+      if (!(next !== undefined && isDigit(next))) closes.push(j);
+    }
+    return closes;
+  };
 
   if (opts.prose && opts.inComment) {
     const close = text.indexOf("%%");
@@ -228,20 +282,7 @@ export function scanInline(text: string, opts: ScanOptions): InlineScan {
       // before it and no digit after it.
       const after = text[i + 1];
       if (after !== undefined && !isSpace(after)) {
-        let close = -1;
-        for (let j = i + 1; j < n; j++) {
-          if (text[j] === "\\") {
-            j++;
-            continue;
-          }
-          if (text[j] !== "$") continue;
-          const before = text[j - 1];
-          const next = text[j + 1];
-          if (j > i + 1 && !isSpace(before) && !(next !== undefined && isDigit(next))) {
-            close = j;
-            break;
-          }
-        }
+        const close = firstAfter(dollarCloses(), i + 1);
         if (close >= 0) {
           out.skips.push({ from: i, to: close + 1, type: "math" });
           if (hasMarkerRun(text, i + 1, close)) out.mathSwallow.push({ from: i, to: close + 1 });
@@ -254,7 +295,8 @@ export function scanInline(text: string, opts: ScanOptions): InlineScan {
     }
 
     if (c === "]" && text[i + 1] === "(") {
-      const end = linkDestinationEnd(text, i + 1);
+      linkEnds ??= new LinkEnds(text, escaped());
+      const end = linkEnds.end(i + 1);
       if (end > 0) {
         out.skips.push({ from: i + 1, to: end, type: "url" });
         i = end;
@@ -354,30 +396,55 @@ interface Quote {
   cite: Cite;
 }
 
-function inRanges(ranges: Range[], pos: number): boolean {
-  for (const r of ranges) if (pos >= r.from && pos < r.to) return true;
-  return false;
+/** 1 for every offset inside one of `ranges`. */
+function rangeMask(n: number, ranges: Range[]): Uint8Array {
+  const out = new Uint8Array(n);
+  for (const r of ranges) out.fill(1, r.from, Math.min(r.to, n));
+  return out;
 }
 
-function findQuoteOpen(text: string, close: number, skips: Range[]): number {
-  const closeChar = text[close];
-  if (closeChar === '"') {
-    for (let j = close - 1; j >= 0; j--) {
-      if (text[j] === '"' && !inRanges(skips, j)) return j;
-    }
-    return -1;
+/**
+ * For every closing quotation mark outside `skipped`, the opening mark it
+ * pairs with, or -1. A `"` pairs with the nearest `"` before it; `」` `』` `”`
+ * pair with their opening marks by nesting, as a backward search counting
+ * depth from the closing mark finds them. One pass over the line.
+ */
+function quoteOpens(text: string, skipped: Uint8Array): Map<number, number> {
+  const out = new Map<number, number>();
+  const stacks: Record<string, number[]> = { "「": [], "『": [], "“": [] };
+  let lastStraight = -1;
+  for (let j = 0; j < text.length; j++) {
+    if (skipped[j]) continue;
+    const c = text[j];
+    if (c === '"') {
+      out.set(j, lastStraight);
+      lastStraight = j;
+    } else if (c in stacks) stacks[c].push(j);
+    else if (c in QUOTE_OPEN) out.set(j, stacks[QUOTE_OPEN[c]].pop() ?? -1);
   }
-  const openChar = QUOTE_OPEN[closeChar];
-  let depth = 0;
-  for (let j = close; j >= 0; j--) {
-    if (inRanges(skips, j)) continue;
-    if (text[j] === closeChar) depth++;
-    else if (text[j] === openChar) {
-      depth--;
-      if (depth === 0) return j;
-    }
+  return out;
+}
+
+/** Positions marked so far, with a pointer to skip runs already marked. */
+class Covered {
+  private next: Int32Array;
+  constructor(n: number) {
+    this.next = new Int32Array(n + 2).map((_, i) => i);
   }
-  return -1;
+  private find(x: number): number {
+    while (this.next[x] !== x) {
+      this.next[x] = this.next[this.next[x]];
+      x = this.next[x];
+    }
+    return x;
+  }
+  has(x: number): boolean {
+    return this.find(x) !== x;
+  }
+  /** Mark [from, to] (inclusive). */
+  add(from: number, to: number) {
+    for (let x = this.find(from); x <= to; x = this.find(x)) this.next[x] = x + 1;
+  }
 }
 
 export interface LineCtx {
@@ -472,45 +539,44 @@ export function parseLine(text: string, ctx: LineCtx): LineResult {
 
   // Quotes: `「…」[@key]`, `"…"[@key]`.
   const quotes: Quote[] = [];
-  if (prose) {
+  if (prose && scan.cites.length) {
+    const skipped = rangeMask(n, scan.skips);
+    const opens = quoteOpens(text, skipped);
+    // Cites come in order, so every accepted quote closes before this one: the new
+    // quote crosses one exactly when it opens inside it. Nesting is fine.
+    const covered = new Covered(n);
     for (const cite of scan.cites) {
       let p = cite.from - 1;
       if (p >= 0 && text[p] === " ") p--;
       if (p < 0) continue;
       const ch = text[p];
       if (ch !== '"' && !(ch in QUOTE_OPEN)) continue;
-      if (inRanges(scan.skips, p)) continue;
-      const open = findQuoteOpen(text, p, scan.skips);
+      if (skipped[p]) continue;
+      const open = opens.get(p) ?? -1;
       if (open < 0) continue;
-      const q: Quote = { open, close: p, cite };
-      // Drop quotes that cross an accepted quote; nesting is fine.
-      const crosses = quotes.some(
-        (a) =>
-          !(q.close < a.open || q.open > a.close) &&
-          !(q.open > a.open && q.close < a.close) &&
-          !(a.open > q.open && a.close < q.close),
-      );
-      if (crosses) continue;
-      quotes.push(q);
+      if (covered.has(open)) continue;
+      quotes.push({ open, close: p, cite });
+      covered.add(open, p);
       usedCites.add(cite);
     }
     quotes.sort((a, b) => a.open - b.open);
   }
 
-  // Assign each token to the innermost quote whose content contains it.
-  const zoneOf = (t: Token): number => {
-    let best = -1;
-    for (let qi = 0; qi < quotes.length; qi++) {
-      const q = quotes[qi];
-      if (t.from > q.open && t.to <= q.close) {
-        if (best < 0 || quotes[best].open < q.open) best = qi;
-      }
+  // Assign each token to the innermost quote whose content contains it. Tokens come in
+  // order and quotes nest without crossing, so a stack of the quotes still open will do.
+  const zoneAt: number[] = [];
+  {
+    const stack: number[] = [];
+    let next = 0;
+    for (const t of scan.tokens) {
+      while (next < quotes.length && quotes[next].open < t.from) stack.push(next++);
+      while (stack.length && quotes[stack[stack.length - 1]].close < t.to) stack.pop();
+      zoneAt.push(stack.length ? stack[stack.length - 1] : -1);
     }
-    return best;
-  };
+  }
   const zones = new Map<number, Token[]>();
-  for (const t of scan.tokens) {
-    const z = zoneOf(t);
+  for (const [ti, t] of scan.tokens.entries()) {
+    const z = zoneAt[ti];
     let list = zones.get(z);
     if (!list) zones.set(z, (list = []));
     list.push(t);

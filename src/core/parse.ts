@@ -342,13 +342,19 @@ export class Parser {
     }
 
     // ── Pass B: blockquotes whose last line is `[@key]` ──
+    // Code and math inside the blockquote belong to it too.
+    const quoted = (k: number) => {
+      const s = structs[k];
+      if (s.inComment) return false;
+      if (s.type === "prose") return s.prefix > 0;
+      return (s.type === "fence" || s.type === "code" || s.type === "plain") && quotePrefix(lineText[k]) > 0;
+    };
     for (let i = 0; i < N; i++) {
-      if (structs[i].type !== "prose" || structs[i].prefix === 0 || structs[i].inComment) continue;
+      if (!quoted(i)) continue;
       let j = i;
-      while (j + 1 < N && structs[j + 1].type === "prose" && structs[j + 1].prefix > 0 && !structs[j + 1].inComment) j++;
-      const last = lineText[j];
-      const content = last.slice(structs[j].prefix);
-      const m = /^\[@([^\s[\]]+)\]\s*$/.exec(content);
+      while (j + 1 < N && quoted(j + 1)) j++;
+      const content = lineText[j].slice(structs[j].prefix);
+      const m = structs[j].type === "prose" ? /^\[@([^\s[\]]+)\]\s*$/.exec(content) : null;
       if (m && j > i) {
         for (let k = i; k <= j; k++) structs[k].quoteKey = m[1];
         const from = structs[j].prefix;
@@ -373,12 +379,21 @@ export class Parser {
       const st = structs[i];
       const { from, to } = lines[i];
       const t = lineText[i];
-      const base = st.block !== null ? blockAttr[st.block] : HUMAN;
+      const outer = st.block !== null ? blockAttr[st.block] : HUMAN;
+      // Code, math and fences in a cited blockquote take the quote's author, as its prose does.
+      const base: Attr =
+        st.quoteKey !== undefined && st.type !== "prose"
+          ? { kind: "quote", key: st.quoteKey, explicit: true, ...(st.block !== null ? { block: st.block } : {}) }
+          : outer;
+      // The `> ` before a code or math line is syntax, as it is before prose.
+      const qp = st.type === "code" || st.type === "plain" ? quotePrefix(t) : 0;
       const blockPair = st.block !== null ? "ai-block" : "human";
+      // Declared code in a cited blockquote follows the quote's rules: `@@` marks the person's own words.
+      const codePair = st.quoteKey !== undefined ? "quote" : blockPair;
       lineContexts[i] = {
         mode: st.type === "prose" && !st.citeLine ? "prose" : st.type === "code" && (st.amp || st.at) ? "code" : "other",
         base: st.type === "meta" ? HUMAN : base,
-        pair: blockPair,
+        pair: codePair,
         prefix: 0,
         inComment: st.inComment,
         ampLen: st.type === "code" ? st.amp : 2,
@@ -406,23 +421,27 @@ export class Parser {
           continue;
         }
         case "plain":
-          push(from, to, "text", base);
+          push(from, from + qp, "syntax", base);
+          push(from + qp, to, "text", base);
           continue;
         case "code": {
           if (st.amp === 0 && st.at === 0) {
-            push(from, to, "text", base);
+            push(from, from + qp, "syntax", base);
+            push(from + qp, to, "text", base);
             continue;
           }
-          const r = this.parseLineCached(t, {
+          push(from, from + qp, "syntax", base);
+          const r = this.parseLineCached(t.slice(qp), {
             base,
-            pair: st.block !== null ? "ai-block" : "human",
+            pair: codePair,
             mode: "code",
             ampLen: st.amp,
             atLen: st.at,
             inComment: false,
           });
-          for (const s of r.segments) push(from + s.from, from + s.to, s.role, s.attr, s.mark);
-          for (const s of r.spans) spans.push({ ...s, from: from + s.from, to: from + s.to, contentFrom: from + s.contentFrom, contentTo: from + s.contentTo });
+          const o = from + qp;
+          for (const s of r.segments) push(o + s.from, o + s.to, s.role, s.attr, s.mark);
+          for (const s of r.spans) spans.push({ ...s, from: o + s.from, to: o + s.to, contentFrom: o + s.contentFrom, contentTo: o + s.contentTo });
           continue;
         }
         case "prose": {

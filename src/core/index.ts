@@ -12,6 +12,7 @@ export type { Owner, Rewritten, TextChange, Char } from "./rewrite";
 export { parseAuthor, parseBook, hueOf, hueHex, setBookColor, addBookAuthor, updateBookAuthor, removeBookAuthor, keyFromName, BOOK_TEMPLATE, BOOK_TEMPLATE_EN } from "./authors";
 export type { Author, AuthorKind, KindWords } from "./authors";
 export { quoteText } from "./quote";
+export type { QuoteOptions } from "./quote";
 export { carryOwners, trimPaste } from "./pasteedits";
 export { escapeMathDelimiters } from "./fixes";
 export { toIA, fromIA, unknownHumans, splitIA, parseIA, applyOwners, sha256Hex } from "./ia";

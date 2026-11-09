@@ -41,7 +41,7 @@ cp note.md /tmp/note.orig.md        # before your first edit; anywhere outside t
 rakkan sign --model claude-opus-5-5 /tmp/note.orig.md note.md
 ```
 
-`sign` writes the marks into `note.md`. Words you kept keep their author, the author's `@@` islands and other models' `[@key]` included, even where your edit dropped their markers. Deleting needs no mark. Two kinds of line come back for you to look at: `unmarked` (the line holds a quote or code that `sign` can't mark) and `foreign-block` (your words landed in an AI block another model signed, so they count as that model's).
+`sign` writes the marks into `note.md`. Words you kept keep their author, the author's `@@` islands and other models' `[@key]` included, even where your edit dropped their markers. Deleting needs no mark. Two kinds of line come back for you to look at: `unmarked` (the line holds a quote, code, or a link or the like with words by two authors, that `sign` can't mark) and `foreign-block` (your words landed in an AI block another model signed, so they count as that model's).
 
 You may also mark small edits by hand, `the &&quick&&[@claude-opus-5-5] brown fox`; `sign` is for marks exact to the character.
 

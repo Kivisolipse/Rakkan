@@ -7,7 +7,7 @@
 
 import { indexAt, parse } from "./parse";
 import { carryOwners } from "./pasteedits";
-import { rewriteCodeLine, rewriteLineDetailed, type Char, type Owner } from "./rewrite";
+import { atomicRanges, rewriteCodeLine, rewriteLineDetailed, type Char, type Owner } from "./rewrite";
 import { stripMarkers } from "./strip";
 import type { Attr, ParseResult } from "./types";
 
@@ -15,7 +15,7 @@ export interface Signed {
   text: string;
   /** How many separate places changed. */
   changed: number;
-  /** Lines (from 0) whose changes could not be marked: quotes, or code without a declaration. */
+  /** Lines (from 0) whose changes could not be marked: quotes, code without a declaration, or a link or the like holding kept text of two authors. They are left as revised. */
   unmarked: number[];
   /** Lines (from 0) whose changes sit in an AI block signed by another model, so they count as that block's. */
   foreign: number[];
@@ -24,12 +24,23 @@ export interface Signed {
 interface Who {
   owner: Owner;
   key?: string;
+  /** Quoted text: a line rewrite can't write a quote, so a line that needs one is reported. */
+  quote?: true;
 }
 
-/** Who owns text of this attribution, as a line rewrite sees it. */
-function whoOf(a: Attr): Who {
+/**
+ * Who owns text of this attribution, as a line rewrite sees it. Text of an AI
+ * block takes the block's model ID, so that it keeps it should the revision
+ * move it out of the block.
+ */
+function whoOf(a: Attr, r: ParseResult): Who {
   const w: Who = { owner: a.kind === "ai" ? "ai" : "human" };
+  if (a.kind === "quote") w.quote = true;
   if (a.key && a.explicit) w.key = a.key;
+  else if (a.kind === "ai" && a.block !== undefined) {
+    const id = r.blocks[a.block]?.signature.id;
+    if (id) w.key = id;
+  }
   return w;
 }
 
@@ -53,12 +64,12 @@ export function signRevision(original: string, revised: string, key?: string): S
     ["H", { owner: "human" }],
     ["A", key ? { owner: "ai", key } : { owner: "ai" }],
   ]);
-  const codes = new Map<string, string>([["human|", "H"]]);
+  const codes = new Map<string, string>([["human||", "H"]]);
   let owners = "";
   for (const pos of a.map) {
     const attr = attrAt(before, pos);
-    const w: Who = attr ? whoOf(attr) : { owner: "human" };
-    const id = `${w.owner}|${w.key ?? ""}`;
+    const w: Who = attr ? whoOf(attr, before) : { owner: "human" };
+    const id = `${w.owner}|${w.key ?? ""}|${w.quote ? "q" : ""}`;
     let code = codes.get(id);
     if (!code) {
       code = String.fromCharCode(0xe000 + codes.size);
@@ -70,15 +81,45 @@ export function signRevision(original: string, revised: string, key?: string): S
   const carried = carryOwners(a.text, owners, b.text);
   const want = new Map<number, Who>();
   b.map.forEach((pos, i) => want.set(pos, whos.get(carried.owners[i])!));
+  // The backslash before a literal `&&` or `@@` is no one's words, and sign adds it itself: as a change it
+  // would take a link around it to the model when the result is signed again.
+  for (const pos of b.map) if (revised[pos] === "\\" && /^(?:&&|@@)/.test(revised.slice(pos + 1, pos + 3))) want.delete(pos);
+
+  // A line rewrite never splits a link, cite or the like: when part of one changed, all of it is
+  // the model's. Say so here as well, or signing the result again would hand the change back to its
+  // neighbours' owner.
+  // An atom the model did not change can still hold kept text of two authors, when the revision dropped
+  // the markers between them (`&&!&&[t](u)` read as the image `![t](u)`). It can't keep both without
+  // being split, so the line is reported.
+  const changedText = whos.get("A")!;
+  const mixed = new Set<number>();
+  for (let n = 0; n < after.lines.length; n++) {
+    const ctx = after.lineContexts[n];
+    if (ctx.mode !== "prose") continue;
+    const from = after.lines[n].from + ctx.prefix;
+    for (const atom of atomicRanges(revised.slice(from, after.lines[n].to))) {
+      let changed = false;
+      let first: Who | undefined;
+      for (let k = from + atom.from; k < from + atom.to; k++) {
+        const w = want.get(k);
+        if (!w) continue;
+        if (w === changedText) changed = true;
+        else if (/\S/.test(revised[k])) {
+          if (first && w !== first) mixed.add(n);
+          first ??= w;
+        }
+      }
+      if (changed) for (let k = from + atom.from; k < from + atom.to; k++) if (want.has(k)) want.set(k, changedText);
+    }
+  }
 
   // Lines where some text's owner is not the one it should have. In an AI block all AI text is the
   // block's model's, so a change in a block that another model signed is reported instead.
-  const changedText = whos.get("A");
   const dirty = new Set<number>();
   const foreign = new Set<number>();
   for (const s of after.segments) {
     if (s.role !== "text") continue;
-    const cur = whoOf(s.attr);
+    const cur = whoOf(s.attr, after);
     const block = cur.owner === "ai" && s.attr.block !== undefined ? after.blocks[s.attr.block] : undefined;
     const line = indexAt(after.lines, s.from, true);
     for (let pos = s.from; pos < s.to; pos++) {
@@ -87,7 +128,7 @@ export function signRevision(original: string, revised: string, key?: string): S
       if (block) {
         if (key && w === changedText && block.signature.id !== key && /\S/.test(revised[pos])) foreign.add(line);
         if (w.owner === "ai") continue;
-      } else if (w.owner === cur.owner && w.key === cur.key) continue;
+      } else if (w.owner === cur.owner && w.key === cur.key && w.quote === cur.quote) continue;
       dirty.add(line);
     }
   }
@@ -108,10 +149,15 @@ export function signRevision(original: string, revised: string, key?: string): S
       }
     };
     const line = revised.slice(from, to);
+    // Kept quoted text whose quote the revision dropped: sign can't write the quote back.
+    let quoted = false;
+    for (let pos = from; pos < to && !quoted; pos++) quoted = want.get(pos)?.quote === true;
     const done =
-      ctx.mode === "prose"
+      quoted || mixed.has(n)
+      ? null
+      : ctx.mode === "prose"
         ? rewriteLineDetailed(line, ctx, edit(ctx.prefix))
-        : ctx.mode === "code"
+        : ctx.mode === "code" && ctx.pair !== "quote" // sign leaves quotes to the person (reported as unmarked)
           ? rewriteCodeLine(line, ctx, edit(0))
           : null;
     if (!done) {

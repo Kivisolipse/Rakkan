@@ -28,7 +28,9 @@ export function atomicRanges(content: string): Range[] {
     /!?\[[^\]\n]*\]\([^)\n]*\)/g, // Markdown links and images
     /\[\^[^\]\s]+\]/g, // footnotes
     /(^|[\s(（])#[^\s#.,;:!?，。；：！？、()（）]+/g, // tags
-    /\s\^[A-Za-z0-9-]+$/g, // block references
+    // Block references, without the space before them: a change that ends in that space would take the
+    // reference into the markers, where it no longer ends the line.
+    /([ \t])\^[A-Za-z0-9-]+$/g,
   ];
   for (const re of patterns) {
     let m: RegExpExecArray | null;
@@ -44,7 +46,16 @@ export function atomicRanges(content: string): Range[] {
   while ((e = emphasis.exec(content))) out.push({ from: e.index, to: e.index + e[0].length });
   const italic = /(^|[^*])(\*[^\s*](?:[^*]*[^\s*])?\*)(?!\*)/g;
   while ((e = italic.exec(content))) out.push({ from: e.index + e[1].length, to: e.index + e[0].length });
-  return out;
+  // Ranges that overlap are one: a bare URL can run into a link (`https://x.y/@@[t](…)`), and spreading
+  // a change over one of them and then the other would depend on their order.
+  out.sort((x, y) => x.from - y.from || y.to - x.to);
+  const merged: Range[] = [];
+  for (const r of out) {
+    const last = merged[merged.length - 1];
+    if (last && r.from < last.to) last.to = Math.max(last.to, r.to);
+    else merged.push({ ...r });
+  }
+  return merged;
 }
 
 /** Whitespace between two spans of the same owner joins them: `@@a@@ @@b@@` → `@@a b@@`. */
@@ -94,6 +105,7 @@ function serialize(
   baseOwner: Owner,
   escape: boolean,
   marker = baseOwner === "human" ? "&&" : "@@",
+  spacesInside = false,
 ): string {
   let out = "";
   let i = 0;
@@ -108,9 +120,10 @@ function serialize(
       .join("");
     if (c.owner === baseOwner || !text.trim()) out += esc(text);
     else {
-      // Keep surrounding spaces outside the markers.
-      const lead = text.length - text.trimStart().length;
-      const trail = text.length - text.trimEnd().length;
+      // Keep surrounding spaces outside the markers, unless told otherwise (a `&` or `@` at the
+      // edge of the text would run into the marker: `&&x &&&` is no span, `&&x & &&` is).
+      const lead = spacesInside ? 0 : text.length - text.trimStart().length;
+      const trail = spacesInside ? 0 : text.length - text.trimEnd().length;
       out +=
         text.slice(0, lead) +
         marker +
@@ -135,7 +148,7 @@ function signature(chars: Char[]): string {
  * `1. `, `- [ ] `, `[^1]: `. A marker in front of it would turn the line into
  * a paragraph, so it always belongs to the line's base owner.
  */
-const LEADER_RE = /^[ \t]*(?:#{1,6}[ \t]+|(?:[-*+]|\d{1,9}[.)])[ \t]+(?:\[[ xX]\][ \t]+)?|\[\^[^\]\s]+\]:[ \t]*)/;
+export const LEADER_RE = /^[ \t]*(?:#{1,6}[ \t]+|(?:[-*+]|\d{1,9}[.)])[ \t]+(?:\[[ xX]\][ \t]+)?|\[\^[^\]\s]+\]:[ \t]*)/;
 
 /** Line leaders and table pipes stay outside markers: `## &&AI&&`, `| &&a&& | b |`. */
 function keepSyntaxOutside(chars: Char[], content: string, baseOwner: Owner) {
@@ -219,8 +232,13 @@ export function rewriteLineDetailed(line: string, ctx: LineContext, edit: (chars
   joinWhitespace(chars, baseOwner);
 
   const want = signature(chars);
-  for (const escape of [false, true]) {
-    const out = serialize(chars, baseOwner, escape);
+  for (const [escape, spacesInside] of [
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true],
+  ]) {
+    const out = serialize(chars, baseOwner, escape, undefined, spacesInside);
     const check = ownersOf(out, ctx);
     if (!check) continue;
     // Escapes add backslashes; compare ignoring them only when escaping.
@@ -309,11 +327,15 @@ export function diffChanges(a: string, b: string): TextChange[] {
 
 /**
  * Rewrite a line of a code block whose fence declares `@@` (any length), inside
- * an AI block. Code has no escapes and no links, so the declared run length is
+ * an AI block or a cited blockquote. Code has no escapes and no links, so the declared run length is
  * the only thing that makes a marker.
  */
 export function rewriteCodeLine(line: string, ctx: LineContext, edit: (chars: Char[]) => void): Rewritten | null {
-  if (ctx.mode !== "code" || ctx.pair !== "ai-block" || ctx.atLen < 2) return null;
+  if (ctx.mode !== "code" || ctx.atLen < 2) return null;
+  // In a cited blockquote the unmarked code is the quoted author's and `@@` islands are the
+  // person's: the same shape as an AI block, so it is rewritten as one.
+  if (ctx.pair === "quote") ctx = { ...ctx, base: { kind: "ai", explicit: false }, pair: "ai-block" };
+  if (ctx.pair !== "ai-block") return null;
   const chars = ownersOf(line, ctx, true);
   if (!chars) return null;
   edit(chars);

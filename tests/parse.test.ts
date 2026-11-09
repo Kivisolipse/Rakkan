@@ -186,13 +186,23 @@ describe("quotes", () => {
   it("leaves normal blockquotes alone", () => {
     expect(owners("> 普通引用块\n> 第二行")).toEqual(["H:普通引用块第二行"]);
   });
+
+  it("keeps code and math inside a cited blockquote in the quote", () => {
+    const src = "> 前\n> \n> ```sh\n> make && make install\n> ```\n> \n> $$\n> x^2\n> $$\n> 后\n> [@ws]";
+    expect(owners(src)).toEqual(["Q@ws:前make && make install$$x^2$$后"]);
+  });
+
+  it("leaves code in an uncited blockquote, and code next to a cited one, alone", () => {
+    expect(owners("> 前\n> ```\n> a && b\n> ```")).toEqual(["H:前a && b"]);
+    expect(owners("```\nx\n```\n> 引\n> [@k]")).toEqual(["H:x", "Q@k:引"]);
+  });
 });
 
 describe("skipped regions", () => {
   it("skips undeclared code blocks, including in callouts and with tildes", () => {
     expect(owners("```js\na && b\n```")).toEqual(["H:a && b"]);
     expect(owners("~~~~\n&&x&&\n~~~\n&&y&&\n~~~~")).toEqual(["H:&&x&&~~~&&y&&"]);
-    expect(owners("> [!note]\n> ```\n> &&x&&\n> ```")).toEqual(["H:[!note]> &&x&&"]);
+    expect(owners("> [!note]\n> ```\n> &&x&&\n> ```")).toEqual(["H:[!note]&&x&&"]);
   });
 
   it("warns about unclosed fences", () => {

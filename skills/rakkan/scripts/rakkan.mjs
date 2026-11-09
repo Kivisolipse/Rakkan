@@ -36,22 +36,45 @@ function hasMarkerRun(text, from, to) {
   }
   return false;
 }
-function linkDestinationEnd(text, open) {
-  let depth = 0;
-  for (let j = open; j < text.length; j++) {
-    const c = text[j];
-    if (c === "\\") {
-      j++;
-      continue;
-    }
-    if (c === "(") depth++;
-    else if (c === ")") {
-      depth--;
-      if (depth === 0) return j + 1;
+function escapedMask(text) {
+  const out = new Uint8Array(text.length + 1);
+  for (let i = 1; i <= text.length; i++) out[i] = text[i - 1] === "\\" && !out[i - 1] ? 1 : 0;
+  return out;
+}
+function firstAfter(list, x) {
+  let lo = 0;
+  let hi = list.length;
+  while (lo < hi) {
+    const mid = lo + hi >> 1;
+    if (list[mid] > x) hi = mid;
+    else lo = mid + 1;
+  }
+  return lo < list.length ? list[lo] : -1;
+}
+var LinkEnds = class {
+  constructor(text, escaped) {
+    this.closesAt = /* @__PURE__ */ new Map();
+    this.depth = new Int32Array(text.length);
+    let d = 0;
+    for (let j = 0; j < text.length; j++) {
+      if (!escaped[j] && text[j] !== "\\") {
+        if (text[j] === "(") d++;
+        else if (text[j] === ")") {
+          d--;
+          let list = this.closesAt.get(d);
+          if (!list) this.closesAt.set(d, list = []);
+          list.push(j);
+        }
+      }
+      this.depth[j] = d;
     }
   }
-  return -1;
-}
+  /** The end of the destination opened at `open`, or -1 when it never closes. */
+  end(open) {
+    const close = firstAfter(this.closesAt.get(this.depth[open] - 1) ?? [], open);
+    return close < 0 ? -1 : close + 1;
+  }
+};
 function urlEnd(text, i) {
   let j = i;
   let parens = 0;
@@ -83,6 +106,21 @@ function scanInline(text, opts) {
   };
   const n = text.length;
   let i = 0;
+  let escapedAt;
+  const escaped = () => escapedAt ??= escapedMask(text);
+  let linkEnds;
+  let closes;
+  const dollarCloses = () => {
+    if (closes) return closes;
+    const esc = escaped();
+    closes = [];
+    for (let j = 1; j < n; j++) {
+      if (text[j] !== "$" || esc[j] || isSpace(text[j - 1])) continue;
+      const next = text[j + 1];
+      if (!(next !== void 0 && isDigit(next))) closes.push(j);
+    }
+    return closes;
+  };
   if (opts.prose && opts.inComment) {
     const close = text.indexOf("%%");
     if (close < 0) {
@@ -159,20 +197,7 @@ function scanInline(text, opts) {
       }
       const after = text[i + 1];
       if (after !== void 0 && !isSpace(after)) {
-        let close = -1;
-        for (let j = i + 1; j < n; j++) {
-          if (text[j] === "\\") {
-            j++;
-            continue;
-          }
-          if (text[j] !== "$") continue;
-          const before = text[j - 1];
-          const next = text[j + 1];
-          if (j > i + 1 && !isSpace(before) && !(next !== void 0 && isDigit(next))) {
-            close = j;
-            break;
-          }
-        }
+        const close = firstAfter(dollarCloses(), i + 1);
         if (close >= 0) {
           out.skips.push({ from: i, to: close + 1, type: "math" });
           if (hasMarkerRun(text, i + 1, close)) out.mathSwallow.push({ from: i, to: close + 1 });
@@ -184,7 +209,8 @@ function scanInline(text, opts) {
       continue;
     }
     if (c === "]" && text[i + 1] === "(") {
-      const end = linkDestinationEnd(text, i + 1);
+      linkEnds ??= new LinkEnds(text, escaped());
+      const end = linkEnds.end(i + 1);
       if (end > 0) {
         out.skips.push({ from: i + 1, to: end, type: "url" });
         i = end;
@@ -254,30 +280,45 @@ function pairTokens(tokens, ctx) {
   return pairs;
 }
 var QUOTE_OPEN = { "\u300D": "\u300C", "\u300F": "\u300E", "\u201D": "\u201C" };
-function inRanges(ranges, pos) {
-  for (const r of ranges) if (pos >= r.from && pos < r.to) return true;
-  return false;
+function rangeMask(n, ranges) {
+  const out = new Uint8Array(n);
+  for (const r of ranges) out.fill(1, r.from, Math.min(r.to, n));
+  return out;
 }
-function findQuoteOpen(text, close, skips) {
-  const closeChar = text[close];
-  if (closeChar === '"') {
-    for (let j = close - 1; j >= 0; j--) {
-      if (text[j] === '"' && !inRanges(skips, j)) return j;
-    }
-    return -1;
+function quoteOpens(text, skipped) {
+  const out = /* @__PURE__ */ new Map();
+  const stacks = { "\u300C": [], "\u300E": [], "\u201C": [] };
+  let lastStraight = -1;
+  for (let j = 0; j < text.length; j++) {
+    if (skipped[j]) continue;
+    const c = text[j];
+    if (c === '"') {
+      out.set(j, lastStraight);
+      lastStraight = j;
+    } else if (c in stacks) stacks[c].push(j);
+    else if (c in QUOTE_OPEN) out.set(j, stacks[QUOTE_OPEN[c]].pop() ?? -1);
   }
-  const openChar = QUOTE_OPEN[closeChar];
-  let depth = 0;
-  for (let j = close; j >= 0; j--) {
-    if (inRanges(skips, j)) continue;
-    if (text[j] === closeChar) depth++;
-    else if (text[j] === openChar) {
-      depth--;
-      if (depth === 0) return j;
-    }
-  }
-  return -1;
+  return out;
 }
+var Covered = class {
+  constructor(n) {
+    this.next = new Int32Array(n + 2).map((_, i) => i);
+  }
+  find(x) {
+    while (this.next[x] !== x) {
+      this.next[x] = this.next[this.next[x]];
+      x = this.next[x];
+    }
+    return x;
+  }
+  has(x) {
+    return this.find(x) !== x;
+  }
+  /** Mark [from, to] (inclusive). */
+  add(from, to) {
+    for (let x = this.find(from); x <= to; x = this.find(x)) this.next[x] = x + 1;
+  }
+};
 function compact(n, role, attr, mark) {
   const segs = [];
   let start = 0;
@@ -326,39 +367,39 @@ function parseLine(text, ctx) {
   for (const c of scan.cites) citeAt.set(c.from, c);
   const usedCites = /* @__PURE__ */ new Set();
   const quotes = [];
-  if (prose) {
+  if (prose && scan.cites.length) {
+    const skipped = rangeMask(n, scan.skips);
+    const opens = quoteOpens(text, skipped);
+    const covered = new Covered(n);
     for (const cite of scan.cites) {
       let p = cite.from - 1;
       if (p >= 0 && text[p] === " ") p--;
       if (p < 0) continue;
       const ch = text[p];
       if (ch !== '"' && !(ch in QUOTE_OPEN)) continue;
-      if (inRanges(scan.skips, p)) continue;
-      const open = findQuoteOpen(text, p, scan.skips);
+      if (skipped[p]) continue;
+      const open = opens.get(p) ?? -1;
       if (open < 0) continue;
-      const q = { open, close: p, cite };
-      const crosses = quotes.some(
-        (a) => !(q.close < a.open || q.open > a.close) && !(q.open > a.open && q.close < a.close) && !(a.open > q.open && a.close < q.close)
-      );
-      if (crosses) continue;
-      quotes.push(q);
+      if (covered.has(open)) continue;
+      quotes.push({ open, close: p, cite });
+      covered.add(open, p);
       usedCites.add(cite);
     }
     quotes.sort((a, b) => a.open - b.open);
   }
-  const zoneOf = (t2) => {
-    let best = -1;
-    for (let qi = 0; qi < quotes.length; qi++) {
-      const q = quotes[qi];
-      if (t2.from > q.open && t2.to <= q.close) {
-        if (best < 0 || quotes[best].open < q.open) best = qi;
-      }
+  const zoneAt = [];
+  {
+    const stack = [];
+    let next = 0;
+    for (const t2 of scan.tokens) {
+      while (next < quotes.length && quotes[next].open < t2.from) stack.push(next++);
+      while (stack.length && quotes[stack[stack.length - 1]].close < t2.to) stack.pop();
+      zoneAt.push(stack.length ? stack[stack.length - 1] : -1);
     }
-    return best;
-  };
+  }
   const zones = /* @__PURE__ */ new Map();
-  for (const t2 of scan.tokens) {
-    const z = zoneOf(t2);
+  for (const [ti, t2] of scan.tokens.entries()) {
+    const z = zoneAt[ti];
     let list = zones.get(z);
     if (!list) zones.set(z, list = []);
     list.push(t2);
@@ -763,13 +804,18 @@ var Parser = class {
         }
       }
     }
+    const quoted = (k) => {
+      const s = structs[k];
+      if (s.inComment) return false;
+      if (s.type === "prose") return s.prefix > 0;
+      return (s.type === "fence" || s.type === "code" || s.type === "plain") && quotePrefix(lineText[k]) > 0;
+    };
     for (let i = 0; i < N; i++) {
-      if (structs[i].type !== "prose" || structs[i].prefix === 0 || structs[i].inComment) continue;
+      if (!quoted(i)) continue;
       let j = i;
-      while (j + 1 < N && structs[j + 1].type === "prose" && structs[j + 1].prefix > 0 && !structs[j + 1].inComment) j++;
-      const last = lineText[j];
-      const content = last.slice(structs[j].prefix);
-      const m = /^\[@([^\s[\]]+)\]\s*$/.exec(content);
+      while (j + 1 < N && quoted(j + 1)) j++;
+      const content = lineText[j].slice(structs[j].prefix);
+      const m = structs[j].type === "prose" ? /^\[@([^\s[\]]+)\]\s*$/.exec(content) : null;
       if (m && j > i) {
         for (let k = i; k <= j; k++) structs[k].quoteKey = m[1];
         const from = structs[j].prefix;
@@ -791,12 +837,15 @@ var Parser = class {
       const st = structs[i];
       const { from, to } = lines[i];
       const t2 = lineText[i];
-      const base = st.block !== null ? blockAttr[st.block] : HUMAN;
+      const outer = st.block !== null ? blockAttr[st.block] : HUMAN;
+      const base = st.quoteKey !== void 0 && st.type !== "prose" ? { kind: "quote", key: st.quoteKey, explicit: true, ...st.block !== null ? { block: st.block } : {} } : outer;
+      const qp = st.type === "code" || st.type === "plain" ? quotePrefix(t2) : 0;
       const blockPair = st.block !== null ? "ai-block" : "human";
+      const codePair = st.quoteKey !== void 0 ? "quote" : blockPair;
       lineContexts[i] = {
         mode: st.type === "prose" && !st.citeLine ? "prose" : st.type === "code" && (st.amp || st.at) ? "code" : "other",
         base: st.type === "meta" ? HUMAN : base,
-        pair: blockPair,
+        pair: codePair,
         prefix: 0,
         inComment: st.inComment,
         ampLen: st.type === "code" ? st.amp : 2,
@@ -824,23 +873,27 @@ var Parser = class {
           continue;
         }
         case "plain":
-          push(from, to, "text", base);
+          push(from, from + qp, "syntax", base);
+          push(from + qp, to, "text", base);
           continue;
         case "code": {
           if (st.amp === 0 && st.at === 0) {
-            push(from, to, "text", base);
+            push(from, from + qp, "syntax", base);
+            push(from + qp, to, "text", base);
             continue;
           }
-          const r = this.parseLineCached(t2, {
+          push(from, from + qp, "syntax", base);
+          const r = this.parseLineCached(t2.slice(qp), {
             base,
-            pair: st.block !== null ? "ai-block" : "human",
+            pair: codePair,
             mode: "code",
             ampLen: st.amp,
             atLen: st.at,
             inComment: false
           });
-          for (const s of r.segments) push(from + s.from, from + s.to, s.role, s.attr, s.mark);
-          for (const s of r.spans) spans.push({ ...s, from: from + s.from, to: from + s.to, contentFrom: from + s.contentFrom, contentTo: from + s.contentTo });
+          const o = from + qp;
+          for (const s of r.segments) push(o + s.from, o + s.to, s.role, s.attr, s.mark);
+          for (const s of r.spans) spans.push({ ...s, from: o + s.from, to: o + s.to, contentFrom: o + s.contentFrom, contentTo: o + s.contentTo });
           continue;
         }
         case "prose": {
@@ -965,8 +1018,9 @@ function atomicRanges(content) {
     // footnotes
     /(^|[\s(（])#[^\s#.,;:!?，。；：！？、()（）]+/g,
     // tags
-    /\s\^[A-Za-z0-9-]+$/g
-    // block references
+    // Block references, without the space before them: a change that ends in that space would take the
+    // reference into the markers, where it no longer ends the line.
+    /([ \t])\^[A-Za-z0-9-]+$/g
   ];
   for (const re of patterns) {
     let m;
@@ -980,7 +1034,14 @@ function atomicRanges(content) {
   while (e = emphasis.exec(content)) out.push({ from: e.index, to: e.index + e[0].length });
   const italic = /(^|[^*])(\*[^\s*](?:[^*]*[^\s*])?\*)(?!\*)/g;
   while (e = italic.exec(content)) out.push({ from: e.index + e[1].length, to: e.index + e[0].length });
-  return out;
+  out.sort((x, y) => x.from - y.from || y.to - x.to);
+  const merged = [];
+  for (const r of out) {
+    const last = merged[merged.length - 1];
+    if (last && r.from < last.to) last.to = Math.max(last.to, r.to);
+    else merged.push({ ...r });
+  }
+  return merged;
 }
 function joinWhitespace(chars, baseOwner) {
   for (let i = 0; i < chars.length; i++) {
@@ -1021,7 +1082,7 @@ function ownersOf(content, ctx, code = false) {
   }
   return chars;
 }
-function serialize(chars, baseOwner, escape, marker = baseOwner === "human" ? "&&" : "@@") {
+function serialize(chars, baseOwner, escape, marker = baseOwner === "human" ? "&&" : "@@", spacesInside = false) {
   let out = "";
   let i = 0;
   const esc = (s) => escape ? s.replace(/(^|[^&@\\])(&&|@@)(?![&@])/g, "$1\\$2") : s;
@@ -1032,8 +1093,8 @@ function serialize(chars, baseOwner, escape, marker = baseOwner === "human" ? "&
     const text = chars.slice(i, j).map((x) => x.ch).join("");
     if (c.owner === baseOwner || !text.trim()) out += esc(text);
     else {
-      const lead = text.length - text.trimStart().length;
-      const trail = text.length - text.trimEnd().length;
+      const lead = spacesInside ? 0 : text.length - text.trimStart().length;
+      const trail = spacesInside ? 0 : text.length - text.trimEnd().length;
       out += text.slice(0, lead) + marker + esc(text.slice(lead, text.length - trail)) + marker + (c.key ? `[@${c.key}]` : "") + text.slice(text.length - trail);
     }
     i = j;
@@ -1086,8 +1147,13 @@ function rewriteLineDetailed(line, ctx, edit) {
   }
   joinWhitespace(chars, baseOwner);
   const want = signature(chars);
-  for (const escape of [false, true]) {
-    const out = serialize(chars, baseOwner, escape);
+  for (const [escape, spacesInside] of [
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true]
+  ]) {
+    const out = serialize(chars, baseOwner, escape, void 0, spacesInside);
     const check = ownersOf(out, ctx);
     if (!check) continue;
     const visible = escape ? check.filter((c) => !(c.ch === "\\" && /[&@]/.test(out[c.at + 1] ?? ""))) : check;
@@ -1100,7 +1166,9 @@ function rewriteLineDetailed(line, ctx, edit) {
   return null;
 }
 function rewriteCodeLine(line, ctx, edit) {
-  if (ctx.mode !== "code" || ctx.pair !== "ai-block" || ctx.atLen < 2) return null;
+  if (ctx.mode !== "code" || ctx.atLen < 2) return null;
+  if (ctx.pair === "quote") ctx = { ...ctx, base: { kind: "ai", explicit: false }, pair: "ai-block" };
+  if (ctx.pair !== "ai-block") return null;
   const chars = ownersOf(line, ctx, true);
   if (!chars) return null;
   edit(chars);
@@ -1380,9 +1448,14 @@ function lint(r, authors = {}, extra = []) {
 }
 
 // src/core/sign.ts
-function whoOf(a) {
+function whoOf(a, r) {
   const w = { owner: a.kind === "ai" ? "ai" : "human" };
+  if (a.kind === "quote") w.quote = true;
   if (a.key && a.explicit) w.key = a.key;
+  else if (a.kind === "ai" && a.block !== void 0) {
+    const id = r.blocks[a.block]?.signature.id;
+    if (id) w.key = id;
+  }
   return w;
 }
 function attrAt(r, pos) {
@@ -1397,12 +1470,12 @@ function signRevision(original, revised, key) {
     ["H", { owner: "human" }],
     ["A", key ? { owner: "ai", key } : { owner: "ai" }]
   ]);
-  const codes = /* @__PURE__ */ new Map([["human|", "H"]]);
+  const codes = /* @__PURE__ */ new Map([["human||", "H"]]);
   let owners = "";
   for (const pos of a.map) {
     const attr = attrAt(before, pos);
-    const w = attr ? whoOf(attr) : { owner: "human" };
-    const id = `${w.owner}|${w.key ?? ""}`;
+    const w = attr ? whoOf(attr, before) : { owner: "human" };
+    const id = `${w.owner}|${w.key ?? ""}|${w.quote ? "q" : ""}`;
     let code = codes.get(id);
     if (!code) {
       code = String.fromCharCode(57344 + codes.size);
@@ -1414,12 +1487,35 @@ function signRevision(original, revised, key) {
   const carried = carryOwners(a.text, owners, b.text);
   const want = /* @__PURE__ */ new Map();
   b.map.forEach((pos, i) => want.set(pos, whos.get(carried.owners[i])));
+  for (const pos of b.map) if (revised[pos] === "\\" && /^(?:&&|@@)/.test(revised.slice(pos + 1, pos + 3))) want.delete(pos);
   const changedText = whos.get("A");
+  const mixed = /* @__PURE__ */ new Set();
+  for (let n = 0; n < after.lines.length; n++) {
+    const ctx = after.lineContexts[n];
+    if (ctx.mode !== "prose") continue;
+    const from = after.lines[n].from + ctx.prefix;
+    for (const atom of atomicRanges(revised.slice(from, after.lines[n].to))) {
+      let changed = false;
+      let first;
+      for (let k = from + atom.from; k < from + atom.to; k++) {
+        const w = want.get(k);
+        if (!w) continue;
+        if (w === changedText) changed = true;
+        else if (/\S/.test(revised[k])) {
+          if (first && w !== first) mixed.add(n);
+          first ??= w;
+        }
+      }
+      if (changed) {
+        for (let k = from + atom.from; k < from + atom.to; k++) if (want.has(k)) want.set(k, changedText);
+      }
+    }
+  }
   const dirty = /* @__PURE__ */ new Set();
   const foreign = /* @__PURE__ */ new Set();
   for (const s of after.segments) {
     if (s.role !== "text") continue;
-    const cur = whoOf(s.attr);
+    const cur = whoOf(s.attr, after);
     const block = cur.owner === "ai" && s.attr.block !== void 0 ? after.blocks[s.attr.block] : void 0;
     const line = indexAt(after.lines, s.from, true);
     for (let pos = s.from; pos < s.to; pos++) {
@@ -1428,7 +1524,7 @@ function signRevision(original, revised, key) {
       if (block) {
         if (key && w === changedText && block.signature.id !== key && /\S/.test(revised[pos])) foreign.add(line);
         if (w.owner === "ai") continue;
-      } else if (w.owner === cur.owner && w.key === cur.key) continue;
+      } else if (w.owner === cur.owner && w.key === cur.key && w.quote === cur.quote) continue;
       dirty.add(line);
     }
   }
@@ -1448,7 +1544,9 @@ function signRevision(original, revised, key) {
       }
     };
     const line = revised.slice(from, to);
-    const done = ctx.mode === "prose" ? rewriteLineDetailed(line, ctx, edit(ctx.prefix)) : ctx.mode === "code" ? rewriteCodeLine(line, ctx, edit(0)) : null;
+    let quoted = false;
+    for (let pos = from; pos < to && !quoted; pos++) quoted = want.get(pos)?.quote === true;
+    const done = quoted || mixed.has(n) ? null : ctx.mode === "prose" ? rewriteLineDetailed(line, ctx, edit(ctx.prefix)) : ctx.mode === "code" && ctx.pair !== "quote" ? rewriteCodeLine(line, ctx, edit(0)) : null;
     if (!done) {
       unmarked.push(n);
       continue;
