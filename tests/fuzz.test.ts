@@ -546,6 +546,8 @@ const MIN_LINE = 0.9;
 describe("P6 Markdown quotes", () => {
   // The least share of texts actually compared, inline or as a blockquote: below it, the generator has
   // drifted into what P6 can't judge, and a pass would say little.
+  // Failures found before, run every time: a comment holding `--` (CommonMark 0.31) over two lines.
+  const found: Record<string, Array<[string, string]>> = { passages: [["*x*<!--&&\n*x*<!---->", "a"]], "one line": [] };
   for (const [name, arb, least] of [
     ["passages", A.markdown, MIN_PASSAGES],
     ["one line", A.markdownLine, MIN_LINE],
@@ -561,7 +563,7 @@ describe("P6 Markdown quotes", () => {
             runs++;
             showsAsAlone(t, k, exempted, forms);
           }),
-          A.params(),
+          A.params(found[name]),
         );
         // Isolation wins over looks in the exempted ones; how often, so a rise shows.
         const n = (r: Record<string, number>, key: string) => r[key] ?? 0;

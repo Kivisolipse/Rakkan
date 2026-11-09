@@ -1419,7 +1419,7 @@ function keyFromName(name) {
 var ATTR = String.raw`(?:\s+[a-zA-Z_:][a-zA-Z0-9:._-]*(?:\s*=\s*(?:[^"'=<>${"`"}\x00-\x20]+|'[^']*'|"[^"]*"))?)`;
 var OPEN_CLOSE = String.raw`<[A-Za-z][A-Za-z0-9\-]*${ATTR}*\s*\/?>|<\/[A-Za-z][A-Za-z0-9\-]*\s*>`;
 var INLINE_HTML = new RegExp(
-  String.raw`^(?:${OPEN_CLOSE}|<!---?>|<!--(?:[^-]|-[^-]|--[^>])*-->|<[?][\s\S]*?[?]>|<![A-Za-z][^>]*>|<!\[CDATA\[[\s\S]*?\]\]>)`
+  String.raw`^(?:${OPEN_CLOSE}|<!---?>|<!--[\s\S]*?-->|<[?][\s\S]*?[?]>|<![A-Za-z][^>]*>|<!\[CDATA\[[\s\S]*?\]\]>)`
 );
 var BLOCK_NAMES = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";
 var HTML_BLOCKS = [

@@ -134,18 +134,22 @@ function escapeSyntax(s: string, keep: Range[] = [], html: Range[] = []): string
   let out = "";
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
-    if (!(c === "@" || c === "%" || c === "&") || within(keep, i) || (c === "&" && ENTITY_RE.test(s.slice(i)))) out += c;
+    // A lone `@` forms no marker and no citation, and an escape would undo an email link (`a@b.c`): only
+    // one in a run (`@@`) or after `[` (`[@key]`) is escaped.
+    const lone = c === "@" && s[i - 1] !== "@" && s[i + 1] !== "@" && s[i - 1] !== "[";
+    if (!(c === "@" || c === "%" || c === "&") || lone || within(keep, i) || (c === "&" && ENTITY_RE.test(s.slice(i)))) out += c;
     else if (within(html, i)) out += ENTITY[c];
     else out += escapedAt(s, i) ? c : "\\" + c;
   }
   return out;
 }
 
-// CommonMark's raw HTML (markdown-it's html_re and html_block).
+// CommonMark's raw HTML (markdown-it's html_re, html_inline and html_block). A comment, as in CommonMark
+// 0.31, is `<!-->`, `<!--->`, or anything from `<!--` to the first `-->`, `--` included.
 const ATTR = String.raw`(?:\s+[a-zA-Z_:][a-zA-Z0-9:._-]*(?:\s*=\s*(?:[^"'=<>${"`"}\x00-\x20]+|'[^']*'|"[^"]*"))?)`;
 const OPEN_CLOSE = String.raw`<[A-Za-z][A-Za-z0-9\-]*${ATTR}*\s*\/?>|<\/[A-Za-z][A-Za-z0-9\-]*\s*>`;
 const INLINE_HTML = new RegExp(
-  String.raw`^(?:${OPEN_CLOSE}|<!---?>|<!--(?:[^-]|-[^-]|--[^>])*-->|<[?][\s\S]*?[?]>|<![A-Za-z][^>]*>|<!\[CDATA\[[\s\S]*?\]\]>)`,
+  String.raw`^(?:${OPEN_CLOSE}|<!---?>|<!--[\s\S]*?-->|<[?][\s\S]*?[?]>|<![A-Za-z][^>]*>|<!\[CDATA\[[\s\S]*?\]\]>)`,
 );
 const BLOCK_NAMES =
   "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";

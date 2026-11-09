@@ -269,8 +269,8 @@ describe("Q2 (§3): a line ends at CR LF, CR or LF, as in CommonMark", () => {
 describe("Q1: a quote of Markdown shows as the text does and nothing in it leaves", () => {
   const q = (t: string) => quoteText(t, "k");
 
-  it("escapes @ & % and leaves the text's own backslash escapes working", () => {
-    expect(q(String.raw`a \*b\* @x & 50%`)).toBe(String.raw`> a \*b\* \@x \& 50\%` + "\n> [@k]");
+  it("escapes @@ & % and leaves the text's own backslash escapes working", () => {
+    expect(q(String.raw`a \*b\* @@x & 50%`)).toBe(String.raw`> a \*b\* \@\@x \& 50\%` + "\n> [@k]");
   });
 
   it("closes a code fence, a ~~~ fence or a $$ block left open, before the [@key] line", () => {
@@ -294,7 +294,7 @@ describe("Q1: a quote of Markdown shows as the text does and nothing in it leave
   });
 
   it("writes @ & % as entities in raw HTML, where a backslash would show", () => {
-    expect(q("<div>\n@x & 50%\n</div>")).toBe("> <div>\n> &#64;x &amp; 50&#37;\n> </div>\n> [@k]");
+    expect(q("<div>\n@@x & 50%\n</div>")).toBe("> <div>\n> &#64;&#64;x &amp; 50&#37;\n> </div>\n> [@k]");
   });
 
   it("writes a tab in the indentation as the spaces it stood for: behind `> `, it would reach another stop", () => {
@@ -313,6 +313,15 @@ describe("Q1: a quote of Markdown shows as the text does and nothing in it leave
   it("keeps one plain line in the line", () => {
     expect(q("纸短情长")).toBe("「纸短情长」[@k]");
     expect(parse(q("纸短情长")).stats.quote).toBe(4);
+  });
+
+  it("escapes only an @ that could form a marker or citation, so an email stays a link", () => {
+    expect(q("写信到 a@b.c")).toBe("> 写信到 a@b.c\n> [@k]");
+    expect(q("a@@b [@x] @")).toBe("> a\\@\\@b [\\@x] @\n> [@k]");
+    // Nothing in the quote is a marker or citation: only the quote's own key.
+    const r = parse(q("a@b.c @@x@@ [@y] @"));
+    expect(r.spans.filter((s) => s.type === "marker")).toEqual([]);
+    expect(r.claims).toEqual([]);
   });
 
   it("keeps the escape-everything output for untrusted text", () => {
