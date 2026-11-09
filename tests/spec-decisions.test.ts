@@ -46,3 +46,16 @@ describe("§7 known limitation: who ticks a task is not recorded, so sign report
     expect(signRevision("- [ ] a\n", "- [ ] a\n- [x] b\n", "m").tasks).toEqual([]);
   });
 });
+
+describe("Q2 (§3): a line ends at CR LF, CR or LF, as in CommonMark", () => {
+  it("ends a line at a lone CR, as the editor does", () => {
+    expect(owners("> a\rb\n> [@k]")).toEqual(owners("> a\nb\n> [@k]"));
+    expect(parse("a\rb\r\nc\nd").lines.map((l) => [l.from, l.to])).toEqual([[0, 1], [2, 3], [5, 6], [7, 8]]);
+  });
+
+  it("signs a file with mixed line ends without changing any of them", () => {
+    const o = "&& AI\r\n\r\n正文\r\n\r\n&&\r\n人写的\n另一行\r";
+    const s = signRevision(o, o.replace("人写的", "人写的甲"), "m");
+    expect(s.text).toBe(o.replace("人写的", "人写的&&甲&&[@m]"));
+  });
+});

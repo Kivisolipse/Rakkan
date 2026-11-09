@@ -54,7 +54,7 @@ describe("fixed: signRevision", () => {
     for (const [o, r] of [
       ['"x"[@k]\n', '甲"x"\n'],
       ["a「x」[@k]\n", "a甲「x」\n"],
-      ['"\r&&"[@k]\n', '甲"\r&&"\n'],
+      ['"&&"[@k]\n', '甲"&&"\n'],
       ["前\n\n> 引文\n> [@k]\n", "前甲\n\n> 引文\n"],
     ]) {
       const s = signRevision(o, r, "m");
@@ -142,14 +142,6 @@ describe("open Q1: quoteText's default output does not escape", () => {
   it.fails("keeps two quotes apart when one opens %% and the other closes it", () => {
     const o = owners(`前文\n\n${quoteText("读数 %% 开始", "heater")}\n\n${quoteText("结束 %% 读数", "lock")}\n\n后文`);
     expect(o.map((x) => x.split(":")[0])).toEqual(["H", "Q@heater", "Q@lock", "H"]);
-  });
-});
-
-describe("open Q2: a lone \\r", () => {
-  // The editor parses CodeMirror's text, where a lone \r already ended the line; the rakkan command,
-  // lint and MCP parse the file as it is. CommonMark ends a line at \r too.
-  it.fails("ends a line, as in the editor", () => {
-    expect(owners("> a\rb\n> [@k]")).toEqual(owners("> a\nb\n> [@k]"));
   });
 });
 

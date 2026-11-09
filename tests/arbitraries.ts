@@ -40,9 +40,9 @@ export const token = fc.oneof(
   { weight: 1, arbitrary: fc.string({ maxLength: 3, unit: "grapheme" }) },
 );
 
-/** A run of tokens on one line (it may still hold \r, U+2028 and the like). */
+/** A run of tokens on one line (it may still hold U+2028 and the like, which end no line). */
 export const soup = (maxTokens = 12) =>
-  fc.array(token, { maxLength: maxTokens }).map((ts) => ts.join("").replace(/\n/g, " "));
+  fc.array(token, { maxLength: maxTokens }).map((ts) => ts.join("").replace(/\r\n|\r|\n/g, " "));
 
 /** Text with line breaks anywhere, as an untrusted source would send it. */
 export const rawText = (maxTokens = 30) => fc.array(token, { maxLength: maxTokens }).map((ts) => ts.join(""));

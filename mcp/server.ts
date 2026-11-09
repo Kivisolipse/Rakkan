@@ -269,13 +269,21 @@ async function rakkanSign(args: Record<string, unknown>): Promise<string> {
   const dryRun = args.dryRun === true;
 
   const before = await readNote(path);
-  const crlf = before.includes("\r\n");
-  const original = crlf ? before.replace(/\r\n/g, "\n") : before;
+  // The note is signed as it is, line ends and all (SPEC §3): only the edits take the note's line end.
+  const original = before;
+  const eol = before.includes("\r\n") ? "\r\n" : "\n";
+  const asNote = (s: string) => s.replace(/\r\n|\r|\n/g, eol);
   let revised = original;
   edits.forEach((e, i) => {
     try {
-      const { from, to } = locate(revised, e.oldText.replace(/\r\n/g, "\n"));
-      revised = revised.slice(0, from) + e.newText.replace(/\r\n/g, "\n") + revised.slice(to);
+      let at: { from: number; to: number };
+      try {
+        at = locate(revised, asNote(e.oldText));
+      } catch (err) {
+        if (asNote(e.oldText) === e.oldText) throw err;
+        at = locate(revised, e.oldText);
+      }
+      revised = revised.slice(0, at.from) + asNote(e.newText) + revised.slice(at.to);
     } catch (err) {
       throw new Error(`edit ${i + 1}: ${(err as Error).message}. Nothing was written.`);
     }
@@ -297,7 +305,7 @@ async function rakkanSign(args: Record<string, unknown>): Promise<string> {
       return !(b && !b.signature.id && b.signature.name === name);
     });
   }
-  const result = crlf ? signed.text.replace(/\n/g, "\r\n") : signed.text;
+  const result = signed.text;
   if (result === before) return `No changes: the edits leave ${path} as it is.`;
   if (!dryRun) {
     const now = await readNote(path);

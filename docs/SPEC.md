@@ -49,6 +49,8 @@ In the middle, @@a sentence the author added@@, and a quote, "less is more"[@mie
 
 ## 3. Markers
 
+A line ends at CR LF, CR or LF, as in CommonMark. An implementation reads the line ends as they are and writes them back unchanged: it does not turn a note's line ends into one kind.
+
 ### 3.1 Length
 
 A marker in prose is **exactly two** of the same character: `&&` or `@@`. Runs of three or more, such as `&&&` or `@@@`, show as they are. A single `&` or `@` (an email address, an @mention) is not a marker.

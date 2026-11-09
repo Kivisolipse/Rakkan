@@ -62,12 +62,13 @@ function timedParse(input: string, parser?: Parser): ParseResult {
 function checkInvariants(input: string, r: ParseResult) {
   const n = input.length;
   expect(r.text).toBe(input);
-  expect(r.lines.length).toBe(input.split("\n").length);
+  // Lines end at \r\n, \r or \n (SPEC §3).
+  expect(r.lines.length).toBe(input.split(/\r\n|\r|\n/).length);
   expect(r.lineContexts.length).toBe(r.lines.length);
   for (let i = 0; i < r.lines.length; i++) {
     const l = r.lines[i];
     expect(0 <= l.from && l.from <= l.to && l.to <= n).toBe(true);
-    expect(input.slice(l.from, l.to)).not.toMatch(/\n/);
+    expect(input.slice(l.from, l.to)).not.toMatch(/[\r\n]/);
     if (i > 0) expect(r.lines[i - 1].to < l.from).toBe(true);
   }
   let prev = 0;

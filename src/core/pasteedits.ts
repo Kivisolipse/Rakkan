@@ -10,7 +10,7 @@ const TOKEN_RE = /[A-Za-z0-9_]+(?:['’-][A-Za-z0-9_]+)*|\s+|[\s\S]/gu;
 const tokenize = (s: string) => Array.from(s.matchAll(TOKEN_RE), (m) => m[0]);
 
 /** Lines with their line breaks. */
-const splitLines = (s: string) => s.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+const splitLines = (s: string) => s.match(/[^\r\n]*(?:\r\n?|\n)|[^\r\n]+$/g) ?? [];
 
 /** Beyond this much work, give up on a fine diff and treat the text as rewritten. */
 const MAX_CELLS = 6_000_000;

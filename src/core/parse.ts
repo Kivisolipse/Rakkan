@@ -131,15 +131,17 @@ export class Parser {
   }
 
   parse(text: string): ParseResult {
-    const raw = text.split("\n");
+    // A line ends at \r\n, \r or \n, as in CommonMark; the text itself is left as it is.
     const lines: LineInfo[] = [];
     const lineText: string[] = [];
+    const eol = /\r\n?|\n/g;
     let offset = 0;
-    for (const l of raw) {
-      const t = l.endsWith("\r") ? l.slice(0, -1) : l;
-      lines.push({ from: offset, to: offset + t.length });
-      lineText.push(t);
-      offset += l.length + 1;
+    for (let m = eol.exec(text); ; m = eol.exec(text)) {
+      const end = m ? m.index : text.length;
+      lines.push({ from: offset, to: end });
+      lineText.push(text.slice(offset, end));
+      if (!m) break;
+      offset = end + m[0].length;
     }
     const N = lines.length;
     const diagnostics: Diagnostic[] = [];
