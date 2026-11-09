@@ -75,7 +75,44 @@ var LinkEnds = class {
     return close < 0 ? -1 : close + 1;
   }
 };
-function urlEnd(text, i) {
+function urlEnd(text, i, opts, open) {
+  const trim = (j2) => {
+    while (j2 > i && /[.,;:!?]/.test(text[j2 - 1])) j2--;
+    return j2;
+  };
+  const full = trim(bareUrlEnd(text, i));
+  let j = full;
+  const min = i + (text[i + 4] === ":" ? 7 : 8);
+  const ends = [];
+  for (; ; ) {
+    let k = j;
+    if (text[k - 1] === "]") {
+      const cite = text.lastIndexOf("[@", k - 1);
+      if (cite > min && /^\[@[^\s[\]]+\]$/.test(text.slice(cite, k))) k = cite;
+    }
+    const c = text[k - 1];
+    const want = c === "&" ? opts.ampLen : c === "@" ? opts.atLen : 0;
+    if (want !== 2 || text[k - 2] !== c || text[k - 3] === c || k - 2 <= min || opts.literalRuns?.has(k - 2)) break;
+    let slashes = 0;
+    while (text[k - 3 - slashes] === "\\") slashes++;
+    if (slashes % 2) break;
+    j = trim(k - 2);
+    ends.push({ amp: c === "&", cut: j });
+  }
+  ends.reverse();
+  for (let s = 0; s < ends.length; s++) {
+    const now = { ...open };
+    const closes = ends.slice(s).every((e) => {
+      const was = e.amp ? now.amp : now.at;
+      if (e.amp) now.amp = !now.amp;
+      else now.at = !now.at;
+      return was;
+    });
+    if (closes) return ends[s].cut;
+  }
+  return full;
+}
+function bareUrlEnd(text, i) {
   let j = i;
   let parens = 0;
   while (j < text.length) {
@@ -106,6 +143,7 @@ function scanInline(text, opts) {
   };
   const n = text.length;
   let i = 0;
+  const open = { amp: false, at: false };
   let escapedAt;
   const escaped = () => escapedAt ??= escapedMask(text);
   let linkEnds;
@@ -138,7 +176,11 @@ function scanInline(text, opts) {
       const want = c === "&" ? opts.ampLen : opts.atLen;
       const literal = want === 0 || len !== want || (opts.literalRuns?.has(i) ?? false) || c === "&" && opts.prose && entityAt(text, i + len - 1);
       if (literal) out.literals.push({ from: i, to: i + len });
-      else out.tokens.push({ from: i, to: i + len, type: c === "&" ? "amp" : "at" });
+      else {
+        out.tokens.push({ from: i, to: i + len, type: c === "&" ? "amp" : "at" });
+        if (c === "&") open.amp = !open.amp;
+        else open.at = !open.at;
+      }
       i += len;
       continue;
     }
@@ -220,7 +262,7 @@ function scanInline(text, opts) {
       continue;
     }
     if ((c === "h" || c === "H") && (startsWithCI(text, i, "http://") || startsWithCI(text, i, "https://")) && (i === 0 || !isAsciiWord(text[i - 1]))) {
-      const end = urlEnd(text, i);
+      const end = urlEnd(text, i, opts, open);
       out.skips.push({ from: i, to: end, type: "url" });
       i = end;
       continue;
@@ -337,7 +379,7 @@ function parseLine(text, ctx) {
   const role = new Array(n).fill("text");
   const attr = new Array(n).fill(ctx.base);
   const mark = new Array(n).fill(void 0);
-  const result = { segments: [], spans: [], diagnostics: [], endsInComment: false };
+  const result = { segments: [], spans: [], claims: [], diagnostics: [], endsInComment: false };
   if (ctx.mode === "plain" || n === 0) {
     result.segments = n ? [{ from: 0, to: n, role: "text", attr: ctx.base }] : [];
     return result;
@@ -442,6 +484,13 @@ function parseLine(text, ctx) {
   };
   applyPairs(pairTokens(zones.get(-1) ?? [], ctx.pair), ctx.base);
   quotes.forEach((q, qi) => {
+    const writer = attr[q.cite.from];
+    if (writer.kind === "ai") {
+      setMark(q.cite.from, q.cite.to, "cite", writer);
+      result.claims.push({ from: q.open + 1, to: q.close, key: q.cite.key, cite: { from: q.cite.from, to: q.cite.to } });
+      applyPairs(pairTokens(zones.get(qi) ?? [], "ai-inline"), writer);
+      return;
+    }
     const a = { kind: "quote", key: q.cite.key, explicit: true };
     if (ctx.base.block !== void 0) a.block = ctx.base.block;
     fill(q.open + 1, q.close, a);
@@ -536,10 +585,31 @@ function signatureLabel(sig, extra = []) {
   return signatureFamily(sig, extra)?.label ?? sig.id ?? "AI";
 }
 
+// src/core/syntax.ts
+var LEADER_RE = /^[ \t]*(?:#{1,6}[ \t]+|(?:[-*+]|\d{1,9}[.)])[ \t]+(?:\[[ xX]\][ \t]+)?|\[\^[^\]\s]+\]:[ \t]*)/;
+var TASK_RE = /^[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+\[[ xX](?=\])/;
+var DELIMITER_RE = /^[ \t]*\|?(?:[ \t]*:?-+:?[ \t]*\|)+(?:[ \t]*:?-+:?[ \t]*)?$/;
+var isTableRow = (content) => /^[ \t]*\|/.test(content);
+function lineSyntax(content) {
+  if (isTableRow(content) && DELIMITER_RE.test(content)) return [[0, content.length]];
+  const out = [];
+  const lead = LEADER_RE.exec(content)?.[0].length ?? 0;
+  if (lead) out.push([0, lead]);
+  if (isTableRow(content)) {
+    let slashes = 0;
+    for (let k = lead; k < content.length; k++) {
+      const c = content[k];
+      if (c === "|" && slashes % 2 === 0) out.push([k, k + 1]);
+      slashes = c === "\\" ? slashes + 1 : 0;
+    }
+  }
+  return out;
+}
+
 // src/core/parse.ts
 var HUMAN = Object.freeze({ kind: "human", explicit: false });
-var FENCE_RE = /^(`{3,}|~{3,})(.*)$/;
-var DEF_RE = /^(?:[-*+]\s+)?@([^\s:[\]]+):\s+(.*)$/;
+var FENCE_RE = /^(`{3,}|~{3,})([^]*)$/;
+var DEF_RE = /^(?:[-*+]\s+)?@([^\s[\]]+):\s+(.*)$/;
 var BLANK_RE = /^\s*$/;
 function containerPrefix(line) {
   let i = 0;
@@ -564,18 +634,31 @@ function blockLine(line) {
   const rest = line.slice(i + 2);
   if (BLANK_RE.test(rest)) return { type: "close" };
   if (rest[0] !== " " && rest[0] !== "	" && rest[0] !== "\u3000") return null;
-  if (rest.includes("&&")) return null;
-  return { type: "open", sig: rest.trim() };
+  if (pairIn(rest)) return null;
+  return { type: "open", sig: unescapePairs(rest.trim()) };
 }
+function unescapePairs(s) {
+  let out = "";
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === "\\" && s[i + 1] === "&" && s[i + 2] === "&") continue;
+    out += s[i];
+    if (s[i] === "\\") out += s[++i] ?? "";
+  }
+  return out;
+}
+function pairIn(s) {
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === "\\") {
+      if (s[i + 1] === "&") while (s[i + 1] === "&") i++;
+      else i++;
+    } else if (s[i] === "&" && s[i + 1] === "&") return true;
+  }
+  return false;
+}
+var UNCOUNTED = /^[\p{White_Space}\p{Default_Ignorable_Code_Point}]$/u;
 function codePoints(s, from, to) {
   let count = 0;
-  for (let i = from; i < to; i++) {
-    const code = s.charCodeAt(i);
-    if (code >= 56320 && code <= 57343) continue;
-    const c = s[i];
-    if (c === " " || c === "	" || c === "\u3000" || c === "\r" || c === "\n") continue;
-    count++;
-  }
+  for (const c of s.slice(from, to)) if (!UNCOUNTED.test(c)) count++;
   return count;
 }
 function emptyStats() {
@@ -614,15 +697,16 @@ var Parser = class {
     return r;
   }
   parse(text) {
-    const raw = text.split("\n");
     const lines = [];
     const lineText = [];
+    const eol = /\r\n?|\n/g;
     let offset = 0;
-    for (const l of raw) {
-      const t2 = l.endsWith("\r") ? l.slice(0, -1) : l;
-      lines.push({ from: offset, to: offset + t2.length });
-      lineText.push(t2);
-      offset += l.length + 1;
+    for (let m = eol.exec(text); ; m = eol.exec(text)) {
+      const end = m ? m.index : text.length;
+      lines.push({ from: offset, to: end });
+      lineText.push(text.slice(offset, end));
+      if (!m) break;
+      offset = end + m[0].length;
     }
     const N = lines.length;
     const diagnostics = [];
@@ -810,6 +894,7 @@ var Parser = class {
       if (s.type === "prose") return s.prefix > 0;
       return (s.type === "fence" || s.type === "code" || s.type === "plain") && quotePrefix(lineText[k]) > 0;
     };
+    const claims = [];
     for (let i = 0; i < N; i++) {
       if (!quoted(i)) continue;
       let j = i;
@@ -817,9 +902,12 @@ var Parser = class {
       const content = lineText[j].slice(structs[j].prefix);
       const m = structs[j].type === "prose" ? /^\[@([^\s[\]]+)\]\s*$/.exec(content) : null;
       if (m && j > i) {
-        for (let k = i; k <= j; k++) structs[k].quoteKey = m[1];
         const from = structs[j].prefix;
         structs[j].citeLine = [from, from + m[0].trimEnd().length];
+        if (structs[j].block !== null) {
+          const cite = lines[j].from + from;
+          claims.push({ from: lines[i].from, to: lines[j - 1].to, key: m[1], cite: { from: cite, to: cite + m[1].length + 3 } });
+        } else for (let k = i; k <= j; k++) structs[k].quoteKey = m[1];
       }
       i = j;
     }
@@ -923,8 +1011,23 @@ var Parser = class {
             inComment: st.inComment
           });
           const o = from + pre;
-          for (const s of r.segments) push(o + s.from, o + s.to, s.role, s.attr, s.mark);
+          const cuts = st.inComment ? [] : lineSyntax(t2.slice(pre));
+          for (const s of r.segments) {
+            if (s.role !== "text" || !cuts.length) {
+              push(o + s.from, o + s.to, s.role, s.attr, s.mark);
+              continue;
+            }
+            let at = s.from;
+            for (const [a, b] of cuts) {
+              if (b <= at || a >= s.to) continue;
+              if (a > at) push(o + at, o + a, "text", s.attr);
+              at = Math.min(b, s.to);
+              push(o + Math.max(a, s.from), o + at, "syntax", s.attr);
+            }
+            if (at < s.to) push(o + at, o + s.to, "text", s.attr);
+          }
           for (const s of r.spans) spans.push({ ...s, from: o + s.from, to: o + s.to, contentFrom: o + s.contentFrom, contentTo: o + s.contentTo });
+          for (const c of r.claims) claims.push({ ...c, from: o + c.from, to: o + c.to, cite: { from: o + c.cite.from, to: o + c.cite.to } });
           for (const d of r.diagnostics) diag(i, o + d.from, o + d.to, d.code, d.message);
           continue;
         }
@@ -948,7 +1051,8 @@ var Parser = class {
       }
     }
     diagnostics.sort((a, b) => a.from - b.from);
-    return { text, lines, lineContexts, segments, spans, blocks, diagnostics, definitions, stats, bodyStart };
+    claims.sort((x, y) => x.from - y.from);
+    return { text, lines, lineContexts, segments, spans, claims, blocks, diagnostics, definitions, stats, bodyStart };
   }
 };
 function indexAt(ranges, pos, inclusiveEnd = false) {
@@ -983,8 +1087,7 @@ function stripMarkers(r, from = 0, to = r.text.length) {
       const line = lines[l];
       const next = lines[l + 1];
       if (!next) continue;
-      drop[line.to] = 1;
-      if (text[line.to] === "\r") drop[line.to + 1] = 1;
+      for (let k = line.to; k < next.from; k++) drop[k] = 1;
       const prev = lines[l - 1];
       const prevBlank = !prev || BLANK_RE2.test(text.slice(prev.from, prev.to));
       const nextBlank = BLANK_RE2.test(text.slice(next.from, next.to));
@@ -1059,7 +1162,7 @@ function joinWhitespace(chars, baseOwner) {
     i = j - 1;
   }
 }
-function ownersOf(content, ctx, code = false) {
+function ownersOf(content, ctx, code = false, units = false) {
   const r = parseLine(content, {
     base: ctx.base,
     pair: ctx.pair,
@@ -1068,69 +1171,112 @@ function ownersOf(content, ctx, code = false) {
     atLen: code ? ctx.atLen : 2,
     inComment: code ? false : ctx.inComment
   });
-  if (r.spans.some((s) => s.type === "quote")) return null;
+  const quotes = r.spans.filter((s) => s.type === "quote");
+  if (quotes.length && !units) return null;
+  const fixed = /* @__PURE__ */ new Map();
+  if (units) {
+    const ranges = [...quotes.map((q) => [q.from, q.to]), ...r.claims.map((c) => [c.from - 1, c.cite.to])].sort((x, y) => x[0] - y[0]);
+    for (const [from, to] of ranges) for (let k = from; k < to; k++) if (!fixed.has(k)) fixed.set(k, from);
+  } else for (const c of r.claims) for (let k = c.cite.from; k < c.cite.to; k++) fixed.set(k, -1);
   const chars = [];
   for (const s of r.segments) {
-    if (s.role === "mark") continue;
     const owner = s.attr.kind === "ai" ? "ai" : "human";
     for (let k = s.from; k < s.to; k++) {
+      const f = fixed.get(k);
+      if (s.role === "mark" && f === void 0) continue;
       const c = { ch: content[k], owner, at: k, orig: "" };
-      if (s.attr.key && s.attr.explicit) c.key = s.attr.key;
+      if (s.attr.key && s.attr.explicit && s.attr.kind !== "quote") c.key = s.attr.key;
+      if (f !== void 0) {
+        c.fixed = true;
+        if (f >= 0) c.unit = f;
+      }
       c.orig = owner + (c.key ?? "");
       chars.push(c);
     }
   }
+  const head = /* @__PURE__ */ new Map();
+  for (const c of chars) if (c.unit !== void 0 && c.at === c.unit) head.set(c.unit, c);
+  for (const c of chars) {
+    const h = c.unit !== void 0 ? head.get(c.unit) : void 0;
+    if (!h) continue;
+    c.owner = h.owner;
+    if (h.key) c.key = h.key;
+    else delete c.key;
+    c.orig = h.orig;
+  }
   return chars;
+}
+function unify(chars) {
+  const head = /* @__PURE__ */ new Map();
+  for (const c of chars) if (c.unit !== void 0 && !head.has(c.unit)) head.set(c.unit, c);
+  for (const c of chars) {
+    const h = c.unit !== void 0 ? head.get(c.unit) : void 0;
+    if (!h || h === c) continue;
+    c.owner = h.owner;
+    if (h.key) c.key = h.key;
+    else delete c.key;
+  }
 }
 function serialize(chars, baseOwner, escape, marker = baseOwner === "human" ? "&&" : "@@", spacesInside = false) {
   let out = "";
   let i = 0;
-  const esc = (s) => escape ? s.replace(/(^|[^&@\\])(&&|@@)(?![&@])/g, "$1\\$2") : s;
+  const escText = (s) => escape ? s.replace(/(^|[^&@\\])(&&|@@)(?![&@])/g, "$1\\$2") : s;
+  const esc = (run) => {
+    let s = "";
+    for (let k = 0; k < run.length; ) {
+      let m = k + 1;
+      while (m < run.length && !!run[m].fixed === !!run[k].fixed) m++;
+      const part = run.slice(k, m).map((x) => x.ch).join("");
+      s += run[k].fixed ? part : escText(part);
+      k = m;
+    }
+    return s;
+  };
   while (i < chars.length) {
     const c = chars[i];
     let j = i + 1;
     while (j < chars.length && chars[j].owner === c.owner && chars[j].key === c.key) j++;
-    const text = chars.slice(i, j).map((x) => x.ch).join("");
-    if (c.owner === baseOwner || !text.trim()) out += esc(text);
+    const run = chars.slice(i, j);
+    const text = run.map((x) => x.ch).join("");
+    if (c.owner === baseOwner || !text.trim()) out += esc(run);
     else {
       const lead = spacesInside ? 0 : text.length - text.trimStart().length;
       const trail = spacesInside ? 0 : text.length - text.trimEnd().length;
-      out += text.slice(0, lead) + marker + esc(text.slice(lead, text.length - trail)) + marker + (c.key ? `[@${c.key}]` : "") + text.slice(text.length - trail);
+      out += text.slice(0, lead) + marker + esc(run.slice(lead, run.length - trail)) + marker + (c.key ? `[@${c.key}]` : "") + text.slice(text.length - trail);
     }
     i = j;
   }
   return out;
 }
 function signature(chars) {
-  return chars.map((c) => (/\s/.test(c.ch) ? "S" : c.owner === "ai" ? "A" : "H") + c.ch).join("");
+  return chars.map((c) => (c.fixed ? "F" : "") + (/\s/.test(c.ch) && !c.fixed ? "S" : c.owner === "ai" ? "A" : "H") + c.ch).join("");
 }
-var LEADER_RE = /^[ \t]*(?:#{1,6}[ \t]+|(?:[-*+]|\d{1,9}[.)])[ \t]+(?:\[[ xX]\][ \t]+)?|\[\^[^\]\s]+\]:[ \t]*)/;
 function keepSyntaxOutside(chars, content, baseOwner) {
   const visible = chars.map((c) => c.ch).join("");
-  const lead = LEADER_RE.exec(visible)?.[0].length ?? 0;
-  for (let i = 0; i < lead; i++) {
-    chars[i].owner = baseOwner;
-    delete chars[i].key;
-  }
-  if (!/^\s*\|/.test(visible)) return;
-  const atoms = atomicRanges(content);
-  for (const c of chars) {
-    if (c.ch !== "|" || content[c.at - 1] === "\\" || atoms.some((a) => c.at >= a.from && c.at < a.to)) continue;
-    c.owner = baseOwner;
-    delete c.key;
+  const atoms = isTableRow(visible) ? atomicRanges(content) : [];
+  for (const [from, to] of lineSyntax(visible)) {
+    for (let i = from; i < to; i++) {
+      const c = chars[i];
+      if (c.ch === "|" && atoms.some((a) => c.at >= a.from && c.at < a.to)) continue;
+      c.owner = baseOwner;
+      delete c.key;
+    }
   }
 }
-function rewriteLineDetailed(line, ctx, edit) {
+function rewriteLineDetailed(line, ctx, edit, opts = {}) {
   if (ctx.mode !== "prose" || ctx.pair === "quote") return null;
+  const { split, units = false } = opts;
   const prefix = line.slice(0, ctx.prefix);
   const content = line.slice(ctx.prefix);
-  const chars = ownersOf(content, ctx);
+  const chars = ownersOf(content, ctx, false, units);
   if (!chars) return null;
   edit(chars);
+  unify(chars);
   const baseOwner = ctx.pair === "ai-block" ? "ai" : "human";
   keepSyntaxOutside(chars, content, baseOwner);
   const byAt = new Map(chars.map((c) => [c.at, c]));
   for (const a of atomicRanges(content)) {
+    if (split?.has(a.from)) continue;
     let changed;
     for (let k = a.from; k < a.to; k++) {
       const c = byAt.get(k);
@@ -1146,6 +1292,7 @@ function rewriteLineDetailed(line, ctx, edit) {
     }
   }
   joinWhitespace(chars, baseOwner);
+  unify(chars);
   const want = signature(chars);
   for (const [escape, spacesInside] of [
     [false, false],
@@ -1154,9 +1301,9 @@ function rewriteLineDetailed(line, ctx, edit) {
     [true, true]
   ]) {
     const out = serialize(chars, baseOwner, escape, void 0, spacesInside);
-    const check = ownersOf(out, ctx);
+    const check = ownersOf(out, ctx, false, units);
     if (!check) continue;
-    const visible = escape ? check.filter((c) => !(c.ch === "\\" && /[&@]/.test(out[c.at + 1] ?? ""))) : check;
+    const visible = escape ? check.filter((c) => c.fixed || !(c.ch === "\\" && /[&@]/.test(out[c.at + 1] ?? ""))) : check;
     if (signature(visible) === want) {
       const map = /* @__PURE__ */ new Map();
       chars.forEach((c, i) => map.set(c.at + ctx.prefix, visible[i].at + ctx.prefix));
@@ -1208,7 +1355,7 @@ function parseAuthor(key, raw, extra = []) {
   author.kind = kind ?? (signatureFamily(sig, extra) && sig.id ? "ai" : "human");
   return author;
 }
-var LINE_RE = /^\s*(?:[-*+]\s+)?@([^\s:[\]]+):\s+(.+?)\s*$/;
+var LINE_RE = /^\s*(?:[-*+]\s+)?@([^\s[\]]+):\s+(.+?)\s*$/;
 function parseBook(text, extra = []) {
   const out = {};
   for (const line of text.split("\n")) {
@@ -1217,11 +1364,31 @@ function parseBook(text, extra = []) {
   }
   return out;
 }
+function keyFromName(name) {
+  return name.trim().toLowerCase().replace(/\s+/g, "-").replace(/[@:[\]「」『』“”"]/g, "");
+}
+
+// src/core/quote.ts
+var ATTR = String.raw`(?:\s+[a-zA-Z_:][a-zA-Z0-9:._-]*(?:\s*=\s*(?:[^"'=<>${"`"}\x00-\x20]+|'[^']*'|"[^"]*"))?)`;
+var OPEN_CLOSE = String.raw`<[A-Za-z][A-Za-z0-9\-]*${ATTR}*\s*\/?>|<\/[A-Za-z][A-Za-z0-9\-]*\s*>`;
+var INLINE_HTML = new RegExp(
+  String.raw`^(?:${OPEN_CLOSE}|<!---?>|<!--(?:[^-]|-[^-]|--[^>])*-->|<[?][\s\S]*?[?]>|<![A-Za-z][^>]*>|<!\[CDATA\[[\s\S]*?\]\]>)`
+);
+var BLOCK_NAMES = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";
+var HTML_BLOCKS = [
+  [/^<(script|pre|style|textarea)(?=(\s|>|$))/i, /<\/(script|pre|style|textarea)>/i, true],
+  [/^<!--/, /-->/, true],
+  [/^<\?/, /\?>/, true],
+  [/^<![A-Za-z]/, />/, true],
+  [/^<!\[CDATA\[/, /\]\]>/, true],
+  [new RegExp(String.raw`^</?(${BLOCK_NAMES})(?=(\s|/?>|$))`, "i"), null, true],
+  [new RegExp(String.raw`^(?:${OPEN_CLOSE})\s*$`), null, false]
+];
 
 // src/core/pasteedits.ts
 var TOKEN_RE = /[A-Za-z0-9_]+(?:['’-][A-Za-z0-9_]+)*|\s+|[\s\S]/gu;
 var tokenize = (s) => Array.from(s.matchAll(TOKEN_RE), (m) => m[0]);
-var splitLines = (s) => s.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+var splitLines = (s) => s.match(/[^\r\n]*(?:\r\n?|\n)|[^\r\n]+$/g) ?? [];
 var MAX_CELLS = 6e6;
 function lcs(a, b) {
   const n = a.length;
@@ -1268,7 +1435,7 @@ function carryWords(original, owners, edited, before) {
   const a = tokenize(original);
   const b = tokenize(edited);
   const pairs = lcs(a, b);
-  if (!pairs) return { owners: "A".repeat(edited.length), changed: edited === original ? 0 : 1 };
+  if (!pairs) return { owners: "A".repeat(edited.length), changed: edited === original ? 0 : 1, from: new Array(edited.length).fill(-1) };
   const start = [];
   let at = 0;
   for (const t2 of a) {
@@ -1279,13 +1446,18 @@ function carryWords(original, owners, edited, before) {
   let own = "";
   let changed = 0;
   let inChange = false;
+  const from = [];
   for (let j = 0; j < b.length; j++) {
     const t2 = b[j];
     const i = kept.get(j);
     if (i !== void 0) {
       own += owners.slice(start[i], start[i] + t2.length);
+      for (let k = 0; k < t2.length; k++) from.push(start[i] + k);
       inChange = false;
-    } else if (/\S/.test(t2)) {
+      continue;
+    }
+    for (let k = 0; k < t2.length; k++) from.push(-1);
+    if (/\S/.test(t2)) {
       if (!inChange) changed++;
       inChange = true;
       own += "A".repeat(t2.length);
@@ -1293,7 +1465,7 @@ function carryWords(original, owners, edited, before) {
       own += inChange ? "A".repeat(t2.length) : (own.slice(-1) || before).repeat(t2.length);
     }
   }
-  return { owners: own, changed };
+  return { owners: own, changed, from };
 }
 function anchors(a, b) {
   const count = (lines) => {
@@ -1306,7 +1478,7 @@ function anchors(a, b) {
   const keep = (l) => ca.get(l) === 1 && cb.get(l) === 1 && /\S/.test(l);
   return [a.map((l, i) => keep(l) ? l : `\0a${i}`), b.map((l, i) => keep(l) ? l : `\0b${i}`)];
 }
-function carryOwners(original, owners, edited) {
+function carry(original, owners, edited) {
   const a = splitLines(original);
   const b = splitLines(edited);
   const start = [];
@@ -1320,6 +1492,7 @@ function carryOwners(original, owners, edited) {
   pairs.push([a.length, b.length]);
   let own = "";
   let changed = 0;
+  const from = [];
   let i = 0;
   let j = 0;
   for (const [pi, pj] of pairs) {
@@ -1327,12 +1500,16 @@ function carryOwners(original, owners, edited) {
       const r = carryWords(a.slice(i, pi).join(""), owners.slice(start[i], start[pi]), b.slice(j, pj).join(""), own.slice(-1) || "H");
       own += r.owners;
       changed += r.changed;
+      for (const f of r.from) from.push(f < 0 ? f : start[i] + f);
     }
-    if (pi < a.length) own += owners.slice(start[pi], start[pi + 1]);
+    if (pi < a.length) {
+      own += owners.slice(start[pi], start[pi + 1]);
+      for (let k = start[pi]; k < start[pi + 1]; k++) from.push(k);
+    }
     i = pi + 1;
     j = pj + 1;
   }
-  return { owners: own, changed };
+  return { owners: own, changed, from };
 }
 
 // src/core/ia.ts
@@ -1434,6 +1611,37 @@ function lint(r, authors = {}, extra = []) {
       else issues.push({ ...at, code: "inert-marker", message: "{mark} \u53EA\u5728 AI \u6587\u5B57\u548C\u5F15\u7528\u91CC\u6807\u51FA\u4EBA\u5199\u7684\u5B57\uFF0C\u8FD9\u91CC\u6309\u539F\u6837\u663E\u793A" });
     }
   }
+  const content = (i) => r.text.slice(r.lines[i].from + r.lineContexts[i].prefix, r.lines[i].to);
+  const ends = (i) => r.lineContexts[i].mode === "other" || /^[ \t]*$|^ {0,3}(?:#{1,6}(?:[ \t]|$)|[-*+][ \t]|\d{1,9}[.)][ \t]|>)/.test(content(i));
+  for (let i = 0; i < r.lines.length; i++) {
+    const c = r.lineContexts[i];
+    if (c.mode === "other") continue;
+    const text = content(i);
+    const scan = scanInline(text, { ampLen: c.ampLen, atLen: c.atLen, prose: c.mode === "prose", inComment: c.inComment });
+    const run = /`+/g;
+    for (let m = run.exec(text); m; m = run.exec(text)) {
+      const at = m.index;
+      if (scan.skips.some((k) => at >= k.from && at < k.to) || text[at - 1] === "\\") continue;
+      let close = -1;
+      for (let j = i + 1; j < r.lines.length && !ends(j); j++) {
+        if (new RegExp(`(?<!\`)\`{${m[0].length}}(?!\`)`).test(content(j))) {
+          close = j;
+          break;
+        }
+      }
+      if (close < 0) continue;
+      const from = r.lines[i].from + c.prefix + at;
+      issues.push({
+        from,
+        to: from + m[0].length,
+        line: i,
+        code: "split-code-span",
+        message: "\u8FD9\u6BB5\u4EE3\u7801\u8DE8\u4E86\u884C\uFF1ARakkan \u4E00\u884C\u4E00\u884C\u8BFB\uFF0C\u770B\u4E0D\u5230\u5B83\uFF0C\u91CC\u9762\u7684\u6807\u8BB0\u7167\u6837\u751F\u6548\u3002\u628A\u5B83\u5199\u5728\u4E00\u884C\u91CC"
+      });
+      i = close - 1;
+      break;
+    }
+  }
   const seen = /* @__PURE__ */ new Set();
   for (const s of r.segments) {
     const key = s.attr.key;
@@ -1453,8 +1661,10 @@ function whoOf(a, r) {
   if (a.kind === "quote") w.quote = true;
   if (a.key && a.explicit) w.key = a.key;
   else if (a.kind === "ai" && a.block !== void 0) {
-    const id = r.blocks[a.block]?.signature.id;
-    if (id) w.key = id;
+    const sig = r.blocks[a.block]?.signature;
+    const k = sig?.id ?? (sig?.name ? keyFromName(sig.name) : "");
+    if (k) w.key = k;
+    else if (sig) w.nokey = true;
   }
   return w;
 }
@@ -1475,7 +1685,7 @@ function signRevision(original, revised, key) {
   for (const pos of a.map) {
     const attr = attrAt(before, pos);
     const w = attr ? whoOf(attr, before) : { owner: "human" };
-    const id = `${w.owner}|${w.key ?? ""}|${w.quote ? "q" : ""}`;
+    const id = `${w.owner}|${w.key ?? ""}|${w.quote ? "q" : ""}${w.nokey ? "n" : ""}`;
     let code = codes.get(id);
     if (!code) {
       code = String.fromCharCode(57344 + codes.size);
@@ -1484,32 +1694,77 @@ function signRevision(original, revised, key) {
     }
     owners += code;
   }
-  const carried = carryOwners(a.text, owners, b.text);
+  const carried = carry(a.text, owners, b.text);
   const want = /* @__PURE__ */ new Map();
   b.map.forEach((pos, i) => want.set(pos, whos.get(carried.owners[i])));
   for (const pos of b.map) if (revised[pos] === "\\" && /^(?:&&|@@)/.test(revised.slice(pos + 1, pos + 3))) want.delete(pos);
+  const boxes = (r, map) => {
+    const at = new Map(map.map((pos, i) => [pos, i]));
+    const out = /* @__PURE__ */ new Map();
+    r.lines.forEach((l, n) => {
+      const ctx = r.lineContexts[n];
+      if (ctx.mode !== "prose") return;
+      const from = l.from + ctx.prefix;
+      const m = TASK_RE.exec(r.text.slice(from, l.to));
+      const i = m ? at.get(from + m[0].length - 1) : void 0;
+      if (i !== void 0) out.set(i, n);
+    });
+    return out;
+  };
+  const tasks = [];
+  const oldBoxes = boxes(before, a.map);
+  if (oldBoxes.size) {
+    let tagged = "";
+    for (let i = 0; i < a.text.length; i++) tagged += oldBoxes.has(i) ? "T" : "H";
+    const own = carry(a.text, tagged, b.text).owners;
+    for (const [i, n] of boxes(after, b.map)) if (own[i] !== "T" && own[i - 1] !== "A" && own[i + 1] !== "A") tasks.push(n);
+  }
   const changedText = whos.get("A");
   const mixed = /* @__PURE__ */ new Set();
+  const split = /* @__PURE__ */ new Map();
   for (let n = 0; n < after.lines.length; n++) {
     const ctx = after.lineContexts[n];
     if (ctx.mode !== "prose") continue;
     const from = after.lines[n].from + ctx.prefix;
     for (const atom of atomicRanges(revised.slice(from, after.lines[n].to))) {
       let changed = false;
+      let two = false;
       let first;
       for (let k = from + atom.from; k < from + atom.to; k++) {
         const w = want.get(k);
         if (!w) continue;
         if (w === changedText) changed = true;
         else if (/\S/.test(revised[k])) {
-          if (first && w !== first) mixed.add(n);
+          if (first && w !== first) two = true;
           first ??= w;
         }
       }
-      if (changed) {
+      if (two && changed) mixed.add(n);
+      else if (two) {
+        if (!split.has(n)) split.set(n, /* @__PURE__ */ new Set());
+        split.get(n).add(atom.from);
+      } else if (changed) {
         for (let k = from + atom.from; k < from + atom.to; k++) if (want.has(k)) want.set(k, changedText);
       }
     }
+  }
+  const same = (w, pos) => {
+    const at = attrAt(after, pos);
+    const cur = at ? whoOf(at, after) : void 0;
+    return !w || !!cur && w.owner === cur.owner && w.key === cur.key && !w.quote === !cur.quote;
+  };
+  const units = [
+    ...after.spans.filter((x) => x.type === "quote").map((x) => [x.from, x.contentFrom, x.contentTo]),
+    // Inline claims: a cited blockquote in an AI block is the block's lines.
+    ...after.claims.filter((c) => c.from > 0 && indexAt(after.lines, c.from - 1) === indexAt(after.lines, c.cite.from)).map((c) => [c.from - 1, c.from, c.to])
+  ];
+  const claimed = /* @__PURE__ */ new Set();
+  for (const [head, from, to] of units) {
+    let kept = same(want.get(head), head);
+    for (let pos = from; pos < to && kept; pos++) kept = same(want.get(pos), pos);
+    if (kept) continue;
+    want.set(head, changedText);
+    for (let pos = from; pos < to; pos++) claimed.add(pos);
   }
   const dirty = /* @__PURE__ */ new Set();
   const foreign = /* @__PURE__ */ new Set();
@@ -1524,7 +1779,7 @@ function signRevision(original, revised, key) {
       if (block) {
         if (key && w === changedText && block.signature.id !== key && /\S/.test(revised[pos])) foreign.add(line);
         if (w.owner === "ai") continue;
-      } else if (w.owner === cur.owner && w.key === cur.key && w.quote === cur.quote) continue;
+      } else if (w.owner === cur.owner && w.key === cur.key && w.quote === cur.quote && !w.nokey) continue;
       dirty.add(line);
     }
   }
@@ -1545,8 +1800,11 @@ function signRevision(original, revised, key) {
     };
     const line = revised.slice(from, to);
     let quoted = false;
-    for (let pos = from; pos < to && !quoted; pos++) quoted = want.get(pos)?.quote === true;
-    const done = quoted || mixed.has(n) ? null : ctx.mode === "prose" ? rewriteLineDetailed(line, ctx, edit(ctx.prefix)) : ctx.mode === "code" && ctx.pair !== "quote" ? rewriteCodeLine(line, ctx, edit(0)) : null;
+    for (let pos = from; pos < to && !quoted; pos++) {
+      const w = want.get(pos);
+      quoted = w?.quote === true && !same(w, pos) && !claimed.has(pos) || w?.nokey === true;
+    }
+    const done = quoted || mixed.has(n) ? null : ctx.mode === "prose" ? rewriteLineDetailed(line, ctx, edit(ctx.prefix), { split: split.get(n), units: true }) : ctx.mode === "code" && ctx.pair !== "quote" ? rewriteCodeLine(line, ctx, edit(0)) : null;
     if (!done) {
       unmarked.push(n);
       continue;
@@ -1555,7 +1813,116 @@ function signRevision(original, revised, key) {
     last = to;
   }
   text += revised.slice(last);
-  return { text, changed: carried.changed, unmarked, foreign: [...foreign].sort((x, y) => x - y) };
+  const signed = { text, changed: carried.changed, unmarked, rejected: [], foreign: [...foreign].sort((x, y) => x - y), tasks };
+  return unmarked.length ? putBack(before, after, a, b, carried.from, signed) : signed;
+}
+function putBack(before, after, a, b, from, signed) {
+  const original = before.text;
+  const revised = after.text;
+  const O = before.lines.length;
+  const R = after.lines.length;
+  const whole = () => ({
+    text: original,
+    changed: signed.changed,
+    unmarked: before.lines.map((_, n) => n),
+    rejected: [{ line: 0, count: O, original: 0, revised }],
+    foreign: [],
+    tasks: []
+  });
+  const keys = (r, st) => {
+    const vis = r.lines.map(() => "");
+    st.map.forEach((pos, i) => {
+      const n = indexAt(r.lines, pos);
+      if (n >= 0) vis[n] += st.text[i];
+    });
+    return r.lines.map((l, n) => vis[n] || `\0${r.text.slice(l.from, l.to).trim()}`);
+  };
+  const ka = keys(before, a);
+  const kb = keys(after, b);
+  const span = (n) => ({ lo: Array(n).fill(Infinity), hi: Array(n).fill(-1) });
+  const toO = span(R);
+  const toR = span(O);
+  from.forEach((f, j) => {
+    if (f < 0) return;
+    const rl = indexAt(after.lines, b.map[j]);
+    const ol = indexAt(before.lines, a.map[f]);
+    if (rl < 0 || ol < 0) return;
+    toO.lo[rl] = Math.min(toO.lo[rl], ol);
+    toO.hi[rl] = Math.max(toO.hi[rl], ol);
+    toR.lo[ol] = Math.min(toR.lo[ol], rl);
+    toR.hi[ol] = Math.max(toR.hi[ol], rl);
+  });
+  const within = (x, n, lo, hi) => x.hi[n] < 0 || x.lo[n] >= lo && x.hi[n] < hi;
+  const stretchOf = [];
+  const pair = (r, o) => ka[o] === kb[r] && within(toO, r, o, o + 1) && within(toR, o, r, r + 1);
+  const one = (r, o) => stretchOf[r] = { r1: r, r2: r + 1, o1: o, o2: o + 1 };
+  const anchors2 = [];
+  for (let r = 0; r < R; r++) {
+    const o = toO.lo[r];
+    if (toO.hi[r] === o && toR.lo[o] === r && toR.hi[o] === r) anchors2.push([r, o]);
+  }
+  let r0 = 0;
+  let o0 = 0;
+  for (const [ar, ao] of [...anchors2, [R, O]]) {
+    let r1 = r0;
+    let o1 = o0;
+    let r2 = ar;
+    let o2 = ao;
+    while (r1 < r2 && o1 < o2 && pair(r1, o1)) one(r1++, o1++);
+    while (r1 < r2 && o1 < o2 && pair(r2 - 1, o2 - 1)) one(--r2, --o2);
+    let oneToOne = r2 - r1 === o2 - o1;
+    for (let k = 0; oneToOne && k < r2 - r1; k++) oneToOne = within(toO, r1 + k, o1 + k, o1 + k + 1) && within(toR, o1 + k, r1 + k, r1 + k + 1);
+    const hunk = { r1, r2, o1, o2 };
+    for (let n = r1; n < r2; n++) stretchOf[n] = oneToOne ? { r1: n, r2: n + 1, o1: o1 + n - r1, o2: o1 + n - r1 + 1 } : hunk;
+    if (ar < R) one(ar, ao);
+    r0 = ar + 1;
+    o0 = ao + 1;
+  }
+  const back = [...new Set(signed.unmarked.map((n) => stretchOf[n]))].sort((x, y) => x.r1 - y.r1);
+  for (const s of back) {
+    for (let n = s.r1; n < s.r2; n++) if (!within(toO, n, s.o1, s.o2)) return whole();
+    for (let n = s.o1; n < s.o2; n++) if (!within(toR, n, s.r1, s.r2)) return whole();
+  }
+  const plain = parse(signed.text);
+  const eol = (r, n) => r.text.slice(r.lines[n].to, n + 1 < r.lines.length ? r.lines[n + 1].from : r.text.length);
+  const pieces = [];
+  const lineOut = [];
+  const rejected = [];
+  const unmarked = [];
+  for (let n = 0, g = 0; n < R; ) {
+    const s = back[g];
+    if (s?.r1 !== n) {
+      lineOut[n] = pieces.length;
+      pieces.push({ text: plain.text.slice(plain.lines[n].from, plain.lines[n].to), eol: eol(plain, n), r: plain, n });
+      n++;
+      continue;
+    }
+    const line = pieces.length;
+    for (let o = s.o1; o < s.o2; o++) {
+      const last = o === s.o2 - 1;
+      pieces.push({ text: original.slice(before.lines[o].from, before.lines[o].to), eol: last ? eol(plain, s.r2 - 1) : eol(before, o), r: before, n: o });
+    }
+    if (s.o1 === s.o2 && s.r2 === R && pieces.length) pieces[pieces.length - 1].eol = eol(plain, R - 1);
+    rejected.push({ line, count: s.o2 - s.o1, original: s.o1, revised: revised.slice(after.lines[s.r1].from, after.lines[s.r2 - 1].to) });
+    for (let k = 0; k < Math.max(1, s.o2 - s.o1); k++) unmarked.push(line + k);
+    n = s.r2;
+    g++;
+  }
+  const text = pieces.map((p) => p.text + p.eol).join("");
+  const out = parse(text);
+  if (out.lines.length !== Math.max(1, pieces.length)) return whole();
+  const reading = (r, n) => {
+    let sig = "";
+    for (let pos = r.lines[n].from; pos < r.lines[n].to; pos++) {
+      const seg = r.segments[indexAt(r.segments, pos)];
+      const blk = seg?.attr.block !== void 0 ? r.blocks[seg.attr.block].signature.raw : "";
+      sig += seg ? `${seg.role}|${seg.attr.kind}|${seg.attr.key ?? ""}|${blk}\0` : "\0";
+    }
+    return sig;
+  };
+  for (let k = 0; k < pieces.length; k++) if (reading(out, k) !== reading(pieces[k].r, pieces[k].n)) return whole();
+  const moved = (lines) => lines.flatMap((n) => lineOut[n] === void 0 ? [] : [lineOut[n]]);
+  return { text, changed: signed.changed, unmarked, rejected, foreign: moved(signed.foreign), tasks: moved(signed.tasks) };
 }
 
 // src/i18n/en.ts
@@ -1599,7 +1966,8 @@ var en = {
   "\u4E0D\u6807\u6CE8\u6A21\u578B": "Don't name a model",
   "\u8BF7\u5148\u65B0\u5EFA\u7F72\u540D\u7C3F": "Create the author book first",
   "{n} \u884C\u542B\u5F15\u7528\u6216\u4EE3\u7801\uFF0C\u672A\u4F5C\u6539\u52A8": "{n} lines contain quotes or code and were left unchanged",
-  "{n} \u884C\u542B\u5F15\u7528\u6216\u4EE3\u7801\uFF0C\u5176\u4E2D\u7684\u6539\u52A8\u672A\u80FD\u6807\u8BB0": "{n} changed lines contain quotes or code, so their changes are not marked",
+  "{n} \u5904\u6539\u52A8\u542B\u5F15\u7528\u6216\u4EE3\u7801\uFF0C\u65E0\u6CD5\u6807\u8BB0\uFF0C\u5DF2\u4FDD\u7559\u539F\u6587": "{n} changes hold quotes or code and can't be marked, so the original was kept there",
+  "{n} \u4E2A\u4EFB\u52A1\u7684\u52FE\u9009\u72B6\u6001\u88AB\u6539\u52A8\uFF0C\u52FE\u9009\u8005\u4E0D\u4F1A\u8BB0\u5F55": "{n} tasks were ticked or unticked; who ticked them isn't recorded",
   "{n} \u884C\u7684\u6539\u52A8\u5728\u5176\u4ED6\u6A21\u578B\u7F72\u540D\u7684 AI \u5757\u91CC\uFF0C\u7B97\u4F5C\u8BE5\u6A21\u578B\u6240\u5199": "{n} changed lines are in an AI block another model signed, so the changes count as that model's",
   "\u5DF2\u6807\u8BB0 {n} \u5904\u6539\u52A8": "Marked {n} changes",
   "\u5DF2\u590D\u5236\uFF08\u5DF2\u79FB\u9664\u6807\u8BB0\uFF09": "Copied (markers removed)",
@@ -1704,6 +2072,7 @@ var en = {
   "{mark} \u53EA\u5728 AI \u6587\u5B57\u548C\u5F15\u7528\u91CC\u6807\u51FA\u4EBA\u5199\u7684\u5B57\uFF0C\u8FD9\u91CC\u6309\u539F\u6837\u663E\u793A": "{mark} marks human words only inside AI text and quotes, so here it shows as is",
   "[@{key}] \u6CA1\u6709\u5B9A\u4E49\uFF1A\u5728\u7B14\u8BB0\u672B\u5C3E\u52A0\u4E00\u884C @{key}: \u540D\u5B57 \xB7 \u6765\u6E90\uFF0C\u6216\u5199\u8FDB\u7F72\u540D\u7C3F": "[@{key}] is not defined: add a line @{key}: Name \xB7 source at the end of the note, or to the author book",
   "[@{key}] \u6CA1\u6709\u5B9A\u4E49\uFF0C\u4E5F\u4E0D\u662F\u8BA4\u5F97\u51FA\u7684\u6A21\u578B ID": "[@{key}] is not defined, and it is not a model ID Rakkan recognises",
+  "\u8FD9\u6BB5\u4EE3\u7801\u8DE8\u4E86\u884C\uFF1ARakkan \u4E00\u884C\u4E00\u884C\u8BFB\uFF0C\u770B\u4E0D\u5230\u5B83\uFF0C\u91CC\u9762\u7684\u6807\u8BB0\u7167\u6837\u751F\u6548\u3002\u628A\u5B83\u5199\u5728\u4E00\u884C\u91CC": "This code runs over lines: Rakkan reads a line at a time and doesn't see it, so markers inside still work. Put it on one line",
   // author manager
   "{n} \u4F4D\u4F5C\u8005": "{n} authors",
   "\u7BA1\u7406": "Manage",
@@ -1868,14 +2237,19 @@ function lintCommand(paths, bookFile) {
 ${plural(problems, "problem")} in ${of}.` : `No problems in ${of}.`);
   return problems ? 1 : 0;
 }
+function rejectedNote(g, then) {
+  const what = g.count ? `${plural(g.count, "line")} of the original kept here` : "lines the revision added left out here";
+  return `This change holds a quote, code, or a link with two authors' words, which sign can't mark, so ${what}. The revision had: ${JSON.stringify(g.revised)}; ${then}.`;
+}
 function signCommand(original, revised, model) {
   const before = readFileSync(revised, "utf8");
   const r = signRevision(readFileSync(original, "utf8"), before, model);
   const name = relative(process.cwd(), revised);
   if (r.text !== before) writeFileSync(revised, r.text);
   const notes = [
-    ...r.unmarked.map((n) => [n, "unmarked", "This line changed, but it holds a quote or code that sign can't mark; mark it by hand."]),
-    ...r.foreign.map((n) => [n, "foreign-block", "Your changes here are inside an AI block another model signed, so they count as that model's."])
+    ...r.rejected.map((g) => [g.line, "unmarked", rejectedNote(g, "make the change by hand and mark your words")]),
+    ...r.foreign.map((n) => [n, "foreign-block", "Your changes here are inside an AI block another model signed, so they count as that model's."]),
+    ...r.tasks.map((n) => [n, "task", "You ticked or unticked this task. A task's box is syntax, so who ticked it isn't recorded."])
   ].sort((x, y) => x[0] - y[0]);
   for (const [n, code, message] of notes) console.log(`${name}:${n + 1}  ${code}  ${message}`);
   console.log(
