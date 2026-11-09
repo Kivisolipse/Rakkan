@@ -26,5 +26,5 @@ export { lint } from "./lint";
 export type { LintCode, LintIssue } from "./lint";
 export { signRevision } from "./sign";
 export type { Rejected, Signed } from "./sign";
-export { clarifications, clarifyOptions, clarifyQuote, nextMixedQuote, quoteAt, quotesOf } from "./clarify";
+export { clarifications, clarifyOptions, clarifyQuote, insertQuote, nextMixedQuote, quoteAt, quotesOf } from "./clarify";
 export type { Clarification, ClarifyOptions, ClarifyRefusal, QuoteRef } from "./clarify";

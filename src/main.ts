@@ -1,7 +1,7 @@
 import { editorLivePreviewField, getLanguage, MarkdownView, MenuItem, normalizePath, Notice, Plugin, TFile, type Component, type Editor, type Menu } from "obsidian";
 import { ChangeSet } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import { diffChanges, Parser, parseAuthor, quoteText, setBookColor, signRevision, trimPaste, type Author, type ParseResult } from "./core";
+import { diffChanges, insertQuote, Parser, parseAuthor, quoteText, setBookColor, signRevision, trimPaste, type Author, type ParseResult } from "./core";
 import { parseField, rakkanEditor, refreshEffect } from "./cm6/editor";
 import { STYLES, type StyleSettings } from "./cm6/resolve";
 import { processSection } from "./obsidian/reading";
@@ -314,9 +314,16 @@ export default class RakkanPlugin extends Plugin {
           const quoted = quoteText(text, key);
           if (!quoted) return;
           // One line stays in the line; a cited blockquote is a paragraph of its own.
-          if (!quoted.startsWith(">")) return editor.replaceSelection(quoted);
-          const lead = editor.getCursor().ch === 0 ? "" : "\n\n";
-          editor.replaceSelection(`${lead}${quoted}\n`);
+          const lead = quoted.startsWith(">") && editor.getCursor("from").ch !== 0 ? "\n\n" : "";
+          const ins = quoted.startsWith(">") ? `${lead}${quoted}\n` : quoted;
+          // The person gives the quote: in AI text it is written as confirmed, not as the model's citation.
+          const doc = editor.getValue();
+          const from = editor.posToOffset(editor.getCursor("from"));
+          const to = editor.posToOffset(editor.getCursor("to"));
+          const c = insertQuote(doc, from, to, ins, { blockOpener: this.settings.defaultSignature });
+          editor.transaction({ changes: [{ from: editor.offsetToPos(c.from), to: editor.offsetToPos(c.to), text: c.insert }] });
+          // `cursor` is an offset in the note as it is now.
+          editor.setCursor(editor.offsetToPos(c.cursor));
         }).open();
       })
       .catch(() => new Notice(t("无法读取剪贴板")));

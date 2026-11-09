@@ -105,6 +105,37 @@ export function clarifyQuote(r: ParseResult, q: QuoteRef, how: Clarification, op
   return sameOutside(r.text, q, how, after) ? c : null;
 }
 
+/**
+ * `quoted` (from quoteText) put in place of `from`..`to` of `doc`, as a quote the person gives: in an AI
+ * region a quote with no markers would be the model's citation, so there it is written as confirmed.
+ * The change to `doc`, and where the cursor goes after it.
+ */
+export function insertQuote(doc: string, from: number, to: number, quoted: string, opts: ClarifyOptions = {}): Change & { cursor: number } {
+  const plain = { from, to, insert: quoted, cursor: from + quoted.length };
+  const text = doc.slice(0, from) + quoted + doc.slice(to);
+  const r = parse(text);
+  // The pasted quote: the widest one inside what was put in.
+  const q = quotesOf(r)
+    .filter((x) => x.from >= from && x.to <= from + quoted.length)
+    .sort((a, b) => b.to - b.from - (a.to - a.from))[0];
+  if (!q?.inAI) return plain;
+  const c = clarifyQuote(r, q, "confirm", opts);
+  if (!c) return plain;
+  const next = text.slice(0, c.from) + c.insert + text.slice(c.to);
+  // One change to `doc`: what lies between the text both keep at the start and at the end.
+  let head = 0;
+  while (head < doc.length && head < next.length && doc[head] === next[head]) head++;
+  head = Math.min(head, from);
+  let tail = 0;
+  while (tail < doc.length - head && tail < next.length - head && doc[doc.length - 1 - tail] === next[next.length - 1 - tail]) tail++;
+  // The cursor goes behind the quote as it ends up, and behind the island around it.
+  const end = next.length - tail;
+  const now = quotesOf(parse(next)).filter((x) => x.key === q.key && x.from >= head && x.to <= end).sort((a, b) => b.to - a.to)[0];
+  let cursor = now ? now.to : end;
+  if (next.startsWith("@@", cursor)) cursor += 2;
+  return { from: head, to: doc.length - tail, insert: next.slice(head, end), cursor };
+}
+
 /** Why no choice can be written: a lone marker by the quote, or something else in how it is written. */
 export type ClarifyRefusal = "unpaired-marker" | "other";
 

@@ -1,7 +1,7 @@
 // Clarify quote: the person settles a quote, and the answer is written into the note as markers.
 
 import { describe, expect, it } from "vitest";
-import { clarifications, clarifyOptions, clarifyQuote, lint, nextMixedQuote, parse, quoteAt, quotesOf, signRevision, type Clarification } from "../src/core";
+import { clarifications, clarifyOptions, clarifyQuote, insertQuote, lint, nextMixedQuote, parse, quoteAt, quotesOf, signRevision, type Clarification } from "../src/core";
 import { owners } from "./helpers";
 
 /** `text` with the quote at `at` clarified as `how`. */
@@ -47,6 +47,36 @@ function offered(text: string, quote: string) {
   const o = clarifyOptions(r, q);
   return o.refusal ?? o.choices.map((c) => c.how);
 }
+
+/** `doc` with `quoted` pasted at `|` as Paste as quote does it, the cursor shown as `|`. */
+function paste(doc: string, quoted: string): string {
+  const at = doc.indexOf("|");
+  const d = doc.replace("|", "");
+  const c = insertQuote(d, at, at, quoted, { blockOpener: "Claude" });
+  const next = d.slice(0, c.from) + c.insert + d.slice(c.to);
+  return next.slice(0, c.cursor) + "|" + next.slice(c.cursor);
+}
+
+describe("Paste as quote", () => {
+  it("writes a quote the person gives in AI text as confirmed, not as the model's citation", () => {
+    const inline = paste("&& Claude\n\n模型说|然后\n\n&&", "「原话」[@x]");
+    expect(inline).toBe("&& Claude\n\n模型说@@「原话」[@x]@@|然后\n\n&&");
+    // The words are the source's, as a quote the person gives; without the island they would be the model's.
+    expect(owners(inline.replace("|", ""))).toContain("Q@x:原话");
+    expect(parse(inline.replace("|", "")).claims).toEqual([]);
+    expect(paste("&&模型说|然后&&[@m]", "「原话」[@x]")).toBe("&&模型说@@「原话」[@x]@@|然后&&[@m]");
+  });
+
+  it("moves a blockquote the person gives out of the AI block, which goes on after it", () => {
+    const out = paste("&& Claude\n\n前文\n\n|后文\n\n&&", "> 原话\n> [@x]\n");
+    expect(out.replace("|", "")).toBe("&& Claude\n\n前文\n\n&&\n\n> 原话\n> [@x]\n\n&& Claude\n\n后文\n\n&&");
+    expect(parse(out.replace("|", "")).claims).toEqual([]);
+  });
+
+  it("leaves a quote in the person's own text as it is", () => {
+    expect(paste("我说|然后", "「原话」[@x]")).toBe("我说「原话」[@x]|然后");
+  });
+});
 
 describe("the Clarify quote menu", () => {
   it("offers only the choices that can be written", () => {
