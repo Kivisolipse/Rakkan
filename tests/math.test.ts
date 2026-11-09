@@ -39,7 +39,9 @@ describe("declared math blocks", () => {
     expect(stripMarkers(r).text).toContain("x = @@y@@");
   });
 
-  it("outside a block the declaration changes nothing, as in code", () => {
-    expect(owners("$$ %@@\nx = @@y@@\n$$")).toEqual(["H:x = @@y@@"]);
+  it("outside a block the declaration changes no owner, but its runs are still markers, as in code", () => {
+    const r = parse("$$ %@@\nx = @@y@@\n$$");
+    expect(owners(r)).toEqual(["H:x = y"]);
+    expect(stripMarkers(r).text).toBe("$$\nx = y\n$$");
   });
 });

@@ -399,7 +399,19 @@ function parseLine(text, ctx) {
       applyPairs(p.children, a);
     }
   };
-  applyPairs(pairTokens(zones.get(-1) ?? [], ctx.pair), ctx.base);
+  const top = zones.get(-1) ?? [];
+  const topPairs = pairTokens(top, ctx.pair);
+  applyPairs(topPairs, ctx.base);
+  if (!prose) {
+    const inPair = (t2) => topPairs.some((p) => t2.from >= p.open.from && t2.to <= p.close.to);
+    const idle = top.filter((t2) => !isActive(ctx.pair, t2.type) && !inPair(t2));
+    for (let i = 0; i + 1 < idle.length; i += 2) {
+      const [open, close] = [idle[i], idle[i + 1]];
+      setMark(open.from, open.to, "open", ctx.base);
+      setMark(close.from, close.to, "close", ctx.base);
+      result.spans.push({ from: open.from, to: close.to, contentFrom: open.to, contentTo: close.from, attr: ctx.base, type: "marker" });
+    }
+  }
   quotes.forEach((q, qi) => {
     const a = { kind: "quote", key: q.cite.key, explicit: true };
     if (ctx.base.block !== void 0) a.block = ctx.base.block;

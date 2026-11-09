@@ -558,7 +558,25 @@ export function parseLine(text: string, ctx: LineCtx): LineResult {
     }
   };
 
-  applyPairs(pairTokens(zones.get(-1) ?? [], ctx.pair), ctx.base);
+  const top = zones.get(-1) ?? [];
+  const topPairs = pairTokens(top, ctx.pair);
+  applyPairs(topPairs, ctx.base);
+
+  // In code a declared run is meant as a marker: the declaration chose a length
+  // the code does not use. Runs with nothing to mark at this level (`&&&` in an
+  // AI block, `@@` in a human region) still pair, as markers that change no
+  // owner, so they are hidden, copied and stripped like any other. Inside an
+  // island they stay literal, as in prose: islands do not nest.
+  if (!prose) {
+    const inPair = (t: Token) => topPairs.some((p) => t.from >= p.open.from && t.to <= p.close.to);
+    const idle = top.filter((t) => !isActive(ctx.pair, t.type) && !inPair(t));
+    for (let i = 0; i + 1 < idle.length; i += 2) {
+      const [open, close] = [idle[i], idle[i + 1]];
+      setMark(open.from, open.to, "open", ctx.base);
+      setMark(close.from, close.to, "close", ctx.base);
+      result.spans.push({ from: open.from, to: close.to, contentFrom: open.to, contentTo: close.from, attr: ctx.base, type: "marker" });
+    }
+  }
 
   quotes.forEach((q, qi) => {
     const a: Attr = { kind: "quote", key: q.cite.key, explicit: true };

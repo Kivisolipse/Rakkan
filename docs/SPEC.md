@@ -231,6 +231,7 @@ let count = @@0@@
   ````
 
 - The context rules are those of prose: in code inside an AI block, declare `@@` to mark human islands; in code in a human region, declare `&&&` to mark AI text.
+- A declared run is never shown as code. Where it has nothing to mark (`&&&` in an AI block, `@@` in a human region, as after a code block moves into or out of an AI block), it still pairs, is hidden, and is removed when copying or stripping; it just changes no owner. Inside a human island, `&&&` stays as written, with a warning.
 - To strip the markers, one regular expression per declaration is enough.
 
 ## 7. Counting
