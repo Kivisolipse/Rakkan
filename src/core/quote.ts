@@ -57,6 +57,54 @@ function dedent(line: string, n: number): string {
   return line.slice(i);
 }
 
+/**
+ * A prose line with the tabs in its indentation, blockquote markers and list markers written as the spaces
+ * they stand for. Behind `> `, a tab reaches the next stop from two columns further on, and would stand for
+ * other spaces: `- \tx` is a list item, `> - \tx` one that starts with indented code.
+ */
+function expandLead(line: string): string {
+  const lead = /^(?:[ \t]*(?:>|(?:[-*+]|\d{1,9}[.)])(?=[ \t])))*[ \t]*/.exec(line)![0];
+  if (!lead.includes("\t")) return line;
+  let out = "";
+  for (const c of lead) out += c === "\t" ? " ".repeat(4 - (width(out) % 4)) : c;
+  return out + line.slice(lead.length);
+}
+
+/**
+ * The line less `n` blockquote markers, as CommonMark reads what follows them: a tab after a `>` gives one
+ * column to the marker and the rest as spaces, and a tab in the next `keep` columns (the indentation that
+ * indented code takes off) is the spaces it reached from where it was. A tab past them is the code's own.
+ */
+function unquote(line: string, n: number, keep: number): string {
+  let i = 0;
+  let col = 0;
+  let out = "";
+  for (let level = 0; level < n; level++) {
+    let j = i;
+    let c = col;
+    while (j - i < 3 && line[j] === " ") (j++, c++);
+    if (line[j] !== ">") break;
+    i = j + 1;
+    col = c + 1;
+    out = "";
+    if (line[i] === " ") (i++, col++);
+    else if (line[i] === "\t") {
+      const w = 4 - (col % 4);
+      out = " ".repeat(w - 1);
+      col += w;
+      i++;
+    }
+  }
+  const start = col - out.length;
+  while (i < line.length && (line[i] === " " || line[i] === "\t") && col - start < keep) {
+    const w = line[i] === " " ? 1 : 4 - (col % 4);
+    out += " ".repeat(w);
+    col += w;
+    i++;
+  }
+  return out + line.slice(i);
+}
+
 /** How many columns `s` takes, tabs to the next stop of 4. */
 function width(s: string): number {
   let col = 0;
@@ -279,6 +327,8 @@ export function quoteMarkdown(text: string): { lines: string[]; mathClosers: num
     // items, and neither do blockquotes here.
     let itemHere = false;
     let lazyHere = false;
+    // Whether the line above was in a list item.
+    const inItem = items.length > 0;
     const wasFresh = fresh;
     fresh = false;
     if (BLANK_RE.test(line)) {
@@ -332,6 +382,7 @@ export function quoteMarkdown(text: string): { lines: string[]; mathClosers: num
     }
 
     let inHtml = false;
+    let htmlStarts = false;
     if (html) {
       // Blank within the HTML's own blockquote: a `>` deeper in is raw text.
       if (html.end === null && BLANK_RE.test(stripQuotes(line, html.depth))) html = null;
@@ -343,7 +394,7 @@ export function quoteMarkdown(text: string): { lines: string[]; mathClosers: num
       // A tag alone on a line can't break into a paragraph, or into a table's rows.
       const hb = htmlBlock(itemHere ? line.replace(LIST_MARKER, "") : dedent(line, item), wasPara || table);
       if (hb) {
-        inHtml = true;
+        inHtml = htmlStarts = true;
         html = hb.end?.test(line) ? null : { end: hb.end, ...within };
       }
     }
@@ -353,14 +404,16 @@ export function quoteMarkdown(text: string): { lines: string[]; mathClosers: num
       let l = escapeSyntax(line, verbatim(line), [{ from: 0, to: line.length }]);
       const r = containerPrefix(l);
       if (FENCE_RE.test(l.slice(r)) || l.startsWith("$$", r)) l = l.slice(0, r) + `&#${l.charCodeAt(r)};` + l.slice(r + 1);
-      out.push(l);
+      // On its first line, a tab after the list marker stands for the spaces it reached.
+      out.push(htmlStarts ? expandLead(l) : l);
       continue;
     }
 
     // Indented code (in a list item, or in a blockquote), which the parser reads as prose: the same code in
     // a fence, which it reads as code.
     const held = (l: string) => quoteDepth(l) >= depth;
-    const content = (l: string) => (depth ? stripQuotes(l, depth) : l);
+    // Behind its blockquote markers, a tab in the indentation stands for the spaces it reached from where it was.
+    const content = (l: string) => (depth ? unquote(l, depth, indent + 4) : l);
     const indent = depth ? 0 : item;
     const codeLine = (l: string) => held(l) && !BLANK_RE.test(content(l)) && columns(content(l)) >= indent + 4;
     const blankLine = (l: string) => held(l) && BLANK_RE.test(content(l));
@@ -385,10 +438,11 @@ export function quoteMarkdown(text: string): { lines: string[]; mathClosers: num
       const pad = depth ? "> ".repeat(depth) : " ".repeat(item);
       if (mark !== null) {
         // A marker with nothing after it can't break into a paragraph (`-` would underline it): a blank
-        // line ends the paragraph first. In an outer list item, that blank line loosens the outer list.
+        // line ends the paragraph first. After a paragraph in a list item, that blank line loosens the list:
+        // the outer one, or the one the item above and this one are in.
         if (interrupted) {
           out.push("");
-          if (items.length > 1) loosened++;
+          if (items.length > 1 || inItem) loosened++;
         }
         out.push(mark);
       }
@@ -404,14 +458,17 @@ export function quoteMarkdown(text: string): { lines: string[]; mathClosers: num
       // Indented past the paragraph it carries on: text to CommonMark, but code or math to the parser.
       line = `${line.slice(0, cp)}\\${rest}`;
     } else if (opens) {
-      fence = { char: fm![1][0], len: fm![1].length, prefix: line.slice(0, cp), ...within };
+      // Its indentation as the spaces a tab in it stood for, as on a prose line.
+      const prefix = expandLead(line.slice(0, cp));
+      fence = { char: fm![1][0], len: fm![1].length, prefix, ...within };
       // CommonMark reads escapes in an info string, so `\@\@` is still `@@` to a reader but declares nothing.
-      out.push(line.slice(0, cp) + fm![1] + escapeSyntax(fm![2]));
+      out.push(prefix + fm![1] + escapeSyntax(fm![2]));
       continue;
     } else if (mathOpens) {
-      math = { prefix: line.slice(0, cp), ...within };
+      const prefix = expandLead(line.slice(0, cp));
+      math = { prefix, ...within };
       // `$$ %@@` declares islands; `$$ % @@` is the same LaTeX comment and declares nothing.
-      out.push(line.replace(/^([ \t>]*\$\$[ \t]*%)(@)/, "$1 $2"));
+      out.push((prefix + rest).replace(/^([ \t>]*\$\$[ \t]*%)(@)/, "$1 $2"));
       continue;
     }
 
@@ -516,7 +573,7 @@ export function quoteMarkdown(text: string): { lines: string[]; mathClosers: num
       p++;
     }
     const keep = [...verbatim(line), ...links];
-    out.push(escapeSyntax(line, keep, spans));
+    out.push(expandLead(escapeSyntax(line, keep, spans)));
     paraDepth = pd;
   }
   // Blank lines at the end are nothing, unless code or raw HTML left open holds them.
@@ -526,11 +583,24 @@ export function quoteMarkdown(text: string): { lines: string[]; mathClosers: num
   return { lines: out, mathClosers, unfolded, loosened };
 }
 
+/** What starts a block, or means something only at the start of a line: a heading or `#tag`, a blockquote,
+ * a list item, raw HTML, a `~~~` fence, a link or footnote definition, a thematic break. */
+const LINE_START = /^(?:#|>|[-+*](?:[ \t]|$)|\d{1,9}[.)](?:[ \t]|$)|<|~~~|\[[^\]]*\]:|([-*_])(?:[ \t]*\1){2,}[ \t]*$)/;
+
 /**
- * `text` as a quote of `key`: a cited blockquote whose last line is
- * `> [@key]`. By default the text is Markdown (pasted or clipped into a note)
- * and shows as it would on its own; with `untrusted`, it is plain text and
- * every ASCII punctuation mark is escaped.
+ * Whether one line of Markdown shows the same inside `「…」[@key]` as on its own: nothing in it that could
+ * be a marker, code, math, a comment or a quotation mark, nothing that means something only at the start
+ * or end of a line (a trailing backslash would escape the `」`; `^id` is an Obsidian block ID), and no
+ * space at either end, which a paragraph drops.
+ */
+const inlineQuotable = (t: string) =>
+  /^[^`$%&@「」"\r\n\u2028\u2029]+$/.test(t) && t === t.trim() && !LINE_START.test(t) && !/\\$/.test(t) && !/\s\^[A-Za-z0-9-]+$/.test(t);
+
+/**
+ * `text` as a quote of `key`. By default the text is Markdown (pasted or clipped into a note) and shows as
+ * it would on its own: one line that shows the same inside them stays in the line as `「…」[@key]`,
+ * anything else is a cited blockquote whose last line is `> [@key]`. With `untrusted`, it is plain text,
+ * every ASCII punctuation mark is escaped, and it is always a blockquote.
  */
 export function quoteText(text: string, key: string, opts: QuoteOptions = {}): string {
   if (!KEY_RE.test(key)) throw new RangeError(`Not a Rakkan key: ${JSON.stringify(key)}`);
@@ -539,6 +609,7 @@ export function quoteText(text: string, key: string, opts: QuoteOptions = {}): s
     const lines = text.split(/\r\n|\r|\n/).map((l) => l.replace(ASCII_PUNCTUATION, "\\$&"));
     return [...lines.map((l) => (l ? `> ${l}` : ">")), `> [@${key}]`].join("\n");
   }
+  if (inlineQuotable(text)) return `「${text}」[@${key}]`;
   const { lines } = quoteMarkdown(text);
   if (!lines.length) return "";
   return [...lines.map((l) => (l ? `> ${l}` : ">")), `> [@${key}]`].join("\n");

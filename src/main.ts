@@ -313,7 +313,8 @@ export default class RakkanPlugin extends Plugin {
         new AuthorPickerModal(this.app, { authors: () => Object.values(this.allAuthors()) }, (key) => {
           const quoted = quoteText(text, key);
           if (!quoted) return;
-          // Always a cited blockquote: a paragraph of its own.
+          // One line stays in the line; a cited blockquote is a paragraph of its own.
+          if (!quoted.startsWith(">")) return editor.replaceSelection(quoted);
           const lead = editor.getCursor().ch === 0 ? "" : "\n\n";
           editor.replaceSelection(`${lead}${quoted}\n`);
         }).open();

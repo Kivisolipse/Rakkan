@@ -429,16 +429,52 @@ function parseLine(text, ctx) {
     }
     quotes.sort((a, b) => a.open - b.open);
   }
-  const zoneAt = [];
-  {
+  const innermost = (skip) => {
+    const at = [];
     const stack = [];
     let next = 0;
     for (const t2 of scan.tokens) {
-      while (next < quotes.length && quotes[next].open < t2.from) stack.push(next++);
+      for (; next < quotes.length && quotes[next].open < t2.from; next++) if (!skip.has(next)) stack.push(next);
       while (stack.length && quotes[stack[stack.length - 1]].close < t2.to) stack.pop();
-      zoneAt.push(stack.length ? stack[stack.length - 1] : -1);
+      at.push(stack.length ? stack[stack.length - 1] : -1);
     }
+    return at;
+  };
+  const mixed = /* @__PURE__ */ new Set();
+  if (quotes.length) {
+    const parent = quotes.map(() => -1);
+    const depth = quotes.map(() => 0);
+    const open = [];
+    quotes.forEach((q, qi) => {
+      while (open.length && quotes[open[open.length - 1]].close < q.open) open.pop();
+      if (open.length) {
+        parent[qi] = open[open.length - 1];
+        depth[qi] = depth[parent[qi]] + 1;
+      }
+      open.push(qi);
+    });
+    const tokenAt = new Map(scan.tokens.map((t2, ti) => [t2, ti]));
+    const inner = innermost(/* @__PURE__ */ new Set());
+    const d = (q) => q < 0 ? -1 : depth[q];
+    const walk2 = (pairs) => {
+      for (const p of pairs) {
+        let a = inner[tokenAt.get(p.open)];
+        let b = inner[tokenAt.get(p.close)];
+        while (a !== b) {
+          if (d(a) >= d(b)) {
+            mixed.add(a);
+            a = parent[a];
+          } else {
+            mixed.add(b);
+            b = parent[b];
+          }
+        }
+        walk2(p.children);
+      }
+    };
+    walk2(pairTokens(scan.tokens, ctx.pair));
   }
+  const zoneAt = innermost(mixed);
   const zones = /* @__PURE__ */ new Map();
   for (const [ti, t2] of scan.tokens.entries()) {
     const z = zoneAt[ti];
@@ -484,6 +520,14 @@ function parseLine(text, ctx) {
   };
   applyPairs(pairTokens(zones.get(-1) ?? [], ctx.pair), ctx.base);
   quotes.forEach((q, qi) => {
+    if (mixed.has(qi)) {
+      result.diagnostics.push({
+        from: q.open,
+        to: q.cite.to,
+        code: "mixed-quote",
+        message: "\u8FD9\u6BB5\u5F15\u6587\u7684\u5404\u90E8\u5206\u51FA\u81EA\u4E0D\u540C\u4F5C\u8005\uFF0C\u76EE\u524D\u6309\u51FA\u5904\u6807\u8BB0\u7684\u4E66\u5199\u8005\u5F52\u5C5E\uFF0C\u53EF\u7528\u300C\u6F84\u6E05\u5F15\u6587\u300D\u786E\u5B9A"
+      });
+    }
     const writer = attr[q.cite.from];
     if (writer.kind === "ai") {
       setMark(q.cite.from, q.cite.to, "cite", writer);
@@ -493,7 +537,9 @@ function parseLine(text, ctx) {
     }
     const a = { kind: "quote", key: q.cite.key, explicit: true };
     if (ctx.base.block !== void 0) a.block = ctx.base.block;
-    fill(q.open + 1, q.close, a);
+    if (mixed.has(qi)) {
+      for (let k = q.open + 1; k < q.close; k++) if (role[k] !== "mark") attr[k] = a;
+    } else fill(q.open + 1, q.close, a);
     setMark(q.cite.from, q.cite.to, "cite", a);
     result.spans.push({
       from: q.open,
@@ -1119,8 +1165,9 @@ function atomicRanges(content) {
     // Markdown links and images
     /\[\^[^\]\s]+\]/g,
     // footnotes
-    /(^|[\s(（])#[^\s#.,;:!?，。；：！？、()（）]+/g,
-    // tags
+    // Tags. Markers before the `#` are read through, as they are before a link: a tag the model wrote is
+    // written `&&#tag&&`, and signing that again must still find it. `&` and `@` end it, as in Obsidian.
+    /((?:^|[\s(（])(?:&&|@@)*)#[^\s#.,;:!?，。；：！？、()（）&@]+/g,
     // Block references, without the space before them: a change that ends in that space would take the
     // reference into the markers, where it no longer ends the line.
     /([ \t])\^[A-Za-z0-9-]+$/g
@@ -1937,6 +1984,16 @@ var en = {
   "\u5F00\u5408\u884C\u524D\u540E\u5747\u5DF2\u6709\u7A7A\u884C": "Every block fence already has blank lines around it",
   "\u5DF2\u8865\u5168 {n} \u4E2A\u7A7A\u884C": "Added {n} blank lines",
   "\u7C98\u8D34\u4E3A\u5F15\u7528": "Paste as quote",
+  "\u6F84\u6E05\u5F15\u6587": "Clarify quote",
+  "\u8DF3\u5230\u4E0B\u4E00\u5904\u5F85\u6F84\u6E05\u7684\u5F15\u6587": "Go to next unclarified quote",
+  "\u786E\u8BA4\u4E3A {name} \u7684\u5F15\u6587": "Confirm as quote from {name}",
+  "\u6807\u4E3A AI \u7684\u51FA\u5904\u58F0\u660E": "Mark as AI citation",
+  "\u79FB\u9664\u5F15\u7528\u6807\u8BB0": "Remove quote markup",
+  "\u79FB\u9664\u5F15\u7528\u6807\u8BB0\u5E76\u6807\u4E3A\u4EBA\u5199": "Remove quote markup and mark as human-written",
+  "\u5149\u6807\u4E0D\u5728\u5F15\u6587\u4E0A": "The cursor is not on a quote",
+  "\u6CA1\u6709\u5F85\u6F84\u6E05\u7684\u5F15\u6587": "No unclarified quotes",
+  "\u65E0\u6CD5\u6309\u6240\u9009\u65B9\u5F0F\u6539\u5199\u8FD9\u6BB5\u5F15\u6587": "This quote cannot be rewritten as chosen",
+  "\u8FD9\u6BB5\u5F15\u6587\u7684\u5404\u90E8\u5206\u51FA\u81EA\u4E0D\u540C\u4F5C\u8005\uFF0C\u76EE\u524D\u6309\u51FA\u5904\u6807\u8BB0\u7684\u4E66\u5199\u8005\u5F52\u5C5E\uFF0C\u53EF\u7528\u300C\u6F84\u6E05\u5F15\u6587\u300D\u786E\u5B9A": "The parts of this quote come from different authors and are currently attributed by who wrote the source marker; Clarify quote can settle this",
   "\u7C98\u8D34\u4FEE\u6539\uFF08\u4EC5\u5C06\u6539\u52A8\u5904\u6807\u8BB0\u4E3A\u6A21\u578B\u6240\u5199\uFF09": "Paste revision (mark only the changed parts as the model's)",
   "\u65B0\u5EFA\u7F72\u540D\u7C3F": "Create author book",
   "\u7C98\u8D34\u4E3A AI \u751F\u6210": "Paste as AI-generated",

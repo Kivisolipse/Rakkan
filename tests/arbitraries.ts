@@ -90,6 +90,16 @@ const mdLine = fc.oneof(
 /** A Markdown passage, the kind pasted or clipped into a note. */
 export const markdown = fc.array(mdLine, { maxLength: 8 }).map((ls) => ls.join("\n"));
 
+/** One line of Markdown, pasted as a quote: one that may stay in the line as `「…」[@key]`, often. */
+const QUOTABLE = (t: string) => !/[`$%&@「」"\r\n\u2028\u2029]/.test(t);
+const plainLine = fc
+  .tuple(
+    fc.constantFrom(...MD_PREFIXES),
+    fc.array(fc.constantFrom(...PLAIN, ...MD_INLINE.filter(QUOTABLE), ...SYNTAX.filter(QUOTABLE)), { minLength: 1, maxLength: 8 }),
+  )
+  .map(([p, ts]) => p + ts.join(""));
+export const markdownLine = fc.oneof({ weight: 1, arbitrary: mdLine }, { weight: 2, arbitrary: plainLine });
+
 // ── Keys ──────────────────────────────────────────────────────────────────
 
 const KEY_CHARS = ["a", "z", "Q", "0", "9", "-", ".", "_", "门", "锁", "热", "é"];

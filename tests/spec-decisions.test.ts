@@ -297,6 +297,24 @@ describe("Q1: a quote of Markdown shows as the text does and nothing in it leave
     expect(q("<div>\n@x & 50%\n</div>")).toBe("> <div>\n> &#64;x &amp; 50&#37;\n> </div>\n> [@k]");
   });
 
+  it("writes a tab in the indentation as the spaces it stood for: behind `> `, it would reach another stop", () => {
+    // A list item, not one that starts with indented code.
+    expect(q("- \t的")).toBe("> -   的\n> [@k]");
+    // A paragraph in a blockquote, not indented code.
+    expect(q("> \t的")).toBe("> >   的\n> [@k]");
+    // A fence, a `$$` block and raw HTML, not indented code.
+    expect(q("> \t~~~的")).toBe("> >   ~~~的\n> >   ~~~\n> [@k]");
+    expect(q("> \t$$")).toBe("> >   $$\n> >   $$\n> [@k]");
+    expect(q("- \t<!--")).toBe("> -   <!--\n> [@k]");
+    // Past the indentation that indented code takes off, a tab is the code's own.
+    expect(q(">   \t\t的")).toBe("> > ```\n> >   \t的\n> > ```\n> [@k]");
+  });
+
+  it("keeps one plain line in the line", () => {
+    expect(q("纸短情长")).toBe("「纸短情长」[@k]");
+    expect(parse(q("纸短情长")).stats.quote).toBe(4);
+  });
+
   it("keeps the escape-everything output for untrusted text", () => {
     expect(quoteText("```\n<b>&&", "k", { untrusted: true })).toBe("> \\`\\`\\`\n> \\<b\\>\\&\\&\n> [@k]");
   });

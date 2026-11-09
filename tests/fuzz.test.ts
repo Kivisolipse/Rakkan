@@ -5,6 +5,7 @@
 
 import fc from "fast-check";
 import MarkdownIt from "markdown-it";
+import texmath from "markdown-it-texmath";
 import { describe, expect, it } from "vitest";
 import { atomicRanges, clarifications, clarifyQuote, exportPlain, parse, Parser, keyFromName, quotesOf, quoteText, signRevision, stripMarkers, type ParseResult, type Segment } from "../src/core";
 import { scanInline } from "../src/core/inline";
@@ -17,6 +18,24 @@ const TIMEOUT = A.LONG ? 7 * 24 * 3600_000 : 60_000;
 const SLOW_MS = 200;
 
 // ── Helpers ───────────────────────────────────────────────────────────────
+
+/**
+ * `fc.property`, letting the event loop run every 50 runs: a property that holds it for a minute makes the
+ * test runner's worker miss its calls ("Timeout calling onTaskUpdate"), which fails a run that passed.
+ */
+let runsSinceYield = 0;
+function prop<Ts extends [unknown, ...unknown[]]>(...args: [...arbs: { [K in keyof Ts]: fc.Arbitrary<Ts[K]> }, predicate: (...v: Ts) => void]) {
+  const predicate = args.pop() as (...v: Ts) => void;
+  const arbs = args as unknown as { [K in keyof Ts]: fc.Arbitrary<Ts[K]> };
+  const run = async (...v: unknown[]) => {
+    predicate(...(v as Ts));
+    if (++runsSinceYield >= 50) {
+      runsSinceYield = 0;
+      await new Promise((done) => setImmediate(done));
+    }
+  };
+  return fc.asyncProperty(...(arbs as unknown as [fc.Arbitrary<unknown>]), run) as unknown as fc.IAsyncPropertyWithHooks<Ts>;
+}
 
 /** Not counted, so no one's (SPEC §7): Unicode whitespace and default-ignorable characters. */
 const WS = /[\p{White_Space}\p{Default_Ignorable_Code_Point}]/u;
@@ -105,13 +124,20 @@ describe("P1 parse is robust", () => {
     expect(view(timedParse(input, shared))).toBe(view(r));
   };
 
-  it("on notes", () => fc.assert(fc.property(A.doc(), check), A.params()), TIMEOUT);
-  it("on raw untrusted text", () => fc.assert(fc.property(A.rawText(60), check), A.params()), TIMEOUT);
+  it("on notes", () => fc.assert(prop(A.doc(), check), A.params()), TIMEOUT);
+  it("on raw untrusted text", () => fc.assert(prop(A.rawText(60), check), A.params()), TIMEOUT);
   it(
     "on long repetitive lines, within the time limit",
-    () => {
+    async () => {
       // Each input is up to 20 000 repetitions: a twentieth of FUZZ_RUNS in long runs, or 100 000 would take hours.
-      fc.assert(fc.property(A.pathological, check), A.params<[string]>([], A.LONG ? Math.ceil(A.RUNS / 20) : 8));
+      // Each one lets the event loop run, or the test runner's worker misses its calls and fails the whole run.
+      await fc.assert(
+        fc.asyncProperty(A.pathological, async (input) => {
+          check(input);
+          await new Promise((done) => setImmediate(done));
+        }),
+        A.params<[string]>([], A.LONG ? Math.ceil(A.RUNS / 20) : 8),
+      );
       if (slow.length) {
         const worst = slow.sort((a, b) => b.ms - a.ms)[0];
         console.warn(`${slow.length} slow parses, worst ${worst.ms.toFixed(0)} ms on ${JSON.stringify(worst.input.slice(0, 40))}…`);
@@ -184,7 +210,7 @@ function isolation(Q: Quoter, before: string, s1: string, k1: string, s2: string
 const untrusted: Quoter = (t, k) => quoteText(t, k, { untrusted: true });
 
 const isolationProp = (Q: Quoter, keyArb: fc.Arbitrary<string>, text: fc.Arbitrary<string> = A.rawText()) =>
-  fc.property(A.benign, text, keyArb, text, keyArb, A.benign, (b, s1, k1, s2, k2, a) => {
+  prop(A.benign, text, keyArb, text, keyArb, A.benign, (b, s1, k1, s2, k2, a) => {
     const why = isolation(Q, b, s1, k1, s2, k2, a);
     if (why) throw new Error(why);
   });
@@ -202,7 +228,7 @@ describe("P2b code and math in a cited blockquote", () => {
     "stays the quote's, whatever the code and math hold",
     () =>
       fc.assert(
-        fc.property(
+        prop(
           A.benignLine,
           fc.array(codeLine, { maxLength: 4 }),
           A.benignLine,
@@ -238,6 +264,8 @@ describe("P2 quote isolation", () => {
   // The default output is for Markdown (Q1): it escapes `@ & %` and closes code and math.
   it("holds for quoteText's default output", () => fc.assert(isolationProp(quoteText, A.key), A.params(KNOWN_PAIRS)), TIMEOUT);
   it("holds for quoteText's default output on Markdown", () => fc.assert(isolationProp(quoteText, A.key, A.markdown), A.params()), TIMEOUT);
+  // One line, as `「…」[@key]` where it shows the same, else a blockquote.
+  it("holds for quoteText's default output on one line", () => fc.assert(isolationProp(quoteText, A.key, A.markdownLine), A.params()), TIMEOUT);
 });
 
 // ── P3: quote fidelity ────────────────────────────────────────────────────
@@ -260,7 +288,7 @@ function reader(q: string, key: string): string | null {
 
 
 const fidelityProp = (Q: Quoter, expected: (s: string) => string) =>
-  fc.property(A.rawText(), A.key, (s, k) => {
+  prop(A.rawText(), A.key, (s, k) => {
     const q = Q(s, k);
     if (!q) return expected(s) === "";
     const seen = reader(q, k);
@@ -276,6 +304,16 @@ describe("P3 quote fidelity", () => {
 // ── P6: a Markdown quote shows as the text does ──────────────────────────
 
 const md = new MarkdownIt({ html: true });
+// Math, with `$` rules close to Obsidian's: `$…$` with no space inside either `$` and no digit outside,
+// `$$…$$` inline or as a block. What a formula holds is shown as its source, which is all P6 compares.
+md.use(texmath, {
+  delimiters: "dollars",
+  engine: {
+    // texmath puts this in its template with String.replace: a `$` would be read there as `$&` and the like.
+    renderToString: (tex: string, o: { displayMode?: boolean }) =>
+      `<math${o.displayMode ? " display" : ""}>${md.utils.escapeHtml(tex).replace(/\$/g, "&#36;")}</math>`,
+  },
+});
 // markdown-it caches where closing backticks are, and a `[` scanned for a link label before them can leave
 // the cache wrong (a code span then shows as text). CommonMark's rule, without the cache:
 md.inline.ruler.at("backticks", (state, silent) => {
@@ -317,7 +355,15 @@ const dom = (html: string) =>
     .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n)))
     .replace(/&amp;/g, "&")
     .replace(/\n+(?=<\/(?:li|blockquote)>|<\/code><\/pre>)/g, "")
+    // Space before a tag at the start of a line of raw HTML shows nothing.
+    .replace(/^[ \t]+(?=<)/gm, "")
     .replace(/(?<!<pre>)<code>([^<]*)<\/code>/g, (_, c: string) => `<code>${c.replace(/ +/g, " ")}</code>`)
+    // Whitespace in TeX shows nothing (and texmath turns a formula's line breaks to spaces in a blockquote).
+    // texmath leaves a blockquote's `>` in a formula's lines in a list item in it (one of the text's own is
+    // not compared: see `exempt`).
+    .replace(/(<math[^>]*>)([^<]*)<\/math>/g, (_, open: string, tex: string) =>
+      `${open}${tex.replace(/(^|[\n\u2028\u2029])(?:\s*&gt;)+/g, "$1").replace(/\s+/g, " ").trim()}</math>`,
+    )
     .replace(/\n+$/, "");
 
 /** Lines of code fences, delimiters and all, as CommonMark and as the parser read `t`. */
@@ -346,9 +392,73 @@ function fenced(t: string): { cm: string; parser: string } {
  * differently, isolation wins and the quote shows what the parser reads; where markdown-it parts from
  * CommonMark, it is no judge.
  */
+/**
+ * `t` with the `$$` lines the quote closes math left open with, when they are all at its end; else null.
+ * The quote keeps blank lines at the end only where math holds them: the text keeps as many.
+ */
+function closed(t: string): string | null {
+  const q = quoteMarkdown(t);
+  const n = q.mathClosers.length;
+  if (!n) return t;
+  if (!q.mathClosers.every((at, k) => at === q.lines.length - n + k)) return null;
+  let kept = 0;
+  while (kept < q.lines.length - n && BLANK.test(q.lines[q.lines.length - n - 1 - kept])) kept++;
+  const lines = t.split(/\r\n|\r|\n/);
+  if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+  let blank = 0;
+  while (blank < lines.length && BLANK.test(lines[lines.length - 1 - blank])) blank++;
+  return [...lines.slice(0, lines.length - (blank - Math.min(blank, kept))), ...q.mathClosers.map((at) => q.lines[at])].join("\n");
+}
+const BLANK = /^[ \t>]*$/;
+
+/** The formulas in `t`, as texmath and as the parser read them: what each holds, whitespace aside. */
+function formulas(t: string): { cm: string; parser: string } {
+  const norm = (xs: string[]) => xs.map((x) => x.replace(/\s+/g, " ").trim()).sort().join("\u0000");
+  const cm: string[] = [];
+  const walk = (ts: ReturnType<typeof md.parse>) => {
+    for (const k of ts) {
+      if (k.type.startsWith("math_")) cm.push((k.type.startsWith("math_block") ? "block " : "inline ") + k.content);
+      if (k.children) walk(k.children);
+    }
+  };
+  walk(md.parse(t + "\n", {}));
+  const parser: string[] = [];
+  const contexts = parse(t).lineContexts;
+  let block: string | null = null;
+  t.split("\n").forEach((line, i) => {
+    if (contexts[i]?.codeFence !== undefined || /^(?:`{3,}|~{3,})/.test(line.replace(/^[ \t>]*/, ""))) return;
+    const rest = line.replace(/^[ \t>]*/, "");
+    if (block !== null) {
+      const end = rest.indexOf("$$");
+      if (end < 0) block += `${rest}\n`;
+      else {
+        parser.push(`block ${block}${rest.slice(0, end)}`);
+        block = null;
+      }
+    } else if (rest.startsWith("$$") && rest.indexOf("$$", 2) < 0) block = rest.slice(2);
+    else
+      for (const k of scanInline(line.replace(/[@&%]/g, "x"), { ampLen: 0, atLen: 0, prose: true }).skips)
+        if (k.type === "math") parser.push("inline " + line.slice(k.from, k.to).replace(/^\$\$?|\$\$?$/g, ""));
+  });
+  return { cm: norm(cm), parser: norm(parser) };
+}
+
 function exempt(t: string): string | null {
-  // markdown-it has no math: what `$$` holds is not compared.
-  if (t.includes("$$")) return "math blocks";
+  // A `$$` block left open: the parser reads it to the end, so the quote closes it before its `[@key]` line
+  // (Q1), and the text is compared with the same closer at its end. One closed where a blockquote or list
+  // item ends, mid-text, has nothing to compare with.
+  if (closed(t) === null) return "math left open mid-text";
+  if (t.includes("$")) {
+    // Formulas the parser reads and texmath does not, or reads as a block where texmath reads one in the
+    // line, or the other way round (`$$x$` is one to texmath).
+    // In the text, or in the quote, whose code spans are on one line.
+    const f = formulas(t);
+    const g = formulas(quoteMarkdown(t).lines.join("\n"));
+    if (f.cm !== f.parser || g.cm !== g.parser) return "math read apart";
+    // texmath takes out every `>` at the start of a formula's line in a blockquote, its own included.
+    // (Its `^` is JavaScript's, after U+2028 and U+2029 too, and its space any `\s`, U+00A0 included.)
+    if (/\$\$[^$]*[\n\u2028\u2029]\s*>/.test(t)) return "markdown-it";
+  }
   // A fence the parser reads and CommonMark does not, or the other way round.
   const f = fenced(t);
   if (f.cm !== f.parser) return "fences read apart";
@@ -376,8 +486,9 @@ function exempt(t: string): string | null {
   // A code span over lines that, on one line, would make a table: it stays over lines.
   const q = quoteMarkdown(t);
   if (q.unfolded) return "code span kept over lines";
-  // A list item starting with indented code, set off from the paragraph above: its outer list loosens.
-  if (q.loosened) return "outer list loosened";
+  // A list item starting with indented code, set off from the paragraph above: its list, or the outer one,
+  // loosens.
+  if (q.loosened) return "list loosened";
   return null;
 }
 
@@ -387,41 +498,65 @@ function shown(t: string, k: string): string | null {
   if (!q) return null;
   const lines = q.split("\n").map((l) => l.slice(l.startsWith("> ") ? 2 : 1));
   lines.pop();
-  // markdown-it has no math, so a `$$` that closes math would show; code closers it reads as Obsidian does.
-  const math = new Set(quoteMarkdown(t).mathClosers);
   // `$$ % @@`, which quoteText makes of `$$ %@@`, is the same LaTeX comment.
-  const body = lines.filter((_, i) => !math.has(i)).map((l) => l.replace(/^([ \t>]*\$\$[ \t]*%) (@)/, "$1$2"));
+  const body = lines.map((l) => l.replace(/^([ \t>]*\$\$[ \t]*%) (@)/, "$1$2"));
   return md.render(body.map((l) => (l ? `> ${l}` : ">")).join("\n"));
 }
 
+/** The text rendered as a passage of a note, its last line ended (markdown-it drops a last unended blank line in code). */
+const alone = (t: string) => md.render(/[\r\n]$/.test(t) ? t : t + "\n");
+
+/** The P6 property for one text, counting what it can't judge in `exempted`. */
+function showsAsAlone(t: string, k: string, exempted: Record<string, number>, forms: Record<string, number>) {
+  const q = quoteText(t, k);
+  // One line in the line: the quote renders as `「…」[@key]` around what the line renders as, a paragraph.
+  if (q && !q.startsWith(">")) {
+    forms.inline = (forms.inline ?? 0) + 1;
+    const p = /^<p>([^]*)<\/p>\n$/.exec(alone(t));
+    expect(p, "on its own, a paragraph").not.toBeNull();
+    // The key is no part of the text (and the blockquote's `[@key]` line is left out above): a plain one.
+    expect(md.render(quoteText(t, "k") + "\n")).toBe(`<p>「${p![1]}」[@k]</p>\n`);
+    return;
+  }
+  forms.blockquote = (forms.blockquote ?? 0) + 1;
+  const why = exempt(t);
+  if (why) {
+    exempted[why] = (exempted[why] ?? 0) + 1;
+    return;
+  }
+  const got = shown(t, k);
+  if (got === null) return;
+  // A raw HTML block loses its last line break inside a blockquote: whitespace only.
+  const inner = /^<blockquote>\n([^]*)<\/blockquote>\n$/.exec(got)?.[1] ?? got;
+  // Math left open runs to the end, as the closer the quote adds there says.
+  const ref = closed(t)!;
+  if (ref !== t) forms.closed = (forms.closed ?? 0) + 1;
+  expect(dom(inner)).toBe(dom(alone(ref)));
+}
+
 describe("P6 Markdown quotes", () => {
-  it(
-    "show inside the blockquote as the text shows on its own",
-    () => {
-      const exempted: Record<string, number> = {};
-      let runs = 0;
-      fc.assert(
-        fc.property(A.markdown, A.key, (t, k) => {
-          runs++;
-          const why = exempt(t);
-          if (why) {
-            exempted[why] = (exempted[why] ?? 0) + 1;
-            return;
-          }
-          const got = shown(t, k);
-          if (got === null) return;
-          // A raw HTML block loses its last line break inside a blockquote: whitespace only.
-          const inner = /^<blockquote>\n([^]*)<\/blockquote>\n$/.exec(got)?.[1] ?? got;
-          // Rendered as a passage of a note, its last line ended (markdown-it drops a last unended blank line in code).
-          expect(dom(inner)).toBe(dom(md.render(/[\r\n]$/.test(t) ? t : t + "\n")));
-        }),
-        A.params(),
-      );
-      // Isolation wins over looks in these; how often, so a rise shows.
-      console.log(`P6: of ${runs} texts, not compared:`, exempted);
-    },
-    TIMEOUT,
-  );
+  for (const [name, arb] of [
+    ["passages", A.markdown],
+    ["one line", A.markdownLine],
+  ] as const)
+    it(
+      `show as the text shows on its own: ${name}`,
+      async () => {
+        const exempted: Record<string, number> = {};
+        const forms: Record<string, number> = {};
+        let runs = 0;
+        await fc.assert(
+          prop(arb, A.key, (t, k) => {
+            runs++;
+            showsAsAlone(t, k, exempted, forms);
+          }),
+          A.params(),
+        );
+        // Isolation wins over looks in these; how often, so a rise shows.
+        console.log(`P6 ${name}: of ${runs} texts`, forms, "not compared:", exempted);
+      },
+      TIMEOUT,
+    );
 });
 
 // ── P4: escapes ───────────────────────────────────────────────────────────
@@ -439,7 +574,7 @@ describe("P4 escapes", () => {
     "an escaped pair is not a marker and changes nothing around it",
     () =>
       fc.assert(
-        fc.property(A.soup(), fc.nat(), fc.constantFrom("\\&&", "\\@@"), fc.constantFrom(...Object.keys(CONTEXTS)), (l, n, esc, ctx) => {
+        prop(A.soup(), fc.nat(), fc.constantFrom("\\&&", "\\@@"), fc.constantFrom(...Object.keys(CONTEXTS)), (l, n, esc, ctx) => {
           const p = n % (l.length + 1);
           const near = (l[p - 1] ?? "") + (l[p] ?? "");
           fc.pre(!/[&@\\]/.test(near) && !/[\uDC00-\uDFFF]/.test(l[p] ?? ""));
@@ -518,7 +653,7 @@ describe("P5 signRevision", () => {
     "leaves a note alone when nothing changed",
     () =>
       fc.assert(
-        fc.property(A.doc(), (o) => {
+        prop(A.doc(), (o) => {
           const s = signRevision(o, o, MODEL);
           expect(s.text).toBe(o);
           expect(s.changed).toBe(0);
@@ -532,7 +667,7 @@ describe("P5 signRevision", () => {
     "marks an insertion as the model's, keeps every other owner, and is stable when signed again",
     () =>
       fc.assert(
-        fc.property(A.doc(8), fc.nat(), A.insertion, (o, n, x) => {
+        prop(A.doc(8), fc.nat(), A.insertion, (o, n, x) => {
           const before = parse(o);
           const a = stripMarkers(before);
           const cuts = boundaries(a.text);
@@ -658,11 +793,11 @@ const sig = (xs: ReturnType<typeof visibleAuthors>) => xs.map((x) => (/\s/.test(
 describe("P5 Clarify quote", () => {
   it(
     "changes only the quote; only d makes words human, and as an explicit island",
-    () => {
+    async () => {
       let done = 0;
       let refused = 0;
-      fc.assert(
-        fc.property(A.quoteNote, fc.nat(), fc.nat(), (text, n, m) => {
+      await fc.assert(
+        prop(A.quoteNote, fc.nat(), fc.nat(), (text, n, m) => {
           const r = parse(text);
           const qs = quotesOf(r);
           if (!qs.length) return;
