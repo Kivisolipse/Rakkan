@@ -160,3 +160,17 @@ describe("open Q5: signRevision", () => {
   });
 });
 
+
+describe("fixed: a tag the model changed", () => {
+  it("is the model's as a whole, and signing the result again finds the same tag through its markers", () => {
+    for (const [o, rev] of [
+      ["#a\n", "#a甲\n"],
+      ["#\n", "#甲\n"],
+      ["标签 #学 吧", "标签 #学习 吧"],
+    ]) {
+      const s = signRevision(o, rev, "m").text;
+      expect(s).toBe(rev.replace(/#\S*/, (t) => `&&${t}&&[@m]`));
+      expect(signRevision(o, s, "m").text).toBe(s);
+    }
+  });
+});

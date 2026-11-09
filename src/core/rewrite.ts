@@ -35,7 +35,9 @@ export function atomicRanges(content: string): Range[] {
     /!?\[\[[^\]\n]*\]\]/g, // wikilinks and embeds
     /!?\[[^\]\n]*\]\([^)\n]*\)/g, // Markdown links and images
     /\[\^[^\]\s]+\]/g, // footnotes
-    /(^|[\s(（])#[^\s#.,;:!?，。；：！？、()（）]+/g, // tags
+    // Tags. Markers before the `#` are read through, as they are before a link: a tag the model wrote is
+    // written `&&#tag&&`, and signing that again must still find it. `&` and `@` end it, as in Obsidian.
+    /((?:^|[\s(（])(?:&&|@@)*)#[^\s#.,;:!?，。；：！？、()（）&@]+/g,
     // Block references, without the space before them: a change that ends in that space would take the
     // reference into the markers, where it no longer ends the line.
     /([ \t])\^[A-Za-z0-9-]+$/g,
