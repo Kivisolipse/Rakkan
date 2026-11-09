@@ -5,7 +5,7 @@
 
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { atomicRanges, exportPlain, parse, Parser, quoteText, signatureLabel, signRevision, stripMarkers, type ParseResult, type Segment } from "../src/core";
+import { atomicRanges, exportPlain, parse, Parser, keyFromName, quoteText, signRevision, stripMarkers, type ParseResult, type Segment } from "../src/core";
 import { indexAt } from "../src/core/parse";
 import * as A from "./arbitraries";
 
@@ -327,7 +327,7 @@ const visible = (t: string) => stripMarkers(parse(t)).text;
 
 interface Owner {
   kind: string;
-  /** The author: a key, else the AI block's model ID, else its name ("AI" for unnamed AI text). */
+  /** The author: a key, else the AI block's model ID, else the key made from its name (Q5c), else "AI". */
   key?: string;
 }
 function ownerOf(r: ParseResult, pos: number): Owner | undefined {
@@ -336,7 +336,7 @@ function ownerOf(r: ParseResult, pos: number): Owner | undefined {
   const o: Owner = { kind: s.attr.kind };
   const sig = s.attr.block !== undefined ? r.blocks[s.attr.block].signature : undefined;
   if (s.attr.key !== undefined) o.key = s.attr.key;
-  else if (s.attr.kind === "ai") o.key = sig ? (sig.id ?? `name:${signatureLabel(sig)}`) : "AI";
+  else if (s.attr.kind === "ai") o.key = (sig ? (sig.id ?? keyFromName(sig.name ?? "")) : "") || "AI";
   return o;
 }
 
@@ -433,8 +433,6 @@ describe("P5 signRevision", () => {
               if (!ok) throw new Error(`inserted ${JSON.stringify(rev[i])} at ${i} is ${describeAt(after, pos)}`);
             } else {
               if (sharesAtom.has(i) && got?.kind === "ai" && got.key === MODEL) continue;
-              // Open question (report, Q5c): a block with a name but no model ID has no key to keep when its text leaves it.
-              if (want?.key?.startsWith("name:") && got?.kind === "ai" && got.key === "AI") continue;
               if (JSON.stringify(got) !== JSON.stringify(want)) {
                 throw new Error(`kept ${JSON.stringify(rev[i])} at ${i}: ${JSON.stringify(want)} became ${JSON.stringify(got)}`);
               }

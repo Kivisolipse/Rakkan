@@ -171,11 +171,3 @@ describe("open Q8: a link or the like holding two authors' words", () => {
   });
 });
 
-describe("open Q5c: AI blocks with a name and no model ID", () => {
-  // Text that a revision moves out of `&& Claude` (no ID) becomes unnamed inline AI: there is no key to
-  // carry, and a display name is not a key. Options: use the name as a key, or report the line.
-  it.fails("keeps the block's name on its text", () => {
-    const s = signRevision("&& Claude\n的\n&& AI\n", "甲的\n&& AI\n", "m");
-    expect(parse(s.text).stats.aiByAuthor).toHaveProperty("Claude");
-  });
-});

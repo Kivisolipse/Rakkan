@@ -5,6 +5,7 @@
 // revision may be plain text; markers it kept, dropped or got wrong are put
 // right from the original.
 
+import { keyFromName } from "./authors";
 import { indexAt, parse } from "./parse";
 import { carryOwners } from "./pasteedits";
 import { atomicRanges, rewriteCodeLine, rewriteLineDetailed, type Char, type Owner } from "./rewrite";
@@ -29,20 +30,24 @@ interface Who {
   key?: string;
   /** Quoted text: a line rewrite can't write a quote, so a line that needs one is reported. */
   quote?: true;
+  /** Text of a block whose signature gives no key (a name made only of characters a key can't hold): reported. */
+  nokey?: true;
 }
 
 /**
  * Who owns text of this attribution, as a line rewrite sees it. Text of an AI
- * block takes the block's model ID, so that it keeps it should the revision
- * move it out of the block.
+ * block takes the block's model ID, or the key made from its name when it has
+ * none, so that it keeps it should the revision move it out of the block.
  */
 function whoOf(a: Attr, r: ParseResult): Who {
   const w: Who = { owner: a.kind === "ai" ? "ai" : "human" };
   if (a.kind === "quote") w.quote = true;
   if (a.key && a.explicit) w.key = a.key;
   else if (a.kind === "ai" && a.block !== undefined) {
-    const id = r.blocks[a.block]?.signature.id;
-    if (id) w.key = id;
+    const sig = r.blocks[a.block]?.signature;
+    const k = sig?.id ?? (sig?.name ? keyFromName(sig.name) : "");
+    if (k) w.key = k;
+    else if (sig) w.nokey = true;
   }
   return w;
 }
@@ -72,7 +77,7 @@ export function signRevision(original: string, revised: string, key?: string): S
   for (const pos of a.map) {
     const attr = attrAt(before, pos);
     const w: Who = attr ? whoOf(attr, before) : { owner: "human" };
-    const id = `${w.owner}|${w.key ?? ""}|${w.quote ? "q" : ""}`;
+    const id = `${w.owner}|${w.key ?? ""}|${w.quote ? "q" : ""}${w.nokey ? "n" : ""}`;
     let code = codes.get(id);
     if (!code) {
       code = String.fromCharCode(0xe000 + codes.size);
@@ -157,7 +162,7 @@ export function signRevision(original: string, revised: string, key?: string): S
       if (block) {
         if (key && w === changedText && block.signature.id !== key && /\S/.test(revised[pos])) foreign.add(line);
         if (w.owner === "ai") continue;
-      } else if (w.owner === cur.owner && w.key === cur.key && w.quote === cur.quote) continue;
+      } else if (w.owner === cur.owner && w.key === cur.key && w.quote === cur.quote && !w.nokey) continue;
       dirty.add(line);
     }
   }
@@ -178,9 +183,10 @@ export function signRevision(original: string, revised: string, key?: string): S
       }
     };
     const line = revised.slice(from, to);
-    // Kept quoted text whose quote the revision dropped: sign can't write the quote back.
+    // Kept quoted text whose quote the revision dropped: sign can't write the quote back. Nor can it
+    // name text from a block whose signature makes no key.
     let quoted = false;
-    for (let pos = from; pos < to && !quoted; pos++) quoted = want.get(pos)?.quote === true;
+    for (let pos = from; pos < to && !quoted; pos++) quoted = want.get(pos)?.quote === true || want.get(pos)?.nokey === true;
     const done =
       quoted || mixed.has(n)
       ? null

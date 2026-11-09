@@ -13,7 +13,8 @@ describe("the rule above all: when in doubt, not the person's", () => {
   it("does not hand an AI block's list or table to the person when the revision moves it out", () => {
     const s = signRevision("&& AI\n\n- x\n| a |\n\n&&\n", "- x\n| a |\n", "m");
     expect(parse(s.text).stats.human).toBe(0);
-    expect(owners(s.text)).toEqual(["A:x", "A:a"]);
+    // `&& AI` has a name and no ID, so its text keeps the key `ai` (Q5c).
+    expect(owners(s.text)).toEqual(["A@ai:x", "A@ai:a"]);
   });
 });
 
@@ -144,6 +145,21 @@ describe("Q7 (§5): a marker at the end of a bare URL closes the span", () => {
     expect(s.unmarked).toEqual([]);
     expect(owners(s.text)).toEqual(["H:前文", "A@m:见 https://x.y/"]);
     expect(signRevision(o, s.text, "m").text).toBe(s.text);
+  });
+});
+
+describe("Q5c: text that leaves a block with a name and no model ID keeps the name as a key", () => {
+  it("names it with the key made from the block's name", () => {
+    const o = "&& Claude Code\n\n的\n\n&&\n";
+    const s = signRevision(o, "甲的\n", "m");
+    expect(s.unmarked).toEqual([]);
+    expect(owners(s.text)).toEqual(["A@m:甲", "A@claude-code:的"]);
+    expect(signRevision(o, s.text, "m").text).toBe(s.text);
+  });
+
+  it("reports the line when the name makes no key", () => {
+    const s = signRevision("&& 「」\n\n的\n\n&&\n", "甲的\n", "m");
+    expect(s.unmarked).toEqual([0]);
   });
 });
 
