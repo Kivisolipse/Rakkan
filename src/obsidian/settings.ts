@@ -100,6 +100,8 @@ interface Group {
   items: Row[];
 }
 
+const REPO_URL = "https://github.com/Kivisolipse/Rakkan";
+
 /** A row whose explanation sits behind an info icon; the settings search still reads it. */
 function row(name: string, desc: string | undefined, build: (setting: Setting) => unknown): Row {
   return {
@@ -491,6 +493,18 @@ export class RakkanSettingTab extends PluginSettingTab {
             t("按库根目录的 rakkan-authorship.json，为移除后未经修改的笔记恢复原有标记。"),
             (r) => r.addButton((b) => b.setButtonText(t("恢复…")).onClick(() => this.plugin.openRestoreArchive())),
           ),
+        ],
+      },
+
+      {
+        type: "group",
+        heading: t("关于"),
+        items: [
+          {
+            name: t("源代码与问题反馈"),
+            desc: t("如果 Rakkan 对你有用，欢迎在 GitHub 上点个 Star。"),
+            render: (r) => r.addButton((b) => b.setButtonText("GitHub").onClick(() => window.open(REPO_URL))),
+          },
         ],
       },
     ];

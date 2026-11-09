@@ -262,6 +262,9 @@ export const en: Record<string, string> = {
   "按库根目录的 rakkan-authorship.json，为移除后未经修改的笔记恢复原有标记。":
     "Restore the original markers, from rakkan-authorship.json at the root of the vault, to the notes not changed since they were removed.",
   "恢复…": "Restore…",
+  "关于": "About",
+  "源代码与问题反馈": "Source code and issues",
+  "如果 Rakkan 对你有用，欢迎在 GitHub 上点个 Star。": "If Rakkan is useful to you, a star on GitHub is welcome.",
   "正在扫描库中的笔记…": "Scanning the notes in the vault…",
   "库中没有含 Rakkan 标记的笔记。": "No note in the vault has Rakkan markers.",
   "移除后修改过的笔记，标记将永久丢失。": "The markers of a note changed after removal are lost permanently.",
