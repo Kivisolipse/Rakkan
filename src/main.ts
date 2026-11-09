@@ -408,10 +408,13 @@ export default class RakkanPlugin extends Plugin {
               new Notice(t("未发现改动"));
               return;
             }
-            const changes = ChangeSet.of(diffChanges(doc, res.text), doc.length);
-            view.dispatch({ changes, selection: { anchor: changes.mapPos(to, 1) }, userEvent: "input.paste", scrollIntoView: true });
-            new Notice(t("已标记 {n} 处改动", { n: res.changed }));
-            if (res.unmarked.length) new Notice(t("{n} 行含引用或代码，其中的改动未能标记", { n: res.unmarked.length }));
+            if (res.text !== doc) {
+              const changes = ChangeSet.of(diffChanges(doc, res.text), doc.length);
+              view.dispatch({ changes, selection: { anchor: changes.mapPos(to, 1) }, userEvent: "input.paste", scrollIntoView: true });
+              new Notice(t("已标记 {n} 处改动", { n: res.changed }));
+            }
+            // What sign can't mark it doesn't take: those lines keep the original.
+            if (res.rejected.length) new Notice(t("{n} 处改动含引用或代码，无法标记，已保留原文", { n: res.rejected.length }));
             if (res.foreign.length) new Notice(t("{n} 行的改动在其他模型署名的 AI 块里，算作该模型所写", { n: res.foreign.length }));
             if (res.tasks.length) new Notice(t("{n} 个任务的勾选状态被改动，勾选者不会记录", { n: res.tasks.length }));
           },

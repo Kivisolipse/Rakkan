@@ -65,12 +65,19 @@ function walkBack(trace: Int32Array[], n: number, m: number): Array<[number, num
   return pairs.reverse();
 }
 
+/** What a carry found: an owner for each character of the edited text, and where in the original it was kept from (-1: changed). */
+export interface Carried {
+  owners: string;
+  changed: number;
+  from: number[];
+}
+
 /** Owners for `edited` within one changed stretch, word by word; `before` is the owner of the character before it. */
-function carryWords(original: string, owners: string, edited: string, before: string): { owners: string; changed: number } {
+function carryWords(original: string, owners: string, edited: string, before: string): Carried {
   const a = tokenize(original);
   const b = tokenize(edited);
   const pairs = lcs(a, b);
-  if (!pairs) return { owners: "A".repeat(edited.length), changed: edited === original ? 0 : 1 };
+  if (!pairs) return { owners: "A".repeat(edited.length), changed: edited === original ? 0 : 1, from: new Array(edited.length).fill(-1) };
   const start: number[] = [];
   let at = 0;
   for (const t of a) {
@@ -81,13 +88,18 @@ function carryWords(original: string, owners: string, edited: string, before: st
   let own = "";
   let changed = 0;
   let inChange = false;
+  const from: number[] = [];
   for (let j = 0; j < b.length; j++) {
     const t = b[j];
     const i = kept.get(j);
     if (i !== undefined) {
       own += owners.slice(start[i], start[i] + t.length);
+      for (let k = 0; k < t.length; k++) from.push(start[i] + k);
       inChange = false;
-    } else if (/\S/.test(t)) {
+      continue;
+    }
+    for (let k = 0; k < t.length; k++) from.push(-1);
+    if (/\S/.test(t)) {
       if (!inChange) changed++;
       inChange = true;
       own += "A".repeat(t.length);
@@ -96,7 +108,7 @@ function carryWords(original: string, owners: string, edited: string, before: st
       own += inChange ? "A".repeat(t.length) : (own.slice(-1) || before).repeat(t.length);
     }
   }
-  return { owners: own, changed };
+  return { owners: own, changed, from };
 }
 
 /**
@@ -124,6 +136,12 @@ function anchors(a: string[], b: string[]): [string[], string[]] {
  * words of the lines in between.
  */
 export function carryOwners(original: string, owners: string, edited: string): { owners: string; changed: number } {
+  const { owners: own, changed } = carry(original, owners, edited);
+  return { owners: own, changed };
+}
+
+/** carryOwners, and for each character of `edited` the offset in `original` it was kept from (-1 where it changed). */
+export function carry(original: string, owners: string, edited: string): Carried {
   const a = splitLines(original);
   const b = splitLines(edited);
   const start: number[] = [];
@@ -137,6 +155,7 @@ export function carryOwners(original: string, owners: string, edited: string): {
   pairs.push([a.length, b.length]);
   let own = "";
   let changed = 0;
+  const from: number[] = [];
   let i = 0;
   let j = 0;
   for (const [pi, pj] of pairs) {
@@ -144,12 +163,16 @@ export function carryOwners(original: string, owners: string, edited: string): {
       const r = carryWords(a.slice(i, pi).join(""), owners.slice(start[i], start[pi]), b.slice(j, pj).join(""), own.slice(-1) || "H");
       own += r.owners;
       changed += r.changed;
+      for (const f of r.from) from.push(f < 0 ? f : start[i] + f);
     }
-    if (pi < a.length) own += owners.slice(start[pi], start[pi + 1]);
+    if (pi < a.length) {
+      own += owners.slice(start[pi], start[pi + 1]);
+      for (let k = start[pi]; k < start[pi + 1]; k++) from.push(k);
+    }
     i = pi + 1;
     j = pj + 1;
   }
-  return { owners: own, changed };
+  return { owners: own, changed, from };
 }
 
 /** The clipboard as the selection's replacement: a line break or indent at either end that the selection did not have is noise from the copy. */

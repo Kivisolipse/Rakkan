@@ -25,4 +25,4 @@ export type { Section } from "./sections";
 export { lint } from "./lint";
 export type { LintCode, LintIssue } from "./lint";
 export { signRevision } from "./sign";
-export type { Signed } from "./sign";
+export type { Rejected, Signed } from "./sign";

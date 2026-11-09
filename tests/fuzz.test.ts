@@ -395,13 +395,57 @@ describe("P5 signRevision", () => {
           fc.pre(visible(rev) === rev);
 
           const signed = signRevision(o, rev, MODEL);
-          const after = parse(signed.text);
+          expect(signRevision(o, signed.text, MODEL).text).toBe(signed.text);
+          const out = parse(signed.text);
+          const sameAt = (r1: ParseResult, p1: number, r2: ParseResult, p2: number) =>
+            segAt(r1, p1)?.role === segAt(r2, p2)?.role && JSON.stringify(ownerOf(r1, p1)) === JSON.stringify(ownerOf(r2, p2));
+
+          // Q5b: what sign could not mark it put back, and those lines read as in the original.
+          for (const g of signed.rejected) {
+            for (let k = 0; k < g.count; k++) {
+              const ol = before.lines[g.original + k];
+              const nl = out.lines[g.line + k];
+              expect(signed.text.slice(nl.from, nl.to)).toBe(o.slice(ol.from, ol.to));
+              for (let c = 0; c < ol.to - ol.from; c++) {
+                if (!sameAt(out, nl.from + c, before, ol.from + c)) throw new Error(`put-back line ${g.line + k} reads otherwise at ${c}: ${describeAt(out, nl.from + c)}`);
+              }
+            }
+          }
+          // The other lines are the revision's, signed: put the revision's lines back in place of the
+          // others to compare with it.
+          const lines = out.lines.map((l, k) => ({
+            text: signed.text.slice(l.from, l.to),
+            eol: signed.text.slice(l.to, k + 1 < out.lines.length ? out.lines[k + 1].from : signed.text.length),
+            from: k as number | null,
+          }));
+          const recon: typeof lines = [];
+          let k = 0;
+          for (const g of [...signed.rejected].sort((x, y) => x.line - y.line)) {
+            while (k < g.line) recon.push(lines[k++]);
+            // Lines and their line ends, alternately.
+            const put = g.revised.split(/(\r\n|\r|\n)/);
+            let eol = g.count ? lines[g.line + g.count - 1].eol : "\n";
+            if (!g.count && recon.length && recon[recon.length - 1].eol === "") {
+              recon[recon.length - 1] = { ...recon[recon.length - 1], eol: "\n" };
+              eol = "";
+            }
+            for (let m = 0; m < put.length; m += 2) recon.push({ text: put[m], eol: m + 1 < put.length ? put[m + 1] : eol, from: null });
+            k = g.line + g.count;
+          }
+          while (k < lines.length) recon.push(lines[k++]);
+          const after = parse(recon.map((l) => l.text + l.eol).join(""));
+          for (let li = 0; li < recon.length; li++) {
+            const from = recon[li].from;
+            if (from === null) continue;
+            for (let c = 0; c < recon[li].text.length; c++) {
+              if (!sameAt(after, after.lines[li].from + c, out, out.lines[from].from + c)) throw new Error(`line ${from} reads otherwise once the revision is put back`);
+            }
+          }
           const b = stripMarkers(after);
           // What a reader sees is the revision; sign may add a backslash before a literal && or @@.
           const at = alignEscaped(b.text, rev);
           if (!at) throw new Error(`visible text ${JSON.stringify(b.text)} is not the revision ${JSON.stringify(rev)}`);
-          expect(signRevision(o, signed.text, MODEL).text).toBe(signed.text);
-          const reported = new Set([...signed.unmarked, ...signed.foreign]);
+          const foreign = new Set(signed.foreign);
           // A link, cite or the like that took part of the insertion is never split: all of it may be the model's.
           const sharesAtom = new Set<number>();
           const rr = parse(rev);
@@ -421,13 +465,15 @@ describe("P5 signRevision", () => {
             const got = ownerOf(after, pos);
             const inserted = i >= p && i < p + x.length;
             const want = inserted ? undefined : ownerOf(before, a.map[i < p ? i : i - x.length]);
-            // sign reports the lines it could not mark (unmarked, foreign). Until Q5b, it leaves them as revised.
-            const reportedLine = reported.has(indexAt(after.lines, pos, true));
+            const from = recon[indexAt(after.lines, pos, true)].from;
+            // A line sign put back is checked above: none of the revision's text there is in the result.
+            if (from === null) continue;
             // The rule above all (SPEC): a character becomes the person's only if a person wrote it before.
-            if (got?.kind === "human" && want?.kind !== "human" && !reportedLine) {
+            if (got?.kind === "human" && want?.kind !== "human") {
               throw new Error(`${inserted ? "inserted" : "kept"} ${JSON.stringify(rev[i])} at ${i}: ${JSON.stringify(want)} became the person's`);
             }
-            if (reportedLine) continue;
+            // In an AI block another model signed, the model's words count as that model's (reported).
+            if (foreign.has(from)) continue;
             if (inserted) {
               const ok = got?.kind === "ai" && got.key === MODEL;
               if (!ok) throw new Error(`inserted ${JSON.stringify(rev[i])} at ${i} is ${describeAt(after, pos)}`);

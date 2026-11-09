@@ -46,8 +46,10 @@ describe("signRevision keeps lines in line around a new paragraph", () => {
     const revised = "# 人写的笔记\n\n我很喜欢苹果。\n\n&& Claude (claude-opus-5-5)\n\n苹果富含膳食纤维。\n\n&&\n\n书上说「纸短情长」[@book]，我深以为然，也有点怀疑。\n\n- 第一条\n- 第二条\n";
     const r = signRevision(original, revised, "claude-opus-5-5");
     expect(r.text).toBe(
-      "# 人写的笔记\n\n我&&很&&[@claude-opus-5-5]喜欢苹果。\n\n&& Claude (claude-opus-5-5)\n\n苹果富含膳食纤维。\n\n&&\n\n书上说「纸短情长」[@book]，我深以为然，也有点怀疑。\n\n- 第一条\n- &&第二条&&[@claude-opus-5-5]\n",
+      "# 人写的笔记\n\n我&&很&&[@claude-opus-5-5]喜欢苹果。\n\n&& Claude (claude-opus-5-5)\n\n苹果富含膳食纤维。\n\n&&\n\n书上说「纸短情长」[@book]，我深以为然。\n\n- 第一条\n- &&第二条&&[@claude-opus-5-5]\n",
     );
+    // A line with a quote can't be rewritten yet, so the change there is put back (Q5b).
     expect(r.unmarked).toEqual([10]);
+    expect(r.rejected.map((x) => x.revised)).toEqual(["书上说「纸短情长」[@book]，我深以为然，也有点怀疑。"]);
   });
 });

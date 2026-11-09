@@ -58,7 +58,7 @@ describe("fixed: signRevision", () => {
       ["前\n\n> 引文\n> [@k]\n", "前甲\n\n> 引文\n"],
     ]) {
       const s = signRevision(o, r, "m");
-      // Like every reported line it is left as revised, for the person to put the quote back (see Q5b).
+      // Like every reported line it keeps the original (Q5b).
       expect(s.unmarked, JSON.stringify(o)).not.toEqual([]);
     }
   });
@@ -146,11 +146,10 @@ describe("open Q1: quoteText's default output does not escape", () => {
 });
 
 describe("open Q5: signRevision", () => {
-  // A quote the model writes into its revision credits the quoted author: the model can put words in
-  // someone else's mouth. Other options: credit the model, or report the line.
-  it.fails("does not credit a quote the model added to the quoted author", () => {
+  // A quote the model writes into its revision is put back since Q5b; Q5a wraps it in the model's marks.
+  it.fails("wraps a quote the model added in its marks", () => {
     const s = signRevision("前文。", "前文。「新加的话」[@x]", "m");
-    expect(owners(s.text)).not.toContain("Q@x:新加的话");
+    expect(s.text).toBe("前文。&&「新加的话」[@x]&&[@m]");
   });
 
   // An inline AI span can't start or end next to a literal & (the runs merge, SPEC §3.1). sign then reports
@@ -168,6 +167,7 @@ describe("open Q8: a link or the like holding two authors' words", () => {
   it.fails("keeps both authors of an atom the model did not change", () => {
     const s = signRevision("&&!&&[t](u)\n", "![t](u)\n", "m");
     expect(owners(s.text)).toEqual(["A:!", "H:[t](u)"]);
+    expect(s.unmarked).toEqual([]);
   });
 });
 

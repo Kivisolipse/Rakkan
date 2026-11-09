@@ -157,9 +157,12 @@ describe("Q5c: text that leaves a block with a name and no model ID keeps the na
     expect(signRevision(o, s.text, "m").text).toBe(s.text);
   });
 
-  it("reports the line when the name makes no key", () => {
-    const s = signRevision("&& 「」\n\n的\n\n&&\n", "甲的\n", "m");
-    expect(s.unmarked).toEqual([0]);
+  it("reports the line when the name makes no key, and keeps the original there", () => {
+    const o = "&& 「」\n\n的\n\n&&\n";
+    const s = signRevision(o, "甲的\n", "m");
+    // 的 alone, without its block, would read as the person's: the whole original is kept.
+    expect(s.text).toBe(o);
+    expect(s.rejected).toEqual([{ line: 0, count: 6, original: 0, revised: "甲的\n" }]);
   });
 });
 
