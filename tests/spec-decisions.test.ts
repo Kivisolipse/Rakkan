@@ -173,6 +173,18 @@ describe("Q5a (§4.4): a quote is a claim; whose words they are depends on who w
     expect(owners("&&模型@@补「原话」[@x]@@&&")).toEqual(["A:模型", "h:补「", "Q@x:原话", "h:」"]);
   });
 
+  it("decides a quote whose parts have different writers by who wrote the [@key] alone", () => {
+    // Marks and source typed by the person, the words by the model: the person's claim, so the words are x's.
+    expect(owners("前&&@@「@@模型的话@@」[@x]@@&&")).toEqual(["H:前", "h:「", "Q@x:模型的话", "h:」"]);
+    // Only 「 is the person's, [@x] the model's: the model's claim.
+    const r = parse("前&&@@「@@模型的话」[@x]&&");
+    expect(owners(r)).toEqual(["H:前", "h:「", "A:模型的话」"]);
+    // The claim spans what lies between the quotation marks, markers included.
+    expect(r.claims.map((c) => [r.text.slice(c.from, c.to), c.key])).toEqual([["@@模型的话", "x"]]);
+    // Only 」[@x] is the person's: x's.
+    expect(owners("前&&「模型的话@@」[@x]@@&&")).toEqual(["H:前", "A:「", "Q@x:模型的话", "h:」"]);
+  });
+
   it("leaves a model's claim the AI's, and keeps the claim", () => {
     const r = parse("前&&模型说「新话」[@x]&&[@m]");
     expect(owners(r)).toEqual(["H:前", "A@m:模型说「新话」"]);

@@ -615,18 +615,59 @@ export function parseLine(text: string, ctx: LineCtx): LineResult {
     quotes.sort((a, b) => a.open - b.open);
   }
 
-  // Assign each token to the innermost quote whose content contains it. Tokens come in
-  // order and quotes nest without crossing, so a stack of the quotes still open will do.
-  const zoneAt: number[] = [];
-  {
+  // A quote whose markers pair with markers outside it, as in `&&@@「@@words@@」[@x]@@&&`: its parts have
+  // different writers. Its markers pair with the text around it, and who wrote its `[@key]` decides.
+  // Tokens come in order and quotes nest without crossing, so a stack of the quotes still open finds the
+  // innermost quote whose content holds a token (`skip`: quotes that are no zone of their own).
+  const innermost = (skip: Set<number>): number[] => {
+    const at: number[] = [];
     const stack: number[] = [];
     let next = 0;
     for (const t of scan.tokens) {
-      while (next < quotes.length && quotes[next].open < t.from) stack.push(next++);
+      for (; next < quotes.length && quotes[next].open < t.from; next++) if (!skip.has(next)) stack.push(next);
       while (stack.length && quotes[stack[stack.length - 1]].close < t.to) stack.pop();
-      zoneAt.push(stack.length ? stack[stack.length - 1] : -1);
+      at.push(stack.length ? stack[stack.length - 1] : -1);
     }
+    return at;
+  };
+  const mixed = new Set<number>();
+  if (quotes.length) {
+    const parent = quotes.map(() => -1);
+    const depth = quotes.map(() => 0);
+    const open: number[] = [];
+    quotes.forEach((q, qi) => {
+      while (open.length && quotes[open[open.length - 1]].close < q.open) open.pop();
+      if (open.length) {
+        parent[qi] = open[open.length - 1];
+        depth[qi] = depth[parent[qi]] + 1;
+      }
+      open.push(qi);
+    });
+    const tokenAt = new Map(scan.tokens.map((t, ti) => [t, ti]));
+    const inner = innermost(new Set());
+    const d = (q: number) => (q < 0 ? -1 : depth[q]);
+    // Every quote between a pair's two ends and the quote holding both is crossed.
+    const walk = (pairs: Pair[]) => {
+      for (const p of pairs) {
+        let a = inner[tokenAt.get(p.open)!];
+        let b = inner[tokenAt.get(p.close)!];
+        while (a !== b) {
+          if (d(a) >= d(b)) {
+            mixed.add(a);
+            a = parent[a];
+          } else {
+            mixed.add(b);
+            b = parent[b];
+          }
+        }
+        walk(p.children);
+      }
+    };
+    walk(pairTokens(scan.tokens, ctx.pair));
   }
+
+  // Each token goes to the innermost quote whose content holds it, a mixed one aside.
+  const zoneAt = innermost(mixed);
   const zones = new Map<number, Token[]>();
   for (const [ti, t] of scan.tokens.entries()) {
     const z = zoneAt[ti];
@@ -691,7 +732,10 @@ export function parseLine(text: string, ctx: LineCtx): LineResult {
     }
     const a: Attr = { kind: "quote", key: q.cite.key, explicit: true };
     if (ctx.base.block !== undefined) a.block = ctx.base.block;
-    fill(q.open + 1, q.close, a);
+    // A person's `[@key]` makes every word between the quotation marks the key's, whoever typed it.
+    if (mixed.has(qi)) {
+      for (let k = q.open + 1; k < q.close; k++) if (role[k] !== "mark") attr[k] = a;
+    } else fill(q.open + 1, q.close, a);
     setMark(q.cite.from, q.cite.to, "cite", a);
     result.spans.push({
       from: q.open,
