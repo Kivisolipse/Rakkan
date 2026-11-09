@@ -100,6 +100,7 @@ function signCommand(original: string, revised: string, model?: string): number 
   const notes = [
     ...r.unmarked.map((n) => [n, "unmarked", "This line changed, but it holds a quote or code that sign can't mark; mark it by hand."] as const),
     ...r.foreign.map((n) => [n, "foreign-block", "Your changes here are inside an AI block another model signed, so they count as that model's."] as const),
+    ...r.tasks.map((n) => [n, "task", "You ticked or unticked this task. A task's box is syntax, so who ticked it isn't recorded."] as const),
   ].sort((x, y) => x[0] - y[0]);
   for (const [n, code, message] of notes) console.log(`${name}:${n + 1}  ${code}  ${message}`);
   console.log(

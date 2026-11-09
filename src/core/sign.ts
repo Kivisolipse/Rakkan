@@ -9,6 +9,7 @@ import { indexAt, parse } from "./parse";
 import { carryOwners } from "./pasteedits";
 import { atomicRanges, rewriteCodeLine, rewriteLineDetailed, type Char, type Owner } from "./rewrite";
 import { stripMarkers } from "./strip";
+import { TASK_RE } from "./syntax";
 import type { Attr, ParseResult } from "./types";
 
 export interface Signed {
@@ -19,6 +20,8 @@ export interface Signed {
   unmarked: number[];
   /** Lines (from 0) whose changes sit in an AI block signed by another model, so they count as that block's. */
   foreign: number[];
+  /** Lines (from 0) where the model ticked or unticked a task. A task's box is syntax: who ticked it isn't recorded. */
+  tasks: number[];
 }
 
 interface Who {
@@ -84,6 +87,32 @@ export function signRevision(original: string, revised: string, key?: string): S
   // The backslash before a literal `&&` or `@@` is no one's words, and sign adds it itself: as a change it
   // would take a link around it to the model when the result is signed again.
   for (const pos of b.map) if (revised[pos] === "\\" && /^(?:&&|@@)/.test(revised.slice(pos + 1, pos + 3))) want.delete(pos);
+
+  // A task's box is syntax, so who ticked it can't be recorded (SPEC §7): a box the model ticked or
+  // unticked, in a line it otherwise kept, is reported.
+  const boxes = (r: ParseResult, map: number[]) => {
+    const at = new Map(map.map((pos, i) => [pos, i] as const));
+    const out = new Map<number, number>(); // visible index of the state character → line
+    r.lines.forEach((l, n) => {
+      const ctx = r.lineContexts[n];
+      if (ctx.mode !== "prose") return;
+      const from = l.from + ctx.prefix;
+      const m = TASK_RE.exec(r.text.slice(from, l.to));
+      const i = m ? at.get(from + m[0].length - 1) : undefined;
+      if (i !== undefined) out.set(i, n);
+    });
+    return out;
+  };
+  const tasks: number[] = [];
+  const oldBoxes = boxes(before, a.map);
+  if (oldBoxes.size) {
+    let tagged = "";
+    for (let i = 0; i < a.text.length; i++) tagged += oldBoxes.has(i) ? "T" : "H";
+    // T where a box state was kept, A where the revision changed text: a box whose state is not a kept one
+    // but whose `[` and `]` were kept was ticked or unticked.
+    const own = carryOwners(a.text, tagged, b.text).owners;
+    for (const [i, n] of boxes(after, b.map)) if (own[i] !== "T" && own[i - 1] !== "A" && own[i + 1] !== "A") tasks.push(n);
+  }
 
   // A line rewrite never splits a link, cite or the like: when part of one changed, all of it is
   // the model's. Say so here as well, or signing the result again would hand the change back to its
@@ -168,5 +197,5 @@ export function signRevision(original: string, revised: string, key?: string): S
     last = to;
   }
   text += revised.slice(last);
-  return { text, changed: carried.changed, unmarked, foreign: [...foreign].sort((x, y) => x - y) };
+  return { text, changed: carried.changed, unmarked, foreign: [...foreign].sort((x, y) => x - y), tasks };
 }

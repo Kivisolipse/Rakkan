@@ -309,6 +309,7 @@ async function rakkanSign(args: Record<string, unknown>): Promise<string> {
   const notes = [
     ...signed.unmarked.map((n) => [n, "unmarked", `This line changed, but it holds a quote or code that sign can't mark. Your words there still read as human: mark them by hand as &&words&&[@${model}] with edit_file, then run rakkan_lint.`] as const),
     ...signed.foreign.map((n) => [n, "foreign-block", "Your changes here are inside an AI block another model signed, so they count as that model's."] as const),
+    ...signed.tasks.map((n) => [n, "task", "You ticked or unticked this task. A task's box is syntax, so who ticked it isn't recorded: tell the person."] as const),
   ].sort((x, y) => x[0] - y[0]);
   if (notes.length) out.push(...notes.map(([n, code, msg]) => `- ${n + 1}  ${code}  ${msg}`));
   const book = await loadBook();

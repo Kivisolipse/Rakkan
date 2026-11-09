@@ -3,6 +3,7 @@
 // the fewest inline markers, so adjacent islands merge and empty ones vanish.
 
 import { parseLine, scanInline, type Range } from "./inline";
+import { isTableRow, lineSyntax } from "./syntax";
 import type { LineContext } from "./types";
 
 export type Owner = "ai" | "human";
@@ -144,26 +145,19 @@ function signature(chars: Char[]): string {
 }
 
 /**
- * What makes a line a heading, list item, task or footnote: `## `, `- `,
- * `1. `, `- [ ] `, `[^1]: `. A marker in front of it would turn the line into
- * a paragraph, so it always belongs to the line's base owner.
+ * Line leaders, table pipes and delimiter rows stay outside markers: `## &&AI&&`,
+ * `| &&a&& | b |`. They are syntax (syntax.ts), so their owner counts for nothing.
  */
-export const LEADER_RE = /^[ \t]*(?:#{1,6}[ \t]+|(?:[-*+]|\d{1,9}[.)])[ \t]+(?:\[[ xX]\][ \t]+)?|\[\^[^\]\s]+\]:[ \t]*)/;
-
-/** Line leaders and table pipes stay outside markers: `## &&AI&&`, `| &&a&& | b |`. */
 function keepSyntaxOutside(chars: Char[], content: string, baseOwner: Owner) {
   const visible = chars.map((c) => c.ch).join("");
-  const lead = LEADER_RE.exec(visible)?.[0].length ?? 0;
-  for (let i = 0; i < lead; i++) {
-    chars[i].owner = baseOwner;
-    delete chars[i].key;
-  }
-  if (!/^\s*\|/.test(visible)) return;
-  const atoms = atomicRanges(content);
-  for (const c of chars) {
-    if (c.ch !== "|" || content[c.at - 1] === "\\" || atoms.some((a) => c.at >= a.from && c.at < a.to)) continue;
-    c.owner = baseOwner;
-    delete c.key;
+  const atoms = isTableRow(visible) ? atomicRanges(content) : [];
+  for (const [from, to] of lineSyntax(visible)) {
+    for (let i = from; i < to; i++) {
+      const c = chars[i];
+      if (c.ch === "|" && atoms.some((a) => c.at >= a.from && c.at < a.to)) continue;
+      c.owner = baseOwner;
+      delete c.key;
+    }
   }
 }
 

@@ -8,6 +8,8 @@ Rakkan marks, in plain text, which characters of a Markdown note a person wrote,
 
 Every example here is fictional.
 
+> **When in doubt, not the person's.** Unmarked text counts as a person's (principle 2), so whatever fails to be marked falls on a person by default. An implementation that writes or changes marks and can't be sure who wrote something may therefore only err away from the person: keep the text as it was, credit it to the model, or report it. A character becomes the person's only if a person wrote it before or has just typed it.
+
 ## 1. Principles
 
 1. **Plain text first.** The file reads fine without the plugin, and a few regular expressions reproduce the distinction.
@@ -235,7 +237,11 @@ let count = @@0@@
 
 ## 7. Counting
 
-Human, AI and quoted text are counted in Unicode code points, leaving out whitespace, markers, frontmatter, comments, definitions, iA annotation blocks, code fence lines, and the `>` of blockquotes.
+Human, AI and quoted text are counted in Unicode code points, leaving out whitespace, markers, frontmatter, comments, definitions, iA annotation blocks, code fence lines, the `>` of blockquotes, and line syntax.
+
+**Line syntax** is Markdown that doesn't show as text once rendered: the leader of a heading, list item, task or footnote (`## `, `- `, `1. `, `- [x] `, `[^1]: `), and in a line that starts with `|`, its pipes, or all of it for a delimiter row (`|---|:-:|`). It belongs to no one.
+
+**Known limitation:** a task's box is line syntax, so who ticked or unticked it isn't recorded. An implementation that signs a revision reports the tasks the model ticked or unticked.
 
 ## 8. Programs that read the source
 

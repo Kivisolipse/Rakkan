@@ -7,7 +7,6 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { atomicRanges, exportPlain, parse, Parser, quoteText, signatureLabel, signRevision, stripMarkers, type ParseResult, type Segment } from "../src/core";
 import { indexAt } from "../src/core/parse";
-import { LEADER_RE } from "../src/core/rewrite";
 import * as A from "./arbitraries";
 
 const TIMEOUT = A.LONG ? 7 * 24 * 3600_000 : 60_000;
@@ -422,33 +421,27 @@ describe("P5 signRevision", () => {
               if (f < p + x.length && t > p) for (let k = f; k < t; k++) sharesAtom.add(k);
             }
           });
-          // Line leaders (`1. `, `- `, `## `) and the pipes of a table row always take the line's own owner
-          // (rewrite.ts, keepSyntaxOutside).
-          const leader = new Set<number>();
-          rr.lines.forEach((l, li) => {
-            const from = l.from + rr.lineContexts[li].prefix;
-            const content = rev.slice(from, l.to);
-            const m = LEADER_RE.exec(content);
-            if (m) for (let k = from; k < from + m[0].length; k++) leader.add(k);
-            if (/^\s*\|/.test(content)) for (let k = 0; k < content.length; k++) if (content[k] === "|" && content[k - 1] !== "\\") leader.add(from + k);
-          });
           for (let i = 0; i < rev.length; i++) {
             if (WS.test(rev[i])) continue;
             const pos = b.map[at[i]];
             const seg = segAt(after, pos);
+            // Leaders, table pipes and the like are syntax, no one's (§7).
             if (seg?.role !== "text") continue;
             const got = ownerOf(after, pos);
-            // sign reports the lines it could not mark (unmarked, foreign) and leaves them as revised.
-            // Open question (report, Q5b): kept AI text on such a line loses its marks. Pinned in fuzz-regressions.
-            if (reported.has(indexAt(after.lines, pos, true))) continue;
-            if (i >= p && i < p + x.length) {
+            const inserted = i >= p && i < p + x.length;
+            const want = inserted ? undefined : ownerOf(before, a.map[i < p ? i : i - x.length]);
+            // sign reports the lines it could not mark (unmarked, foreign). Until Q5b, it leaves them as revised.
+            const reportedLine = reported.has(indexAt(after.lines, pos, true));
+            // The rule above all (SPEC): a character becomes the person's only if a person wrote it before.
+            if (got?.kind === "human" && want?.kind !== "human" && !reportedLine) {
+              throw new Error(`${inserted ? "inserted" : "kept"} ${JSON.stringify(rev[i])} at ${i}: ${JSON.stringify(want)} became the person's`);
+            }
+            if (reportedLine) continue;
+            if (inserted) {
               const ok = got?.kind === "ai" && got.key === MODEL;
               if (!ok) throw new Error(`inserted ${JSON.stringify(rev[i])} at ${i} is ${describeAt(after, pos)}`);
             } else {
-              const k = i < p ? i : i - x.length;
-              const want = ownerOf(before, a.map[k]);
               if (sharesAtom.has(i) && got?.kind === "ai" && got.key === MODEL) continue;
-              if (leader.has(i) && got?.kind === (seg.attr.block !== undefined ? "ai" : "human")) continue;
               // Open question (report, Q5c): a block with a name but no model ID has no key to keep when its text leaves it.
               if (want?.key?.startsWith("name:") && got?.kind === "ai" && got.key === "AI") continue;
               if (JSON.stringify(got) !== JSON.stringify(want)) {

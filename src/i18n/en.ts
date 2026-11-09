@@ -43,6 +43,7 @@ export const en: Record<string, string> = {
   "请先新建署名簿": "Create the author book first",
   "{n} 行含引用或代码，未作改动": "{n} lines contain quotes or code and were left unchanged",
   "{n} 行含引用或代码，其中的改动未能标记": "{n} changed lines contain quotes or code, so their changes are not marked",
+  "{n} 个任务的勾选状态被改动，勾选者不会记录": "{n} tasks were ticked or unticked; who ticked them isn't recorded",
   "{n} 行的改动在其他模型署名的 AI 块里，算作该模型所写": "{n} changed lines are in an AI block another model signed, so the changes count as that model's",
   "已标记 {n} 处改动": "Marked {n} changes",
   "已复制（已移除标记）": "Copied (markers removed)",

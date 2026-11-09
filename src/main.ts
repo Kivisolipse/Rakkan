@@ -413,6 +413,7 @@ export default class RakkanPlugin extends Plugin {
             new Notice(t("已标记 {n} 处改动", { n: res.changed }));
             if (res.unmarked.length) new Notice(t("{n} 行含引用或代码，其中的改动未能标记", { n: res.unmarked.length }));
             if (res.foreign.length) new Notice(t("{n} 行的改动在其他模型署名的 AI 块里，算作该模型所写", { n: res.foreign.length }));
+            if (res.tasks.length) new Notice(t("{n} 个任务的勾选状态被改动，勾选者不会记录", { n: res.tasks.length }));
           },
           t("不标注模型"),
         ).open();

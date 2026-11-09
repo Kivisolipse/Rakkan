@@ -1,5 +1,6 @@
 import { parseLine, scanInline, type LineCtx, type LineResult } from "./inline";
 import { parseSignature, signatureLabel } from "./signature";
+import { lineSyntax } from "./syntax";
 import type {
   Attr,
   Block,
@@ -471,7 +472,22 @@ export class Parser {
             inComment: st.inComment,
           });
           const o = from + pre;
-          for (const s of r.segments) push(o + s.from, o + s.to, s.role, s.attr, s.mark);
+          // Leaders, table pipes and delimiter rows are syntax: not counted, no one's (§7).
+          const cuts = st.inComment ? [] : lineSyntax(t.slice(pre));
+          for (const s of r.segments) {
+            if (s.role !== "text" || !cuts.length) {
+              push(o + s.from, o + s.to, s.role, s.attr, s.mark);
+              continue;
+            }
+            let at = s.from;
+            for (const [a, b] of cuts) {
+              if (b <= at || a >= s.to) continue;
+              if (a > at) push(o + at, o + a, "text", s.attr);
+              at = Math.min(b, s.to);
+              push(o + Math.max(a, s.from), o + at, "syntax", s.attr);
+            }
+            if (at < s.to) push(o + at, o + s.to, "text", s.attr);
+          }
           for (const s of r.spans) spans.push({ ...s, from: o + s.from, to: o + s.to, contentFrom: o + s.contentFrom, contentTo: o + s.contentTo });
           for (const d of r.diagnostics) diag(i, o + d.from, o + d.to, d.code, d.message);
           continue;

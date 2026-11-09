@@ -48,13 +48,13 @@ describe("signRevision", () => {
   it("needs no marks for its own words in an AI block", () => {
     const block = `&& Claude (${MODEL})\n\nSome text.\n\n&&\n`;
     const revised = block.replace("Some text.", "Some better text.");
-    expect(sign(block, revised)).toEqual({ text: revised, changed: 1, unmarked: [], foreign: [] });
+    expect(sign(block, revised)).toEqual({ text: revised, changed: 1, unmarked: [], foreign: [], tasks: [] });
   });
 
   it("reports its words in a block another model signed, which count as that model's", () => {
     const block = "&& GPT (gpt-5)\n\nSome text.\n\n&&\n";
     const revised = block.replace("Some text.", "Some better text.");
-    expect(sign(block, revised)).toEqual({ text: revised, changed: 1, unmarked: [], foreign: [2] });
+    expect(sign(block, revised)).toEqual({ text: revised, changed: 1, unmarked: [], foreign: [2], tasks: [] });
     // Without a model there is no telling.
     expect(signRevision(block, revised).foreign).toEqual([]);
   });

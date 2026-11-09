@@ -2,7 +2,7 @@
 
 exports[`fixtures > sample.md 1`] = `
 [
-  "H:# 分页人写的开头。",
+  "H:分页人写的开头。",
   "A@gpt:这句是 AI 补的",
   "H:，然后又回到人。书上说「",
   "Q@fakebook:纸短情长",
@@ -27,7 +27,7 @@ exports[`fixtures > sample.md 2`] = `
     "AI": 5,
     "Claude": 54,
   },
-  "human": 51,
+  "human": 50,
   "quote": 33,
   "quoteByKey": {
     "fakebook": 23,
