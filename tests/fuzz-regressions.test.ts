@@ -196,10 +196,3 @@ describe("open Q5c: AI blocks with a name and no model ID", () => {
     expect(parse(s.text).stats.aiByAuthor).toHaveProperty("Claude");
   });
 });
-
-describe("open Q6: keys (SPEC §4.1)", () => {
-  // §4.1 allows any key without whitespace or square brackets; a definition line ends the key at `:`.
-  it.fails("can define a key with : in it", () => {
-    expect(Object.keys(parse("「x」[@a:b]\n\n@a:b: 名字 · source").definitions)).toContain("a:b");
-  });
-});

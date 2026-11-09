@@ -1,7 +1,7 @@
 // The SPEC changes decided after the fuzz report, one regression test (or a few) each.
 
 import { describe, expect, it } from "vitest";
-import { parse, signRevision, toIA } from "../src/core";
+import { parse, parseBook, signRevision, toIA } from "../src/core";
 import { owners } from "./helpers";
 
 describe("the rule above all: when in doubt, not the person's", () => {
@@ -94,6 +94,22 @@ describe("Q4b (§3.4): escapes in a signature work as in prose", () => {
   it("opens no block when the && is not escaped", () => {
     expect(parse("&& 甲 && 乙\n\n正文\n\n&&").blocks).toHaveLength(0);
     expect(parse(`&& 甲 ${B}${B}&& 乙\n\n正文\n\n&&`).blocks).toHaveLength(0);
+  });
+});
+
+describe("Q6 (§4.3): a key runs to the first whitespace, less one colon at its end", () => {
+  it("defines a key with colons in it", () => {
+    const d = parse("「x」[@doe:2006]\n\n@doe:2006: Jane Doe · source").definitions;
+    expect(Object.keys(d)).toEqual(["doe:2006"]);
+    expect(d["doe:2006"]).toMatch(/^Jane Doe/);
+  });
+
+  it("does not split at the last colon of the line", () => {
+    expect(Object.keys(parse("「x」[@doe]\n\n@doe: Re: a letter · source").definitions)).toEqual(["doe"]);
+  });
+
+  it("reads a key with colons in the author book too", () => {
+    expect(Object.keys(parseBook("- @doe:2006: Jane Doe · source\n- @a: A"))).toEqual(["doe:2006", "a"]);
   });
 });
 

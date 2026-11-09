@@ -11,7 +11,7 @@ import { t } from "../i18n";
 
 const KIND_ICON = { human: "user", ai: "bot", source: "book-open" } as const;
 const KINDS: AuthorKind[] = ["human", "ai", "source"];
-const KEY_OK = /^[^\s:[\]@]+$/;
+const KEY_OK = /^[^\s[\]@]+$/;
 
 export interface AuthorsHost {
   /** The authors of the book, as last read. */

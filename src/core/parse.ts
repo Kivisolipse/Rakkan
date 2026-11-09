@@ -43,7 +43,8 @@ interface LineStruct {
 }
 
 const FENCE_RE = /^(`{3,}|~{3,})(.*)$/;
-const DEF_RE = /^(?:[-*+]\s+)?@([^\s:[\]]+):\s+(.*)$/;
+/** The key runs to the first whitespace, less one colon at its end (SPEC §4.3), so `@doe:2006: …` defines `doe:2006`. */
+const DEF_RE = /^(?:[-*+]\s+)?@([^\s[\]]+):\s+(.*)$/;
 const BLANK_RE = /^\s*$/;
 
 /** Leading whitespace and `>` markers (blockquotes, callouts, list indentation). */

@@ -181,6 +181,8 @@ Each author a `[@key]` points at is defined on a line of its own:
 | Colour | `#rrggbb` or `#rgb`, optional |
 | Separator | `·` (also `•` or `\|`). After the name, the parts come in any order, and each may be left out |
 
+The key is everything from `@` up to the first whitespace, less one colon at its end. A key may hold colons, as in Pandoc: `@doe:2006: Jane Doe · source` defines `doe:2006`. The line is not split at the last `: `, so `@doe: Re: a letter` defines `doe`.
+
 The leading `- ` is optional. What the kinds mean: a `human` has a colour of their own, computed from the key when none is given; an `AI` takes the colour of its model family; a `source` is for a work whose author isn't known (a book, a web page), and is shown dimmed.
 
 The **author book** is a note in the vault with one author per line. Everything else in it (headings, notes) is ignored, and when a key appears twice, the first wins. The author book doubles as a bibliography.
