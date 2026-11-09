@@ -3,6 +3,7 @@
 // the fewest inline markers, so adjacent islands merge and empty ones vanish.
 
 import { parseLine, scanInline, type Range } from "./inline";
+import { isTableRow, lineSyntax } from "./syntax";
 import type { LineContext } from "./types";
 
 export type Owner = "ai" | "human";
@@ -15,6 +16,13 @@ export interface Char {
   at: number;
   /** Owner before the edit, for atom handling. */
   orig: string;
+  /**
+   * Written out as it is, markers and cite included: a claim's `[@key]`, and (with `units`) every
+   * character of a quote, from its opening mark to its cite.
+   */
+  fixed?: true;
+  /** With `units`: the quote this character is part of, by where it starts. Its first character's owner is all of it's. */
+  unit?: number;
 }
 
 /** Ranges that must not be split by a marker: links, tags, code, math, URLs, cites. */
@@ -27,8 +35,12 @@ export function atomicRanges(content: string): Range[] {
     /!?\[\[[^\]\n]*\]\]/g, // wikilinks and embeds
     /!?\[[^\]\n]*\]\([^)\n]*\)/g, // Markdown links and images
     /\[\^[^\]\s]+\]/g, // footnotes
-    /(^|[\s(（])#[^\s#.,;:!?，。；：！？、()（）]+/g, // tags
-    /\s\^[A-Za-z0-9-]+$/g, // block references
+    // Tags. Markers before the `#` are read through, as they are before a link: a tag the model wrote is
+    // written `&&#tag&&`, and signing that again must still find it. `&` and `@` end it, as in Obsidian.
+    /((?:^|[\s(（])(?:&&|@@)*)#[^\s#.,;:!?，。；：！？、()（）&@]+/g,
+    // Block references, without the space before them: a change that ends in that space would take the
+    // reference into the markers, where it no longer ends the line.
+    /([ \t])\^[A-Za-z0-9-]+$/g,
   ];
   for (const re of patterns) {
     let m: RegExpExecArray | null;
@@ -44,7 +56,16 @@ export function atomicRanges(content: string): Range[] {
   while ((e = emphasis.exec(content))) out.push({ from: e.index, to: e.index + e[0].length });
   const italic = /(^|[^*])(\*[^\s*](?:[^*]*[^\s*])?\*)(?!\*)/g;
   while ((e = italic.exec(content))) out.push({ from: e.index + e[1].length, to: e.index + e[0].length });
-  return out;
+  // Ranges that overlap are one: a bare URL can run into a link (`https://x.y/@@[t](…)`), and spreading
+  // a change over one of them and then the other would depend on their order.
+  out.sort((x, y) => x.from - y.from || y.to - x.to);
+  const merged: Range[] = [];
+  for (const r of out) {
+    const last = merged[merged.length - 1];
+    if (last && r.from < last.to) last.to = Math.max(last.to, r.to);
+    else merged.push({ ...r });
+  }
+  return merged;
 }
 
 /** Whitespace between two spans of the same owner joins them: `@@a@@ @@b@@` → `@@a b@@`. */
@@ -65,7 +86,12 @@ function joinWhitespace(chars: Char[], baseOwner: Owner) {
   }
 }
 
-function ownersOf(content: string, ctx: LineContext, code = false): Char[] | null {
+/**
+ * The characters of a line with their owners, markers left out. A claim's `[@key]` is kept as written.
+ * A quote can't be rewritten character by character: without `units` the line can't be rewritten at all,
+ * with them each quote is written out as it is, with one owner.
+ */
+function ownersOf(content: string, ctx: LineContext, code = false, units = false): Char[] | null {
   const r = parseLine(content, {
     base: ctx.base,
     pair: ctx.pair,
@@ -74,19 +100,56 @@ function ownersOf(content: string, ctx: LineContext, code = false): Char[] | nul
     atLen: code ? ctx.atLen : 2,
     inComment: code ? false : ctx.inComment,
   });
-  if (r.spans.some((s) => s.type === "quote")) return null;
+  const quotes = r.spans.filter((s) => s.type === "quote");
+  if (quotes.length && !units) return null;
+  const fixed = new Map<number, number>(); // offset → the unit it is part of, or -1 for a claim's cite
+  if (units) {
+    // A quote and a claim, from the opening mark to the cite. Taken in order, a quote inside another is
+    // part of the outer one's unit.
+    const ranges = [...quotes.map((q) => [q.from, q.to]), ...r.claims.map((c) => [c.from - 1, c.cite.to])].sort((x, y) => x[0] - y[0]);
+    for (const [from, to] of ranges) for (let k = from; k < to; k++) if (!fixed.has(k)) fixed.set(k, from);
+  } else for (const c of r.claims) for (let k = c.cite.from; k < c.cite.to; k++) fixed.set(k, -1);
   const chars: Char[] = [];
   for (const s of r.segments) {
-    if (s.role === "mark") continue;
     const owner: Owner = s.attr.kind === "ai" ? "ai" : "human";
     for (let k = s.from; k < s.to; k++) {
+      const f = fixed.get(k);
+      if (s.role === "mark" && f === undefined) continue;
       const c: Char = { ch: content[k], owner, at: k, orig: "" };
-      if (s.attr.key && s.attr.explicit) c.key = s.attr.key;
+      if (s.attr.key && s.attr.explicit && s.attr.kind !== "quote") c.key = s.attr.key;
+      if (f !== undefined) {
+        c.fixed = true;
+        if (f >= 0) c.unit = f;
+      }
       c.orig = owner + (c.key ?? "");
       chars.push(c);
     }
   }
+  // A unit is its opening mark's: the text around the quote.
+  const head = new Map<number, Char>();
+  for (const c of chars) if (c.unit !== undefined && c.at === c.unit) head.set(c.unit, c);
+  for (const c of chars) {
+    const h = c.unit !== undefined ? head.get(c.unit) : undefined;
+    if (!h) continue;
+    c.owner = h.owner;
+    if (h.key) c.key = h.key;
+    else delete c.key;
+    c.orig = h.orig;
+  }
   return chars;
+}
+
+/** Each unit takes its first character's owner. */
+function unify(chars: Char[]) {
+  const head = new Map<number, Char>();
+  for (const c of chars) if (c.unit !== undefined && !head.has(c.unit)) head.set(c.unit, c);
+  for (const c of chars) {
+    const h = c.unit !== undefined ? head.get(c.unit) : undefined;
+    if (!h || h === c) continue;
+    c.owner = h.owner;
+    if (h.key) c.key = h.key;
+    else delete c.key;
+  }
 }
 
 function serialize(
@@ -94,27 +157,39 @@ function serialize(
   baseOwner: Owner,
   escape: boolean,
   marker = baseOwner === "human" ? "&&" : "@@",
+  spacesInside = false,
 ): string {
   let out = "";
   let i = 0;
-  const esc = (s: string) => (escape ? s.replace(/(^|[^&@\\])(&&|@@)(?![&@])/g, "$1\\$2") : s);
+  const escText = (s: string) => (escape ? s.replace(/(^|[^&@\\])(&&|@@)(?![&@])/g, "$1\\$2") : s);
+  // Escapes go in text only: what is written out as it is stays so.
+  const esc = (run: Char[]) => {
+    let s = "";
+    for (let k = 0; k < run.length; ) {
+      let m = k + 1;
+      while (m < run.length && !!run[m].fixed === !!run[k].fixed) m++;
+      const part = run.slice(k, m).map((x) => x.ch).join("");
+      s += run[k].fixed ? part : escText(part);
+      k = m;
+    }
+    return s;
+  };
   while (i < chars.length) {
     const c = chars[i];
     let j = i + 1;
     while (j < chars.length && chars[j].owner === c.owner && chars[j].key === c.key) j++;
-    const text = chars
-      .slice(i, j)
-      .map((x) => x.ch)
-      .join("");
-    if (c.owner === baseOwner || !text.trim()) out += esc(text);
+    const run = chars.slice(i, j);
+    const text = run.map((x) => x.ch).join("");
+    if (c.owner === baseOwner || !text.trim()) out += esc(run);
     else {
-      // Keep surrounding spaces outside the markers.
-      const lead = text.length - text.trimStart().length;
-      const trail = text.length - text.trimEnd().length;
+      // Keep surrounding spaces outside the markers, unless told otherwise (a `&` or `@` at the
+      // edge of the text would run into the marker: `&&x &&&` is no span, `&&x & &&` is).
+      const lead = spacesInside ? 0 : text.length - text.trimStart().length;
+      const trail = spacesInside ? 0 : text.length - text.trimEnd().length;
       out +=
         text.slice(0, lead) +
         marker +
-        esc(text.slice(lead, text.length - trail)) +
+        esc(run.slice(lead, run.length - trail)) +
         marker +
         (c.key ? `[@${c.key}]` : "") +
         text.slice(text.length - trail);
@@ -126,31 +201,25 @@ function serialize(
 
 /** Ownership of the visible characters only, for verification. */
 function signature(chars: Char[]): string {
-  // Whitespace may move outside markers, so its owner does not count.
-  return chars.map((c) => (/\s/.test(c.ch) ? "S" : c.owner === "ai" ? "A" : "H") + c.ch).join("");
+  // Whitespace may move outside markers, so its owner does not count; what is written out as it is
+  // (a cite, a quote) must come back as such.
+  return chars.map((c) => (c.fixed ? "F" : "") + (/\s/.test(c.ch) && !c.fixed ? "S" : c.owner === "ai" ? "A" : "H") + c.ch).join("");
 }
 
 /**
- * What makes a line a heading, list item, task or footnote: `## `, `- `,
- * `1. `, `- [ ] `, `[^1]: `. A marker in front of it would turn the line into
- * a paragraph, so it always belongs to the line's base owner.
+ * Line leaders, table pipes and delimiter rows stay outside markers: `## &&AI&&`,
+ * `| &&a&& | b |`. They are syntax (syntax.ts), so their owner counts for nothing.
  */
-const LEADER_RE = /^[ \t]*(?:#{1,6}[ \t]+|(?:[-*+]|\d{1,9}[.)])[ \t]+(?:\[[ xX]\][ \t]+)?|\[\^[^\]\s]+\]:[ \t]*)/;
-
-/** Line leaders and table pipes stay outside markers: `## &&AI&&`, `| &&a&& | b |`. */
 function keepSyntaxOutside(chars: Char[], content: string, baseOwner: Owner) {
   const visible = chars.map((c) => c.ch).join("");
-  const lead = LEADER_RE.exec(visible)?.[0].length ?? 0;
-  for (let i = 0; i < lead; i++) {
-    chars[i].owner = baseOwner;
-    delete chars[i].key;
-  }
-  if (!/^\s*\|/.test(visible)) return;
-  const atoms = atomicRanges(content);
-  for (const c of chars) {
-    if (c.ch !== "|" || content[c.at - 1] === "\\" || atoms.some((a) => c.at >= a.from && c.at < a.to)) continue;
-    c.owner = baseOwner;
-    delete c.key;
+  const atoms = isTableRow(visible) ? atomicRanges(content) : [];
+  for (const [from, to] of lineSyntax(visible)) {
+    for (let i = from; i < to; i++) {
+      const c = chars[i];
+      if (c.ch === "|" && atoms.some((a) => c.at >= a.from && c.at < a.to)) continue;
+      c.owner = baseOwner;
+      delete c.key;
+    }
   }
 }
 
@@ -187,13 +256,22 @@ export interface Rewritten {
   map: Map<number, number>;
 }
 
-export function rewriteLineDetailed(line: string, ctx: LineContext, edit: (chars: Char[]) => void): Rewritten | null {
+export interface RewriteOptions {
+  /** Atoms, by where they start in the line's content, that keep each character's owner instead. */
+  split?: ReadonlySet<number>;
+  /** Write each quote and claim out as it is, with the owner `edit` gives its first character. */
+  units?: boolean;
+}
+
+export function rewriteLineDetailed(line: string, ctx: LineContext, edit: (chars: Char[]) => void, opts: RewriteOptions = {}): Rewritten | null {
   if (ctx.mode !== "prose" || ctx.pair === "quote") return null;
+  const { split, units = false } = opts;
   const prefix = line.slice(0, ctx.prefix);
   const content = line.slice(ctx.prefix);
-  const chars = ownersOf(content, ctx);
+  const chars = ownersOf(content, ctx, false, units);
   if (!chars) return null;
   edit(chars);
+  unify(chars);
 
   const baseOwner: Owner = ctx.pair === "ai-block" ? "ai" : "human";
   keepSyntaxOutside(chars, content, baseOwner);
@@ -201,6 +279,7 @@ export function rewriteLineDetailed(line: string, ctx: LineContext, edit: (chars
   // Never split links and friends: if part of an atom changed, the atom follows.
   const byAt = new Map(chars.map((c) => [c.at, c] as const));
   for (const a of atomicRanges(content)) {
+    if (split?.has(a.from)) continue;
     let changed: Char | undefined;
     for (let k = a.from; k < a.to; k++) {
       const c = byAt.get(k);
@@ -217,19 +296,52 @@ export function rewriteLineDetailed(line: string, ctx: LineContext, edit: (chars
   }
 
   joinWhitespace(chars, baseOwner);
+  unify(chars);
 
   const want = signature(chars);
-  for (const escape of [false, true]) {
-    const out = serialize(chars, baseOwner, escape);
-    const check = ownersOf(out, ctx);
+  for (const [escape, spacesInside] of [
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true],
+  ]) {
+    const out = serialize(chars, baseOwner, escape, undefined, spacesInside);
+    const check = ownersOf(out, ctx, false, units);
     if (!check) continue;
     // Escapes add backslashes; compare ignoring them only when escaping.
-    const visible = escape ? check.filter((c) => !(c.ch === "\\" && /[&@]/.test(out[c.at + 1] ?? ""))) : check;
+    const visible = escape ? check.filter((c) => c.fixed || !(c.ch === "\\" && /[&@]/.test(out[c.at + 1] ?? ""))) : check;
     if (signature(visible) === want) {
       const map = new Map<number, number>();
       chars.forEach((c, i) => map.set(c.at + ctx.prefix, visible[i].at + ctx.prefix));
       return { text: prefix + out, map };
     }
+  }
+  return null;
+}
+
+/**
+ * Characters with their owners written out as a line in `ctx`, after `prefix`, with the fewest markers;
+ * null when no way of writing them reads back with the same owners.
+ */
+export function writeLine(prefix: string, given: ReadonlyArray<{ ch: string; owner: Owner; key?: string }>, ctx: LineContext): string | null {
+  const chars: Char[] = given.map((c, at) => ({ ch: c.ch, owner: c.owner, ...(c.key ? { key: c.key } : {}), at, orig: c.owner + (c.key ?? "") }));
+  const content = chars.map((c) => c.ch).join("");
+  const baseOwner: Owner = ctx.pair === "ai-block" ? "ai" : "human";
+  keepSyntaxOutside(chars, content, baseOwner);
+  joinWhitespace(chars, baseOwner);
+  const want = signature(chars);
+  const lineCtx = { ...ctx, prefix: 0 };
+  for (const [escape, spacesInside] of [
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true],
+  ]) {
+    const out = serialize(chars, baseOwner, escape, undefined, spacesInside);
+    const check = ownersOf(out, lineCtx, false, true);
+    if (!check) continue;
+    const visible = escape ? check.filter((c) => c.fixed || !(c.ch === "\\" && /[&@]/.test(out[c.at + 1] ?? ""))) : check;
+    if (signature(visible) === want) return prefix + out;
   }
   return null;
 }
@@ -309,11 +421,15 @@ export function diffChanges(a: string, b: string): TextChange[] {
 
 /**
  * Rewrite a line of a code block whose fence declares `@@` (any length), inside
- * an AI block. Code has no escapes and no links, so the declared run length is
+ * an AI block or a cited blockquote. Code has no escapes and no links, so the declared run length is
  * the only thing that makes a marker.
  */
 export function rewriteCodeLine(line: string, ctx: LineContext, edit: (chars: Char[]) => void): Rewritten | null {
-  if (ctx.mode !== "code" || ctx.pair !== "ai-block" || ctx.atLen < 2) return null;
+  if (ctx.mode !== "code" || ctx.atLen < 2) return null;
+  // In a cited blockquote the unmarked code is the quoted author's and `@@` islands are the
+  // person's: the same shape as an AI block, so it is rewritten as one.
+  if (ctx.pair === "quote") ctx = { ...ctx, base: { kind: "ai", explicit: false }, pair: "ai-block" };
+  if (ctx.pair !== "ai-block") return null;
   const chars = ownersOf(line, ctx, true);
   if (!chars) return null;
   edit(chars);

@@ -54,6 +54,19 @@ export class DiagnosticsModal extends Modal {
         editor.scrollIntoView({ from: { line: d.line, ch: 0 }, to: { line: d.line, ch: 0 } }, true);
         this.close();
       });
+      if (d.code === "mixed-quote") {
+        const go = li.createEl("button", { text: t("澄清引文"), cls: "rk-fix" });
+        go.addEventListener("click", () => {
+          const cm = (this.view?.editor as unknown as { cm?: EditorView } | undefined)?.cm;
+          if (!cm) {
+            new Notice(t("仅在编辑模式下可修复"));
+            return;
+          }
+          cm.dispatch({ selection: { anchor: d.from + 1 }, scrollIntoView: true });
+          this.close();
+          (this.app as unknown as { commands: { executeCommandById(id: string): boolean } }).commands.executeCommandById("rakkan:clarify-quote");
+        });
+      }
       if (d.code === "math-swallow") {
         const fix = li.createEl("button", { text: t("改成 \\$"), cls: "rk-fix" });
         fix.addEventListener("click", () => {

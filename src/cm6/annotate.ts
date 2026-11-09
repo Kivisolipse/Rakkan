@@ -104,8 +104,10 @@ export function zoneAt(r: ParseResult, lineIdx: number, pos: number): Zone | nul
   const ctx = r.lineContexts[lineIdx];
   if (!ctx) return null;
   if (ctx.codeFence !== undefined) {
-    // Code inside an AI block: the typed text is the user's, written with the block's declared marker.
-    if (ctx.base.kind !== "ai" || ctx.pair !== "ai-block") return null;
+    // Code inside an AI block or a cited blockquote: the typed text is the user's, written with
+    // the block's declared marker.
+    const quoted = ctx.base.kind === "quote" && ctx.pair === "quote";
+    if (!quoted && (ctx.base.kind !== "ai" || ctx.pair !== "ai-block")) return null;
     if (ctx.mode === "code" && ctx.atLen >= 2) {
       // Inside an island the text is already the user's; a run declared but idle here (`&&&`) changes nothing.
       const span = innermost(spansOnLine(r, lineIdx), pos);
@@ -201,7 +203,8 @@ export function wrapRanges(
   if (zone.kind === "quoteLine") return inner(ctx.prefix, lineText.length, QUOTE_CTX);
 
   if (zone.kind === "code" || zone.kind === "codeDeclare") {
-    const sub: LineContext = zone.kind === "code" ? ctx : { ...ctx, mode: "code", pair: "ai-block", ampLen: 0, atLen: zone.len };
+    const sub: LineContext =
+      zone.kind === "code" ? ctx : { ...ctx, mode: "code", pair: ctx.pair === "quote" ? "quote" : "ai-block", ampLen: 0, atLen: zone.len };
     const res = rewriteCodeLine(lineText, sub, (chars) => {
       for (const c of chars) {
         if (ranges.some((x) => c.at >= x.from && c.at < x.to)) {

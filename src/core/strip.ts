@@ -33,8 +33,7 @@ export function stripMarkers(r: ParseResult, from = 0, to = r.text.length): Stri
       const line = lines[l];
       const next = lines[l + 1];
       if (!next) continue;
-      drop[line.to] = 1; // the line break
-      if (text[line.to] === "\r") drop[line.to + 1] = 1;
+      for (let k = line.to; k < next.from; k++) drop[k] = 1; // the line break, \r\n, \r or \n
       const prev = lines[l - 1];
       const prevBlank = !prev || BLANK_RE.test(text.slice(prev.from, prev.to));
       const nextBlank = BLANK_RE.test(text.slice(next.from, next.to));

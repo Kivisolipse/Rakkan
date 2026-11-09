@@ -31,6 +31,17 @@ describe("lint", () => {
     expect(problems(note)).toEqual([]);
   });
 
+  it("finds a code span over lines of a paragraph, which the parser doesn't see (Q1)", () => {
+    expect(problems("a `code\nmore` b")).toEqual(["1:split-code-span:`"]);
+    expect(problems("> a ``x\n> y`` b\n> [@k]\n\n@k: K · source")).toEqual(["1:split-code-span:``"]);
+    // Closed on its line, ended by a blank line or a heading, or closed by a run of another length: none.
+    expect(problems("a `x` b\n`y` c")).toEqual([]);
+    expect(problems("a `x\n\nb` c")).toEqual([]);
+    expect(problems("a `x\n# b` c")).toEqual([]);
+    expect(problems("a ``x\nb` c")).toEqual([]);
+    expect(problems("a \\`x\nb` c")).toEqual([]);
+  });
+
   it("keeps the parser's warnings", () => {
     expect(problems("&& Claude\n\nnever closed\n")).toEqual(["1:unclosed-block:&& Claude"]);
   });

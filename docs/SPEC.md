@@ -8,6 +8,8 @@ Rakkan marks, in plain text, which characters of a Markdown note a person wrote,
 
 Every example here is fictional.
 
+> **When in doubt, not the person's.** Unmarked text counts as a person's (principle 2), so whatever fails to be marked falls on a person by default. An implementation that writes or changes marks and can't be sure who wrote something may therefore only err away from the person: keep the text as it was, credit it to the model, or report it. A character becomes the person's only if a person wrote it before or has just typed it.
+
 ## 1. Principles
 
 1. **Plain text first.** The file reads fine without the plugin, and a few regular expressions reproduce the distinction.
@@ -27,7 +29,7 @@ The book says "ink outlasts memory"[@fakebook], and I agree.
 && Claude (claude-opus-5-5)
 
 A whole AI block, which can hold headings, lists, tables and code blocks.
-In the middle, @@a sentence the author added@@, and a quote, "less is more"[@mies].
+In the middle, @@a sentence the author added@@, and a quote the model says is by mies, "less is more"[@mies].
 
 &&
 
@@ -41,17 +43,19 @@ In the middle, @@a sentence the author added@@, and a quote, "less is more"[@mie
 | `@@text@@` | Text by a person, inside AI text and attributed quotes (a human island) |
 | A line `&& signature` (at shortest `&& AI`) | Opens an AI block |
 | A line with only `&&` | Closes an AI block, and only that |
-| `"text"[@key]`, `「text」[@key]` | A quote: the text inside the quotation marks belongs to the author `key` |
+| `"text"[@key]`, `「text」[@key]` | A quote: the text inside the quotation marks belongs to the author `key` when a person wrote the `[@key]`, and stays the model's when a model did (§4.4) |
 | `&&text&&[@key]` | Inline AI text, naming the model |
 | `\&&`, `\@@` | Escapes |
 
 ## 3. Markers
 
+A line ends at CR LF, CR or LF, as in CommonMark. An implementation reads the line ends as they are and writes them back unchanged: it does not turn a note's line ends into one kind.
+
 ### 3.1 Length
 
 A marker in prose is **exactly two** of the same character: `&&` or `@@`. Runs of three or more, such as `&&&` or `@@@`, show as they are. A single `&` or `@` (an email address, an @mention) is not a marker.
 
-A pair right after a backslash is escaped: `\&&` shows as `&&` and is not a marker.
+A pair after an odd number of backslashes is escaped: `\&&` shows as `&&` and is not a marker. Backslashes pair up first, as in CommonMark: `\\` is one literal backslash, so in `\\&&` the backslash shows and the `&&` is a marker, while `\\\&&` shows as `\&&`.
 
 When an HTML entity follows `&&` directly (`&&amp;`), the entity wins and the two `&` are not a marker.
 
@@ -61,7 +65,7 @@ A note is made of three kinds of region:
 
 - **Human regions**, the default. Here `&&` is a marker and `@@` shows as it is.
 - **AI regions**: AI blocks, and inline `&&…&&`. Here `@@` is a marker and `&&` shows as it is.
-- **Attributed quotes.** Both `&&` and `@@` are markers here, to mark the words changed in quoting.
+- **Attributed quotes**, those whose `[@key]` a person wrote (§4.4). Both `&&` and `@@` are markers here, to mark the words changed in quoting. A quote a model wrote is part of its AI region.
 
 Nesting goes one level deep:
 
@@ -90,7 +94,7 @@ The block's content
 &&
 ```
 
-- **Opener:** a line that starts with `&&`, followed by whitespace and a signature. A signature can't contain `&&`, so `&& a sentence &&` is inline, not a block. `&&a sentence` (no whitespace) doesn't open a block either.
+- **Opener:** a line that starts with `&&`, followed by whitespace and a signature. A signature can't contain `&&`, so `&& a sentence &&` is inline, not a block. Escapes work as in prose (§3.1): `&& Name \&& Co (id)` opens a block signed `Name && Co`. `&&a sentence` (no whitespace) doesn't open a block either.
 - **Closer:** a line with only `&&`. It **only ever closes**.
 - Blocks don't nest. An opener inside a block means the previous block lost its closer: the previous block ends there, and the implementation should warn.
 - A lone `&&` with no opener shows as it is, and the implementation should warn.
@@ -142,7 +146,7 @@ The syntax follows Pandoc's citations. A key is a run of characters with no whit
 
 `[@key]` names an author only **right after a closing mark** (at most one space between):
 
-- A closing quotation mark, `」` `』` `”` or `"`: the text inside the quotation marks belongs to `key`. The opening mark is searched for backwards on the same line only; `"` has no left or right, so the nearest one on the line is taken. Single quotation marks aren't supported, since they can't be told from apostrophes.
+- A closing quotation mark, `」` `』` `”` or `"`: the text inside the quotation marks is quoted from `key`. Whose words they count as depends on who wrote the `[@key]` (§4.4). The opening mark is searched for backwards on the same line only; `"` has no left or right, so the nearest one on the line is taken. Single quotation marks aren't supported, since they can't be told from apostrophes.
 - The end of an inline marker: `&&text&&[@key]` names the model of that AI text; `@@text@@[@key]` names the person who wrote those words.
 
 A `[@key]` after anything else is an ordinary Pandoc citation and changes no authorship. One followed directly by `(` or `:` doesn't count (it is a link or a link definition).
@@ -159,7 +163,7 @@ A quoted passage goes in a blockquote whose **last line** is only `[@key]`:
 > [@fakebook]
 ```
 
-All the text in the blockquote belongs to `key`, and both `&&` and `@@` are markers inside it.
+All the text in the blockquote belongs to `key`, and both `&&` and `@@` are markers inside it. In an AI block it is the model's claim instead (§4.4).
 
 ### 4.3 The author book and definitions
 
@@ -177,6 +181,8 @@ Each author a `[@key]` points at is defined on a line of its own:
 | Colour | `#rrggbb` or `#rgb`, optional |
 | Separator | `·` (also `•` or `\|`). After the name, the parts come in any order, and each may be left out |
 
+The key is everything from `@` up to the first whitespace, less one colon at its end. A key may hold colons, as in Pandoc: `@doe:2006: Jane Doe · source` defines `doe:2006`. The line is not split at the last `: `, so `@doe: Re: a letter` defines `doe`.
+
 The leading `- ` is optional. What the kinds mean: a `human` has a colour of their own, computed from the key when none is given; an `AI` takes the colour of its model family; a `source` is for a work whose author isn't known (a book, a web page), and is shown dimmed.
 
 The **author book** is a note in the vault with one author per line. Everything else in it (headings, notes) is ignored, and when a key appears twice, the first wins. The author book doubles as a bibliography.
@@ -189,6 +195,28 @@ A note can carry the same definitions **at its end**, so they travel with the fi
 ```
 
 Definitions take no square brackets: `[@key]: …` is a Markdown link definition, and the whole line would vanish. A key with no definition still makes an attributed quote, only without a colour of its own.
+
+### 4.4 Quotes are claims
+
+A quote is a claim: whoever writes the `[@key]` says the words came from `key`. **A person's claim counts as it stands; a model's claim needs evidence.** So what decides is who wrote the `[@key]`:
+
+- **In a person's text**, a human island included, it is the person's claim, and the words inside the quotation marks belong to `key`. That covers a quote typed by hand into an AI block (`@@「…」[@x]@@`), and quotation marks and a `[@x]` the person put around a model's sentence.
+- **In a model's text** (inline AI, or an AI block, a cited blockquote in one included) it is the model's claim. The words inside the quotation marks stay the model's, `&&` shows as it is and `@@` marks a human island, as in the rest of the AI text. The claim is kept: an implementation records its range and its key, so that lint and gateways can check it. The `[@key]` is still a marker.
+
+```
+I quote 「ink outlasts memory」[@fakebook].      ← the person's claim: the words are fakebook's
+&&It is often said 「less is more」[@mies].&&    ← the model's claim: the words are the model's
+```
+
+An implementation that signs a model's revision follows from this. A quote the model adds, or a quote it changes a word of, becomes the model's text and so the model's claim; it never becomes the person's or the source's on the model's word.
+
+**To do: verified claims.** A model's claim that comes with evidence will be able to be upgraded, so that its words belong to `key`. Three kinds of evidence are planned, none of them implemented yet:
+
+1. A quoting tool (for example an MCP tool) that reads the source itself, checks that the words are in it, and writes the quote and its `[@key]` itself.
+2. A link from the quote to the source in the vault (a block reference, a clipped page), which lint compares word for word.
+3. The person confirming it by hand in the plugin.
+
+How a verified claim is written is not decided yet.
 
 ## 5. Skipped regions
 
@@ -203,6 +231,8 @@ Definitions take no square brackets: `[@key]: …` is a Markdown link definition
 | Obsidian comments | `%%…%%`, which may span lines |
 | Link URLs | The URL in `[text](URL)`, and bare URLs `https://…` |
 | iA annotation blocks | The part after a final `---` followed by `Annotations:` |
+
+**A bare URL** runs to the next whitespace, as in GFM, which leaves trailing sentence punctuation (`.,;:!?`) out of it. A live marker at its end is left out the same way and closes the span around it: in `&&see https://example.com/&&` the URL is `https://example.com/` and the `&&` closes the inline AI text, with or without a `[@key]` after it. A pair that closes nothing there stays part of the URL: one that would open a span, as in `https://example.com/&& more&&`, and `\&&` or `&&&`.
 
 Skipped regions don't change authorship: code in an AI block is AI-written as a whole, and so is the whole formula in `&&$x^2$&&`.
 
@@ -236,7 +266,13 @@ let count = @@0@@
 
 ## 7. Counting
 
-Human, AI and quoted text are counted in Unicode code points, leaving out whitespace, markers, frontmatter, comments, definitions, iA annotation blocks, code fence lines, and the `>` of blockquotes.
+Human, AI and quoted text are counted in Unicode code points, leaving out whitespace, markers, frontmatter, comments, definitions, iA annotation blocks, code fence lines, the `>` of blockquotes, and line syntax.
+
+**Whitespace** is every character with the Unicode property White_Space (no-break spaces, U+2028, U+0085 included). Characters with the property Default_Ignorable_Code_Point (a byte order mark, zero-width spaces and joiners, variation selectors, soft hyphens) aren't counted either: what can't be seen isn't written.
+
+**Line syntax** is Markdown that doesn't show as text once rendered: the leader of a heading, list item, task or footnote (`## `, `- `, `1. `, `- [x] `, `[^1]: `), and in a line that starts with `|`, its pipes, or all of it for a delimiter row (`|---|:-:|`). It belongs to no one.
+
+**Known limitation:** a task's box is line syntax, so who ticked or unticked it isn't recorded. An implementation that signs a revision reports the tasks the model ticked or unticked.
 
 ## 8. Programs that read the source
 

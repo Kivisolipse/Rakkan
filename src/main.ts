@@ -1,7 +1,7 @@
 import { editorLivePreviewField, getLanguage, MarkdownView, MenuItem, normalizePath, Notice, Plugin, TFile, type Component, type Editor, type Menu } from "obsidian";
 import { ChangeSet } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import { diffChanges, Parser, parseAuthor, quoteText, setBookColor, signRevision, trimPaste, type Author, type ParseResult } from "./core";
+import { diffChanges, insertQuote, Parser, parseAuthor, quoteText, setBookColor, signRevision, trimPaste, type Author, type ParseResult } from "./core";
 import { parseField, rakkanEditor, refreshEffect } from "./cm6/editor";
 import { STYLES, type StyleSettings } from "./cm6/resolve";
 import { processSection } from "./obsidian/reading";
@@ -21,6 +21,7 @@ import { exportNote, importIA, type ExportKind } from "./obsidian/export";
 import { RestoreArchiveModal, StripVaultModal } from "./obsidian/stripvault";
 import { publishCss, writePublishCss } from "./obsidian/publish";
 import { fixBlankLines, insertBlock, markSelection, pasteAsAI, stripSelection } from "./obsidian/commands";
+import { clarifyAtCursor, gotoNextMixedQuote } from "./obsidian/clarify";
 import { setLanguage, t } from "./i18n";
 
 const cmOf = (editor: Editor) => (editor as unknown as { cm?: EditorView }).cm ?? null;
@@ -171,6 +172,16 @@ export default class RakkanPlugin extends Plugin {
       editorCallback: (editor) => this.pasteAsQuote(editor),
     });
     this.addCommand({
+      id: "clarify-quote",
+      name: t("澄清引文"),
+      editorCallback: withView((view) => this.clarifyQuote(view)),
+    });
+    this.addCommand({
+      id: "next-unclarified-quote",
+      name: t("跳到下一处待澄清的引文"),
+      editorCallback: withView((view) => gotoNextMixedQuote(view)),
+    });
+    this.addCommand({
       id: "paste-edits",
       name: t("粘贴修改（仅将改动处标记为模型所写）"),
       editorCallback: (editor) => {
@@ -284,6 +295,13 @@ export default class RakkanPlugin extends Plugin {
     if (skipped) new Notice(t("{n} 行含引用或代码，未作改动", { n: skipped }));
   }
 
+  private clarifyQuote(view: EditorView) {
+    clarifyAtCursor(this.app, view, {
+      nameOf: (key) => this.allAuthors()[key]?.name,
+      blockOpener: () => this.settings.defaultSignature,
+    });
+  }
+
   private async pasteAsAIFromClipboard(view: EditorView) {
     try {
       const text = await navigator.clipboard.readText();
@@ -300,10 +318,18 @@ export default class RakkanPlugin extends Plugin {
         if (!text.trim()) return;
         new AuthorPickerModal(this.app, { authors: () => Object.values(this.allAuthors()) }, (key) => {
           const quoted = quoteText(text, key);
-          const multi = quoted.startsWith("> ");
-          const atStart = editor.getCursor().ch === 0;
-          const lead = atStart ? "" : "\n\n";
-          editor.replaceSelection(multi ? `${lead}${quoted}\n` : quoted);
+          if (!quoted) return;
+          // One line stays in the line; a cited blockquote is a paragraph of its own.
+          const lead = quoted.startsWith(">") && editor.getCursor("from").ch !== 0 ? "\n\n" : "";
+          const ins = quoted.startsWith(">") ? `${lead}${quoted}\n` : quoted;
+          // The person gives the quote: in AI text it is written as confirmed, not as the model's citation.
+          const doc = editor.getValue();
+          const from = editor.posToOffset(editor.getCursor("from"));
+          const to = editor.posToOffset(editor.getCursor("to"));
+          const c = insertQuote(doc, from, to, ins, { blockOpener: this.settings.defaultSignature });
+          editor.transaction({ changes: [{ from: editor.offsetToPos(c.from), to: editor.offsetToPos(c.to), text: c.insert }] });
+          // `cursor` is an offset in the note as it is now.
+          editor.setCursor(editor.offsetToPos(c.cursor));
         }).open();
       })
       .catch(() => new Notice(t("无法读取剪贴板")));
@@ -352,6 +378,7 @@ export default class RakkanPlugin extends Plugin {
     entries.push(
       { title: t("粘贴为 AI 生成"), icon: "clipboard-paste", run: () => void this.pasteAsAIFromClipboard(view) },
       { title: t("粘贴为引用"), icon: "quote", run: () => this.pasteAsQuote(editor) },
+      { title: t("澄清引文"), icon: "message-square-quote", run: () => this.clarifyQuote(view) },
       { title: t("插入 AI 块"), icon: "square-plus", run: () => insertBlock(view, this.settings.defaultSignature) },
       { title: t("导出为 PDF…"), icon: "file-output", run: () => { const f = this.app.workspace.getActiveFile(); if (f) this.openPdfExport(f); } },
     );
@@ -414,11 +441,15 @@ export default class RakkanPlugin extends Plugin {
               new Notice(t("未发现改动"));
               return;
             }
-            const changes = ChangeSet.of(diffChanges(doc, res.text), doc.length);
-            view.dispatch({ changes, selection: { anchor: changes.mapPos(to, 1) }, userEvent: "input.paste", scrollIntoView: true });
-            new Notice(t("已标记 {n} 处改动", { n: res.changed }));
-            if (res.unmarked.length) new Notice(t("{n} 行含引用或代码，其中的改动未能标记", { n: res.unmarked.length }));
+            if (res.text !== doc) {
+              const changes = ChangeSet.of(diffChanges(doc, res.text), doc.length);
+              view.dispatch({ changes, selection: { anchor: changes.mapPos(to, 1) }, userEvent: "input.paste", scrollIntoView: true });
+              new Notice(t("已标记 {n} 处改动", { n: res.changed }));
+            }
+            // What sign can't mark it doesn't take: those lines keep the original.
+            if (res.rejected.length) new Notice(t("{n} 处改动含引用或代码，无法标记，已保留原文", { n: res.rejected.length }));
             if (res.foreign.length) new Notice(t("{n} 行的改动在其他模型署名的 AI 块里，算作该模型所写", { n: res.foreign.length }));
+            if (res.tasks.length) new Notice(t("{n} 个任务的勾选状态被改动，勾选者不会记录", { n: res.tasks.length }));
           },
           t("不标注模型"),
         ).open();

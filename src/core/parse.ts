@@ -1,8 +1,10 @@
 import { parseLine, scanInline, type LineCtx, type LineResult } from "./inline";
 import { parseSignature, signatureLabel } from "./signature";
+import { lineSyntax } from "./syntax";
 import type {
   Attr,
   Block,
+  Claim,
   Diagnostic,
   LineContext,
   LineInfo,
@@ -41,8 +43,9 @@ interface LineStruct {
   citeLine?: [number, number];
 }
 
-const FENCE_RE = /^(`{3,}|~{3,})(.*)$/;
-const DEF_RE = /^(?:[-*+]\s+)?@([^\s:[\]]+):\s+(.*)$/;
+const FENCE_RE = /^(`{3,}|~{3,})([^]*)$/; // U+2028 ends no line, so `.` would miss it
+/** The key runs to the first whitespace, less one colon at its end (SPEC §4.3), so `@doe:2006: …` defines `doe:2006`. */
+const DEF_RE = /^(?:[-*+]\s+)?@([^\s[\]]+):\s+(.*)$/;
 const BLANK_RE = /^\s*$/;
 
 /** Leading whitespace and `>` markers (blockquotes, callouts, list indentation). */
@@ -66,26 +69,45 @@ function quotePrefix(line: string): number {
 }
 
 /** `&& sig` → opener, `&&` → closer, else null. Up to 3 spaces of indent. */
-function blockLine(line: string): { type: "open"; sig: string } | { type: "close" } | null {
+export function blockLine(line: string): { type: "open"; sig: string } | { type: "close" } | null {
   let i = 0;
   while (i < 3 && line[i] === " ") i++;
   if (line[i] !== "&" || line[i + 1] !== "&" || line[i + 2] === "&") return null;
   const rest = line.slice(i + 2);
   if (BLANK_RE.test(rest)) return { type: "close" };
   if (rest[0] !== " " && rest[0] !== "\t" && rest[0] !== "\u3000") return null;
-  if (rest.includes("&&")) return null;
-  return { type: "open", sig: rest.trim() };
+  if (pairIn(rest)) return null;
+  return { type: "open", sig: unescapePairs(rest.trim()) };
 }
+
+/** `\&&` reads `&&`; every other backslash stays as written. */
+function unescapePairs(s: string): string {
+  let out = "";
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === "\\" && s[i + 1] === "&" && s[i + 2] === "&") continue;
+    out += s[i];
+    if (s[i] === "\\") out += s[++i] ?? "";
+  }
+  return out;
+}
+
+/** Whether `s` holds `&&` (or a longer run) that no backslash escapes, read as in prose (SPEC §3.1). */
+function pairIn(s: string): boolean {
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === "\\") {
+      if (s[i + 1] === "&") while (s[i + 1] === "&") i++;
+      else i++;
+    } else if (s[i] === "&" && s[i + 1] === "&") return true;
+  }
+  return false;
+}
+
+/** What isn't counted (SPEC \u00a77): whitespace, and characters that show nothing (a BOM, zero-width spaces, joiners). */
+export const UNCOUNTED = /^[\p{White_Space}\p{Default_Ignorable_Code_Point}]$/u;
 
 function codePoints(s: string, from: number, to: number): number {
   let count = 0;
-  for (let i = from; i < to; i++) {
-    const code = s.charCodeAt(i);
-    if (code >= 0xdc00 && code <= 0xdfff) continue; // low surrogate
-    const c = s[i];
-    if (c === " " || c === "\t" || c === "\u3000" || c === "\r" || c === "\n") continue;
-    count++;
-  }
+  for (const c of s.slice(from, to)) if (!UNCOUNTED.test(c)) count++;
   return count;
 }
 
@@ -130,15 +152,17 @@ export class Parser {
   }
 
   parse(text: string): ParseResult {
-    const raw = text.split("\n");
+    // A line ends at \r\n, \r or \n, as in CommonMark; the text itself is left as it is.
     const lines: LineInfo[] = [];
     const lineText: string[] = [];
+    const eol = /\r\n?|\n/g;
     let offset = 0;
-    for (const l of raw) {
-      const t = l.endsWith("\r") ? l.slice(0, -1) : l;
-      lines.push({ from: offset, to: offset + t.length });
-      lineText.push(t);
-      offset += l.length + 1;
+    for (let m = eol.exec(text); ; m = eol.exec(text)) {
+      const end = m ? m.index : text.length;
+      lines.push({ from: offset, to: end });
+      lineText.push(text.slice(offset, end));
+      if (!m) break;
+      offset = end + m[0].length;
     }
     const N = lines.length;
     const diagnostics: Diagnostic[] = [];
@@ -342,17 +366,28 @@ export class Parser {
     }
 
     // ── Pass B: blockquotes whose last line is `[@key]` ──
+    // Code and math inside the blockquote belong to it too.
+    const quoted = (k: number) => {
+      const s = structs[k];
+      if (s.inComment) return false;
+      if (s.type === "prose") return s.prefix > 0;
+      return (s.type === "fence" || s.type === "code" || s.type === "plain") && quotePrefix(lineText[k]) > 0;
+    };
+    const claims: Claim[] = [];
     for (let i = 0; i < N; i++) {
-      if (structs[i].type !== "prose" || structs[i].prefix === 0 || structs[i].inComment) continue;
+      if (!quoted(i)) continue;
       let j = i;
-      while (j + 1 < N && structs[j + 1].type === "prose" && structs[j + 1].prefix > 0 && !structs[j + 1].inComment) j++;
-      const last = lineText[j];
-      const content = last.slice(structs[j].prefix);
-      const m = /^\[@([^\s[\]]+)\]\s*$/.exec(content);
+      while (j + 1 < N && quoted(j + 1)) j++;
+      const content = lineText[j].slice(structs[j].prefix);
+      const m = structs[j].type === "prose" ? /^\[@([^\s[\]]+)\]\s*$/.exec(content) : null;
       if (m && j > i) {
-        for (let k = i; k <= j; k++) structs[k].quoteKey = m[1];
         const from = structs[j].prefix;
         structs[j].citeLine = [from, from + m[0].trimEnd().length];
+        // A `[@key]` line in an AI block is the model's: a claim, and the lines stay the block's (SPEC §4.4).
+        if (structs[j].block !== null) {
+          const cite = lines[j].from + from;
+          claims.push({ from: lines[i].from, to: lines[j - 1].to, key: m[1], cite: { from: cite, to: cite + m[1].length + 3 } });
+        } else for (let k = i; k <= j; k++) structs[k].quoteKey = m[1];
       }
       i = j;
     }
@@ -373,12 +408,21 @@ export class Parser {
       const st = structs[i];
       const { from, to } = lines[i];
       const t = lineText[i];
-      const base = st.block !== null ? blockAttr[st.block] : HUMAN;
+      const outer = st.block !== null ? blockAttr[st.block] : HUMAN;
+      // Code, math and fences in a cited blockquote take the quote's author, as its prose does.
+      const base: Attr =
+        st.quoteKey !== undefined && st.type !== "prose"
+          ? { kind: "quote", key: st.quoteKey, explicit: true, ...(st.block !== null ? { block: st.block } : {}) }
+          : outer;
+      // The `> ` before a code or math line is syntax, as it is before prose.
+      const qp = st.type === "code" || st.type === "plain" ? quotePrefix(t) : 0;
       const blockPair = st.block !== null ? "ai-block" : "human";
+      // Declared code in a cited blockquote follows the quote's rules: `@@` marks the person's own words.
+      const codePair = st.quoteKey !== undefined ? "quote" : blockPair;
       lineContexts[i] = {
         mode: st.type === "prose" && !st.citeLine ? "prose" : st.type === "code" && (st.amp || st.at) ? "code" : "other",
         base: st.type === "meta" ? HUMAN : base,
-        pair: blockPair,
+        pair: codePair,
         prefix: 0,
         inComment: st.inComment,
         ampLen: st.type === "code" ? st.amp : 2,
@@ -406,23 +450,27 @@ export class Parser {
           continue;
         }
         case "plain":
-          push(from, to, "text", base);
+          push(from, from + qp, "syntax", base);
+          push(from + qp, to, "text", base);
           continue;
         case "code": {
           if (st.amp === 0 && st.at === 0) {
-            push(from, to, "text", base);
+            push(from, from + qp, "syntax", base);
+            push(from + qp, to, "text", base);
             continue;
           }
-          const r = this.parseLineCached(t, {
+          push(from, from + qp, "syntax", base);
+          const r = this.parseLineCached(t.slice(qp), {
             base,
-            pair: st.block !== null ? "ai-block" : "human",
+            pair: codePair,
             mode: "code",
             ampLen: st.amp,
             atLen: st.at,
             inComment: false,
           });
-          for (const s of r.segments) push(from + s.from, from + s.to, s.role, s.attr, s.mark);
-          for (const s of r.spans) spans.push({ ...s, from: from + s.from, to: from + s.to, contentFrom: from + s.contentFrom, contentTo: from + s.contentTo });
+          const o = from + qp;
+          for (const s of r.segments) push(o + s.from, o + s.to, s.role, s.attr, s.mark);
+          for (const s of r.spans) spans.push({ ...s, from: o + s.from, to: o + s.to, contentFrom: o + s.contentFrom, contentTo: o + s.contentTo });
           continue;
         }
         case "prose": {
@@ -452,8 +500,24 @@ export class Parser {
             inComment: st.inComment,
           });
           const o = from + pre;
-          for (const s of r.segments) push(o + s.from, o + s.to, s.role, s.attr, s.mark);
+          // Leaders, table pipes and delimiter rows are syntax: not counted, no one's (§7).
+          const cuts = st.inComment ? [] : lineSyntax(t.slice(pre));
+          for (const s of r.segments) {
+            if (s.role !== "text" || !cuts.length) {
+              push(o + s.from, o + s.to, s.role, s.attr, s.mark);
+              continue;
+            }
+            let at = s.from;
+            for (const [a, b] of cuts) {
+              if (b <= at || a >= s.to) continue;
+              if (a > at) push(o + at, o + a, "text", s.attr);
+              at = Math.min(b, s.to);
+              push(o + Math.max(a, s.from), o + at, "syntax", s.attr);
+            }
+            if (at < s.to) push(o + at, o + s.to, "text", s.attr);
+          }
           for (const s of r.spans) spans.push({ ...s, from: o + s.from, to: o + s.to, contentFrom: o + s.contentFrom, contentTo: o + s.contentTo });
+          for (const c of r.claims) claims.push({ ...c, from: o + c.from, to: o + c.to, cite: { from: o + c.cite.from, to: o + c.cite.to } });
           for (const d of r.diagnostics) diag(i, o + d.from, o + d.to, d.code, d.message);
           continue;
         }
@@ -484,7 +548,8 @@ export class Parser {
     }
 
     diagnostics.sort((a, b) => a.from - b.from);
-    return { text, lines, lineContexts, segments, spans, blocks, diagnostics, definitions, stats, bodyStart };
+    claims.sort((x, y) => x.from - y.from);
+    return { text, lines, lineContexts, segments, spans, claims, blocks, diagnostics, definitions, stats, bodyStart };
   }
 }
 

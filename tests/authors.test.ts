@@ -64,14 +64,15 @@ describe("definitions at the end of a note", () => {
 });
 
 describe("quoteText", () => {
-  it("picks a quote mark that is free", () => {
+  it("keeps one plain line in the line, and uses a cited blockquote for anything else", () => {
     expect(quoteText("纸短情长", "a")).toBe("「纸短情长」[@a]");
-    expect(quoteText("他说「好」", "a")).toBe('"他说「好」"[@a]');
-  });
-
-  it("uses a cited blockquote for several lines or when all marks are taken", () => {
+    expect(quoteText("It is a *truth* universally acknowledged", "a")).toBe("「It is a *truth* universally acknowledged」[@a]");
     expect(quoteText("甲\n\n乙", "a")).toBe("> 甲\n>\n> 乙\n> [@a]");
-    expect(quoteText('他说「好」又说"行"', "a")).toBe('> 他说「好」又说"行"\n> [@a]');
+    // A character that could be a marker, code, math, a comment or a quotation mark.
+    for (const t of ['他说「好」又说"行"', "a `b`", "$x$", "50%", "a & b", "a@b.c"]) expect(quoteText(t, "a")).toMatch(/^> /);
+    // What means something only at the start or end of a line, and space a paragraph drops.
+    for (const t of ["# 标题", "#tag", "> 引用", "- 项", "1. 项", "<div>", "[a]: /url", "---", "~~~", " 前", "后 ", "末尾\\", "段落 ^abc"])
+      expect(quoteText(t, "a")).toMatch(/^> /);
   });
 
   it("round-trips through the parser", () => {

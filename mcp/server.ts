@@ -124,7 +124,7 @@ const RAKKAN_TOOLS = [
     name: "rakkan_sign",
     title: "Edit and sign (Rakkan)",
     description:
-      "Edit a Markdown note and let Rakkan mark exactly the characters you changed as your model's, like `rakkan sign`: words you kept keep their author, `@@` islands and other models' [@key] included, even where your newText dropped their markers. Write newText as plain words; a new paragraph may come in your own AI block. Use this instead of edit_file to change prose that someone else wrote. Reports lines it could not mark (quotes, code) and changes that landed in another model's AI block." +
+      "Edit a Markdown note and let Rakkan mark exactly the characters you changed as your model's, like `rakkan sign`: words you kept keep their author, `@@` islands and other models' [@key] included, even where your newText dropped their markers. Write newText as plain words; a new paragraph may come in your own AI block. Use this instead of edit_file to change prose that someone else wrote. Changes it can't mark (in quotes, code) are not made: those lines keep the original, and the report says what you wrote there. It also reports changes that landed in another model's AI block." +
       (keepHuman ? " Human-written text cannot be deleted or replaced here." : ""),
     inputSchema: {
       type: "object",
@@ -154,7 +154,7 @@ const RAKKAN_TOOLS = [
     name: "rakkan_lint",
     title: "Lint (Rakkan)",
     description:
-      "Check a note's Rakkan markers, like `rakkan lint`: AI blocks without a closer or blank lines, markers without a partner or that do nothing where they are, [@key] that neither the note nor the author book defines, markers swallowed by math. Prints line:column, a code and a message for each problem, then the share of human, AI and quoted text and the AI text by author. Run it on every note you wrote before you finish.",
+      "Check a note's Rakkan markers, like `rakkan lint`: AI blocks without a closer or blank lines, markers without a partner or that do nothing where they are, [@key] that neither the note nor the author book defines, markers swallowed by math, code spans over lines (Rakkan reads a line at a time). Prints line:column, a code and a message for each problem, then the share of human, AI and quoted text and the AI text by author. Run it on every note you wrote before you finish.",
     inputSchema: {
       type: "object",
       properties: { path: { type: "string", description: "The note to check." } },
@@ -269,13 +269,21 @@ async function rakkanSign(args: Record<string, unknown>): Promise<string> {
   const dryRun = args.dryRun === true;
 
   const before = await readNote(path);
-  const crlf = before.includes("\r\n");
-  const original = crlf ? before.replace(/\r\n/g, "\n") : before;
+  // The note is signed as it is, line ends and all (SPEC §3): only the edits take the note's line end.
+  const original = before;
+  const eol = before.includes("\r\n") ? "\r\n" : "\n";
+  const asNote = (s: string) => s.replace(/\r\n|\r|\n/g, eol);
   let revised = original;
   edits.forEach((e, i) => {
     try {
-      const { from, to } = locate(revised, e.oldText.replace(/\r\n/g, "\n"));
-      revised = revised.slice(0, from) + e.newText.replace(/\r\n/g, "\n") + revised.slice(to);
+      let at: { from: number; to: number };
+      try {
+        at = locate(revised, asNote(e.oldText));
+      } catch (err) {
+        if (asNote(e.oldText) === e.oldText) throw err;
+        at = locate(revised, e.oldText);
+      }
+      revised = revised.slice(0, at.from) + asNote(e.newText) + revised.slice(at.to);
     } catch (err) {
       throw new Error(`edit ${i + 1}: ${(err as Error).message}. Nothing was written.`);
     }
@@ -297,8 +305,8 @@ async function rakkanSign(args: Record<string, unknown>): Promise<string> {
       return !(b && !b.signature.id && b.signature.name === name);
     });
   }
-  const result = crlf ? signed.text.replace(/\n/g, "\r\n") : signed.text;
-  if (result === before) return `No changes: the edits leave ${path} as it is.`;
+  const result = signed.text;
+  if (result === before && !signed.rejected.length) return `No changes: the edits leave ${path} as it is.`;
   if (!dryRun) {
     const now = await readNote(path);
     if (now !== before) throw new Error(`${path} changed while the edit was being signed; read it again and retry. Nothing was written.`);
@@ -307,8 +315,13 @@ async function rakkanSign(args: Record<string, unknown>): Promise<string> {
 
   const out = [`${dryRun ? "Dry run: would sign" : "Signed"} ${signed.changed} change${signed.changed === 1 ? "" : "s"} in ${path} as ${model}.`];
   const notes = [
-    ...signed.unmarked.map((n) => [n, "unmarked", `This line changed, but it holds a quote or code that sign can't mark. Your words there still read as human: mark them by hand as &&words&&[@${model}] with edit_file, then run rakkan_lint.`] as const),
+    ...signed.rejected.map((g) => {
+      const what = g.count ? `the original line${g.count === 1 ? " was" : "s were"} kept here` : "the lines you added here were left out";
+      const msg = `Your change here holds a quote, code, or a link with two authors' words, which sign can't mark, so ${what}. You wrote: ${JSON.stringify(g.revised)}. To make it, write it by hand with edit_file, marking your words as &&words&&[@${model}], then run rakkan_lint.`;
+      return [g.line, "unmarked", msg] as const;
+    }),
     ...signed.foreign.map((n) => [n, "foreign-block", "Your changes here are inside an AI block another model signed, so they count as that model's."] as const),
+    ...signed.tasks.map((n) => [n, "task", "You ticked or unticked this task. A task's box is syntax, so who ticked it isn't recorded: tell the person."] as const),
   ].sort((x, y) => x[0] - y[0]);
   if (notes.length) out.push(...notes.map(([n, code, msg]) => `- ${n + 1}  ${code}  ${msg}`));
   const book = await loadBook();

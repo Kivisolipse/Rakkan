@@ -48,6 +48,19 @@ export interface InlineSpan {
   type: "marker" | "quote";
 }
 
+/**
+ * A quote whose `[@key]` a model wrote (SPEC §4.4): a claim that `key` said it. Its words stay the AI's
+ * until a check backs the claim; the claim is kept for lint and gateways to check.
+ */
+export interface Claim {
+  /** The quoted text, between the quotation marks (or the blockquote's lines). */
+  from: number;
+  to: number;
+  key: string;
+  /** The `[@key]`. */
+  cite: { from: number; to: number };
+}
+
 export interface Signature {
   raw: string;
   name?: string;
@@ -72,7 +85,8 @@ export type DiagnosticCode =
   | "implicit-close"
   | "unclosed-block"
   | "blank-line"
-  | "math-swallow";
+  | "math-swallow"
+  | "mixed-quote";
 
 export interface Diagnostic {
   from: number;
@@ -118,6 +132,8 @@ export interface ParseResult {
   lineContexts: LineContext[];
   segments: Segment[];
   spans: InlineSpan[];
+  /** Quotes a model wrote: claims, whose words stay the AI's (SPEC §4.4). */
+  claims: Claim[];
   blocks: Block[];
   diagnostics: Diagnostic[];
   definitions: Record<string, string>;

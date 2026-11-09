@@ -2,6 +2,7 @@ import { EditorSelection, EditorState, Transaction } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
 import { annotate, cleanupSpec, flushSpec, pendingField } from "../src/cm6/annotate";
 import { diffChanges } from "../src/core";
+import { owners } from "./helpers";
 
 const cfg = { enabled: () => true };
 
@@ -156,6 +157,27 @@ describe("typing in AI regions", () => {
   it("keeps working in a blockquote inside an AI block", () => {
     const s = type(make(BLOCK("> AI|")), "我");
     expect(show(s)).toBe(BLOCK("> AI@@我|@@"));
+  });
+});
+
+describe("typing in code blocks of a cited blockquote", () => {
+  const FENCE = "```";
+  const quote = (info: string, ...lines: string[]) => ["> 引文", `> ${FENCE}${info}`, ...lines.map((l) => `> ${l}`), `> ${FENCE}`, "> [@k]"].join("\n");
+
+  it("declares @@ on the fence and wraps the typed text, which is the person's", () => {
+    const s = type(make(quote("ts", "let a = |")), "0");
+    expect(show(s)).toBe(quote("ts @@", "let a = @@0|@@"));
+    expect(owners(s.doc.toString())).toEqual(["Q@k:引文let a = ", "h:0"]);
+  });
+
+  it("wraps with the declared marker when the fence already has one", () => {
+    const s = type(make(quote("ts @@", "return x|")), "y");
+    expect(show(s)).toBe(quote("ts @@", "return x@@y|@@"));
+  });
+
+  it("leaves code in a blockquote without a source alone", () => {
+    const doc = ["> 引文", `> ${FENCE}js`, "> let a|", `> ${FENCE}`].join("\n");
+    expect(show(type(make(doc), "b"))).toBe(doc.replace("a|", "ab|"));
   });
 });
 

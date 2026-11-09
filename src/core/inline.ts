@@ -1,7 +1,7 @@
 // Inline scanning: one line at a time, character by character (no lookbehind
 // regexes, so it runs on old iOS WebKit too).
 
-import type { Attr, DiagnosticCode, InlineSpan, MarkType, Role } from "./types";
+import type { Attr, Claim, DiagnosticCode, InlineSpan, MarkType, Role } from "./types";
 
 export type SkipType = "code" | "math" | "comment" | "url";
 
@@ -85,25 +85,108 @@ function hasMarkerRun(text: string, from: number, to: number): boolean {
   return false;
 }
 
-/** Find the `)` closing a link destination that starts at `open` (`(`). */
-function linkDestinationEnd(text: string, open: number): number {
-  let depth = 0;
-  for (let j = open; j < text.length; j++) {
-    const c = text[j];
-    if (c === "\\") {
-      j++;
-      continue;
-    }
-    if (c === "(") depth++;
-    else if (c === ")") {
-      depth--;
-      if (depth === 0) return j + 1;
-    }
-  }
-  return -1;
+/**
+ * Whether the character at each offset follows an odd run of backslashes.
+ * A scan that starts on a character other than `\` and skips the character
+ * after each `\` skips exactly these, wherever it starts.
+ */
+function escapedMask(text: string): Uint8Array {
+  const out = new Uint8Array(text.length + 1);
+  for (let i = 1; i <= text.length; i++) out[i] = text[i - 1] === "\\" && !out[i - 1] ? 1 : 0;
+  return out;
 }
 
-function urlEnd(text: string, i: number): number {
+/** First item of the sorted `list` greater than `x`, or -1. */
+function firstAfter(list: number[], x: number): number {
+  let lo = 0;
+  let hi = list.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (list[mid] > x) hi = mid;
+    else lo = mid + 1;
+  }
+  return lo < list.length ? list[lo] : -1;
+}
+
+/**
+ * Where link destinations end. A destination that starts at `open` (`(`) ends
+ * after the first unescaped `)` that brings the paren depth back to where it
+ * was before `open`; computed for the whole line at once, so a line full of
+ * unclosed `](` stays linear.
+ */
+class LinkEnds {
+  private depth: Int32Array;
+  private closesAt = new Map<number, number[]>();
+  constructor(text: string, escaped: Uint8Array) {
+    this.depth = new Int32Array(text.length);
+    let d = 0;
+    for (let j = 0; j < text.length; j++) {
+      if (!escaped[j] && text[j] !== "\\") {
+        if (text[j] === "(") d++;
+        else if (text[j] === ")") {
+          d--;
+          let list = this.closesAt.get(d);
+          if (!list) this.closesAt.set(d, (list = []));
+          list.push(j);
+        }
+      }
+      this.depth[j] = d;
+    }
+  }
+  /** The end of the destination opened at `open`, or -1 when it never closes. */
+  end(open: number): number {
+    const close = firstAfter(this.closesAt.get(this.depth[open] - 1) ?? [], open);
+    return close < 0 ? -1 : close + 1;
+  }
+}
+
+/**
+ * Where a bare URL that starts at `i` ends. As GFM leaves sentence punctuation out of it, closing markers
+ * at its end (`&&` or `@@`, with or without `[@key]`) are left out too, and close the spans around it
+ * (SPEC §5). `open` says which kinds have a span open where the URL starts.
+ */
+function urlEnd(text: string, i: number, opts: ScanOptions, open: { amp: boolean; at: boolean }): number {
+  const trim = (j: number) => {
+    while (j > i && /[.,;:!?]/.test(text[j - 1])) j--;
+    return j;
+  };
+  const full = trim(bareUrlEnd(text, i));
+  let j = full;
+  // The end of `http://` or `https://`: a URL keeps at least one character after it.
+  const min = i + (text[i + 4] === ":" ? 7 : 8);
+  // The live pairs at the end, right to left: their kind, and where the URL ends if they are left out.
+  const ends: Array<{ amp: boolean; cut: number }> = [];
+  for (;;) {
+    let k = j;
+    if (text[k - 1] === "]") {
+      const cite = text.lastIndexOf("[@", k - 1);
+      if (cite > min && /^\[@[^\s[\]]+\]$/.test(text.slice(cite, k))) k = cite;
+    }
+    const c = text[k - 1];
+    const want = c === "&" ? opts.ampLen : c === "@" ? opts.atLen : 0;
+    if (want !== 2 || text[k - 2] !== c || text[k - 3] === c || k - 2 <= min || opts.literalRuns?.has(k - 2)) break;
+    let slashes = 0;
+    while (text[k - 3 - slashes] === "\\") slashes++;
+    if (slashes % 2) break;
+    j = trim(k - 2);
+    ends.push({ amp: c === "&", cut: j });
+  }
+  // The longest run of them that are all closers, read left to right from where the URL would end.
+  ends.reverse();
+  for (let s = 0; s < ends.length; s++) {
+    const now = { ...open };
+    const closes = ends.slice(s).every((e) => {
+      const was = e.amp ? now.amp : now.at;
+      if (e.amp) now.amp = !now.amp;
+      else now.at = !now.at;
+      return was;
+    });
+    if (closes) return ends[s].cut;
+  }
+  return full;
+}
+
+function bareUrlEnd(text: string, i: number): number {
   let j = i;
   let parens = 0;
   while (j < text.length) {
@@ -137,6 +220,25 @@ export function scanInline(text: string, opts: ScanOptions): InlineScan {
   };
   const n = text.length;
   let i = 0;
+  /** Whether a pair of each kind is open so far on the line (an odd number of markers). */
+  const open = { amp: false, at: false };
+  // Built on first use, for the whole line, so no construct rescans the rest of the line.
+  let escapedAt: Uint8Array | undefined;
+  const escaped = () => (escapedAt ??= escapedMask(text));
+  let linkEnds: LinkEnds | undefined;
+  let closes: number[] | undefined;
+  /** Offsets of every `$` that can close inline math (Pandoc rules), opener aside. */
+  const dollarCloses = () => {
+    if (closes) return closes;
+    const esc = escaped();
+    closes = [];
+    for (let j = 1; j < n; j++) {
+      if (text[j] !== "$" || esc[j] || isSpace(text[j - 1])) continue;
+      const next = text[j + 1];
+      if (!(next !== undefined && isDigit(next))) closes.push(j);
+    }
+    return closes;
+  };
 
   if (opts.prose && opts.inComment) {
     const close = text.indexOf("%%");
@@ -161,7 +263,11 @@ export function scanInline(text: string, opts: ScanOptions): InlineScan {
         (opts.literalRuns?.has(i) ?? false) ||
         (c === "&" && opts.prose && entityAt(text, i + len - 1));
       if (literal) out.literals.push({ from: i, to: i + len });
-      else out.tokens.push({ from: i, to: i + len, type: c === "&" ? "amp" : "at" });
+      else {
+        out.tokens.push({ from: i, to: i + len, type: c === "&" ? "amp" : "at" });
+        if (c === "&") open.amp = !open.amp;
+        else open.at = !open.at;
+      }
       i += len;
       continue;
     }
@@ -228,20 +334,7 @@ export function scanInline(text: string, opts: ScanOptions): InlineScan {
       // before it and no digit after it.
       const after = text[i + 1];
       if (after !== undefined && !isSpace(after)) {
-        let close = -1;
-        for (let j = i + 1; j < n; j++) {
-          if (text[j] === "\\") {
-            j++;
-            continue;
-          }
-          if (text[j] !== "$") continue;
-          const before = text[j - 1];
-          const next = text[j + 1];
-          if (j > i + 1 && !isSpace(before) && !(next !== undefined && isDigit(next))) {
-            close = j;
-            break;
-          }
-        }
+        const close = firstAfter(dollarCloses(), i + 1);
         if (close >= 0) {
           out.skips.push({ from: i, to: close + 1, type: "math" });
           if (hasMarkerRun(text, i + 1, close)) out.mathSwallow.push({ from: i, to: close + 1 });
@@ -254,7 +347,8 @@ export function scanInline(text: string, opts: ScanOptions): InlineScan {
     }
 
     if (c === "]" && text[i + 1] === "(") {
-      const end = linkDestinationEnd(text, i + 1);
+      linkEnds ??= new LinkEnds(text, escaped());
+      const end = linkEnds.end(i + 1);
       if (end > 0) {
         out.skips.push({ from: i + 1, to: end, type: "url" });
         i = end;
@@ -269,7 +363,7 @@ export function scanInline(text: string, opts: ScanOptions): InlineScan {
       (startsWithCI(text, i, "http://") || startsWithCI(text, i, "https://")) &&
       (i === 0 || !isAsciiWord(text[i - 1]))
     ) {
-      const end = urlEnd(text, i);
+      const end = urlEnd(text, i, opts, open);
       out.skips.push({ from: i, to: end, type: "url" });
       i = end;
       continue;
@@ -354,30 +448,55 @@ interface Quote {
   cite: Cite;
 }
 
-function inRanges(ranges: Range[], pos: number): boolean {
-  for (const r of ranges) if (pos >= r.from && pos < r.to) return true;
-  return false;
+/** 1 for every offset inside one of `ranges`. */
+function rangeMask(n: number, ranges: Range[]): Uint8Array {
+  const out = new Uint8Array(n);
+  for (const r of ranges) out.fill(1, r.from, Math.min(r.to, n));
+  return out;
 }
 
-function findQuoteOpen(text: string, close: number, skips: Range[]): number {
-  const closeChar = text[close];
-  if (closeChar === '"') {
-    for (let j = close - 1; j >= 0; j--) {
-      if (text[j] === '"' && !inRanges(skips, j)) return j;
-    }
-    return -1;
+/**
+ * For every closing quotation mark outside `skipped`, the opening mark it
+ * pairs with, or -1. A `"` pairs with the nearest `"` before it; `」` `』` `”`
+ * pair with their opening marks by nesting, as a backward search counting
+ * depth from the closing mark finds them. One pass over the line.
+ */
+function quoteOpens(text: string, skipped: Uint8Array): Map<number, number> {
+  const out = new Map<number, number>();
+  const stacks: Record<string, number[]> = { "「": [], "『": [], "“": [] };
+  let lastStraight = -1;
+  for (let j = 0; j < text.length; j++) {
+    if (skipped[j]) continue;
+    const c = text[j];
+    if (c === '"') {
+      out.set(j, lastStraight);
+      lastStraight = j;
+    } else if (c in stacks) stacks[c].push(j);
+    else if (c in QUOTE_OPEN) out.set(j, stacks[QUOTE_OPEN[c]].pop() ?? -1);
   }
-  const openChar = QUOTE_OPEN[closeChar];
-  let depth = 0;
-  for (let j = close; j >= 0; j--) {
-    if (inRanges(skips, j)) continue;
-    if (text[j] === closeChar) depth++;
-    else if (text[j] === openChar) {
-      depth--;
-      if (depth === 0) return j;
-    }
+  return out;
+}
+
+/** Positions marked so far, with a pointer to skip runs already marked. */
+class Covered {
+  private next: Int32Array;
+  constructor(n: number) {
+    this.next = new Int32Array(n + 2).map((_, i) => i);
   }
-  return -1;
+  private find(x: number): number {
+    while (this.next[x] !== x) {
+      this.next[x] = this.next[this.next[x]];
+      x = this.next[x];
+    }
+    return x;
+  }
+  has(x: number): boolean {
+    return this.find(x) !== x;
+  }
+  /** Mark [from, to] (inclusive). */
+  add(from: number, to: number) {
+    for (let x = this.find(from); x <= to; x = this.find(x)) this.next[x] = x + 1;
+  }
 }
 
 export interface LineCtx {
@@ -403,6 +522,7 @@ export interface LineSegment {
 export interface LineResult {
   segments: LineSegment[];
   spans: InlineSpan[];
+  claims: Claim[];
   diagnostics: Array<{ from: number; to: number; code: DiagnosticCode; message: string }>;
   endsInComment: boolean;
 }
@@ -436,7 +556,7 @@ export function parseLine(text: string, ctx: LineCtx): LineResult {
   const role = new Array<Role>(n).fill("text");
   const attr = new Array<Attr>(n).fill(ctx.base);
   const mark = new Array<MarkType | undefined>(n).fill(undefined);
-  const result: LineResult = { segments: [], spans: [], diagnostics: [], endsInComment: false };
+  const result: LineResult = { segments: [], spans: [], claims: [], diagnostics: [], endsInComment: false };
 
   if (ctx.mode === "plain" || n === 0) {
     result.segments = n ? [{ from: 0, to: n, role: "text", attr: ctx.base }] : [];
@@ -472,45 +592,85 @@ export function parseLine(text: string, ctx: LineCtx): LineResult {
 
   // Quotes: `「…」[@key]`, `"…"[@key]`.
   const quotes: Quote[] = [];
-  if (prose) {
+  if (prose && scan.cites.length) {
+    const skipped = rangeMask(n, scan.skips);
+    const opens = quoteOpens(text, skipped);
+    // Cites come in order, so every accepted quote closes before this one: the new
+    // quote crosses one exactly when it opens inside it. Nesting is fine.
+    const covered = new Covered(n);
     for (const cite of scan.cites) {
       let p = cite.from - 1;
       if (p >= 0 && text[p] === " ") p--;
       if (p < 0) continue;
       const ch = text[p];
       if (ch !== '"' && !(ch in QUOTE_OPEN)) continue;
-      if (inRanges(scan.skips, p)) continue;
-      const open = findQuoteOpen(text, p, scan.skips);
+      if (skipped[p]) continue;
+      const open = opens.get(p) ?? -1;
       if (open < 0) continue;
-      const q: Quote = { open, close: p, cite };
-      // Drop quotes that cross an accepted quote; nesting is fine.
-      const crosses = quotes.some(
-        (a) =>
-          !(q.close < a.open || q.open > a.close) &&
-          !(q.open > a.open && q.close < a.close) &&
-          !(a.open > q.open && a.close < q.close),
-      );
-      if (crosses) continue;
-      quotes.push(q);
+      if (covered.has(open)) continue;
+      quotes.push({ open, close: p, cite });
+      covered.add(open, p);
       usedCites.add(cite);
     }
     quotes.sort((a, b) => a.open - b.open);
   }
 
-  // Assign each token to the innermost quote whose content contains it.
-  const zoneOf = (t: Token): number => {
-    let best = -1;
-    for (let qi = 0; qi < quotes.length; qi++) {
-      const q = quotes[qi];
-      if (t.from > q.open && t.to <= q.close) {
-        if (best < 0 || quotes[best].open < q.open) best = qi;
-      }
+  // A quote whose markers pair with markers outside it, as in `&&@@「@@words@@」[@x]@@&&`: its parts have
+  // different writers. Its markers pair with the text around it, and who wrote its `[@key]` decides.
+  // Tokens come in order and quotes nest without crossing, so a stack of the quotes still open finds the
+  // innermost quote whose content holds a token (`skip`: quotes that are no zone of their own).
+  const innermost = (skip: Set<number>): number[] => {
+    const at: number[] = [];
+    const stack: number[] = [];
+    let next = 0;
+    for (const t of scan.tokens) {
+      for (; next < quotes.length && quotes[next].open < t.from; next++) if (!skip.has(next)) stack.push(next);
+      while (stack.length && quotes[stack[stack.length - 1]].close < t.to) stack.pop();
+      at.push(stack.length ? stack[stack.length - 1] : -1);
     }
-    return best;
+    return at;
   };
+  const mixed = new Set<number>();
+  if (quotes.length) {
+    const parent = quotes.map(() => -1);
+    const depth = quotes.map(() => 0);
+    const open: number[] = [];
+    quotes.forEach((q, qi) => {
+      while (open.length && quotes[open[open.length - 1]].close < q.open) open.pop();
+      if (open.length) {
+        parent[qi] = open[open.length - 1];
+        depth[qi] = depth[parent[qi]] + 1;
+      }
+      open.push(qi);
+    });
+    const tokenAt = new Map(scan.tokens.map((t, ti) => [t, ti]));
+    const inner = innermost(new Set());
+    const d = (q: number) => (q < 0 ? -1 : depth[q]);
+    // Every quote between a pair's two ends and the quote holding both is crossed.
+    const walk = (pairs: Pair[]) => {
+      for (const p of pairs) {
+        let a = inner[tokenAt.get(p.open)!];
+        let b = inner[tokenAt.get(p.close)!];
+        while (a !== b) {
+          if (d(a) >= d(b)) {
+            mixed.add(a);
+            a = parent[a];
+          } else {
+            mixed.add(b);
+            b = parent[b];
+          }
+        }
+        walk(p.children);
+      }
+    };
+    walk(pairTokens(scan.tokens, ctx.pair));
+  }
+
+  // Each token goes to the innermost quote whose content holds it, a mixed one aside.
+  const zoneAt = innermost(mixed);
   const zones = new Map<number, Token[]>();
-  for (const t of scan.tokens) {
-    const z = zoneOf(t);
+  for (const [ti, t] of scan.tokens.entries()) {
+    const z = zoneAt[ti];
     let list = zones.get(z);
     if (!list) zones.set(z, (list = []));
     list.push(t);
@@ -579,9 +739,29 @@ export function parseLine(text: string, ctx: LineCtx): LineResult {
   }
 
   quotes.forEach((q, qi) => {
+    if (mixed.has(qi)) {
+      result.diagnostics.push({
+        from: q.open,
+        to: q.cite.to,
+        code: "mixed-quote",
+        message: "这段引文的各部分出自不同作者，目前按出处标记的书写者归属，可用「澄清引文」确定",
+      });
+    }
+    // A quote is a claim (SPEC §4.4). One a person wrote counts: the words are the author's. One a model
+    // wrote, its `[@key]` in AI text, needs a check first: the words stay the AI's, and the claim is kept.
+    const writer = attr[q.cite.from];
+    if (writer.kind === "ai") {
+      setMark(q.cite.from, q.cite.to, "cite", writer);
+      result.claims.push({ from: q.open + 1, to: q.close, key: q.cite.key, cite: { from: q.cite.from, to: q.cite.to } });
+      applyPairs(pairTokens(zones.get(qi) ?? [], "ai-inline"), writer);
+      return;
+    }
     const a: Attr = { kind: "quote", key: q.cite.key, explicit: true };
     if (ctx.base.block !== undefined) a.block = ctx.base.block;
-    fill(q.open + 1, q.close, a);
+    // A person's `[@key]` makes every word between the quotation marks the key's, whoever typed it.
+    if (mixed.has(qi)) {
+      for (let k = q.open + 1; k < q.close; k++) if (role[k] !== "mark") attr[k] = a;
+    } else fill(q.open + 1, q.close, a);
     setMark(q.cite.from, q.cite.to, "cite", a);
     result.spans.push({
       from: q.open,

@@ -4,7 +4,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import { lint, parseBook, Parser, signRevision, type Author, type ExtraPrefix } from "../src/core";
+import { lint, parseBook, Parser, signRevision, type Author, type ExtraPrefix, type Rejected } from "../src/core";
 import { setLanguage, t } from "../src/i18n";
 
 const USAGE = `Usage:
@@ -92,14 +92,21 @@ function lintCommand(paths: string[], bookFile?: string): number {
   return problems ? 1 : 0;
 }
 
+/** What sign put back, and what the revision had there. */
+function rejectedNote(g: Rejected, then: string): string {
+  const what = g.count ? `${plural(g.count, "line")} of the original kept here` : "lines the revision added left out here";
+  return `This change holds a quote, code, or a link with two authors' words, which sign can't mark, so ${what}. The revision had: ${JSON.stringify(g.revised)}; ${then}.`;
+}
+
 function signCommand(original: string, revised: string, model?: string): number {
   const before = readFileSync(revised, "utf8");
   const r = signRevision(readFileSync(original, "utf8"), before, model);
   const name = relative(process.cwd(), revised);
   if (r.text !== before) writeFileSync(revised, r.text);
   const notes = [
-    ...r.unmarked.map((n) => [n, "unmarked", "This line changed, but it holds a quote or code that sign can't mark; mark it by hand."] as const),
+    ...r.rejected.map((g) => [g.line, "unmarked", rejectedNote(g, "make the change by hand and mark your words")] as const),
     ...r.foreign.map((n) => [n, "foreign-block", "Your changes here are inside an AI block another model signed, so they count as that model's."] as const),
+    ...r.tasks.map((n) => [n, "task", "You ticked or unticked this task. A task's box is syntax, so who ticked it isn't recorded."] as const),
   ].sort((x, y) => x[0] - y[0]);
   for (const [n, code, message] of notes) console.log(`${name}:${n + 1}  ${code}  ${message}`);
   console.log(

@@ -22,7 +22,7 @@
 | `&&文字&&` | AI 写的；`&&文字&&[@gpt]` 注明模型 |
 | `&& Claude (claude-opus-5-5)` … `&&` | 整段 AI，开头和结尾各占一行 |
 | `@@文字@@` | AI 文字中你自己写的部分 |
-| `「文字」[@key]`、`"文字"[@key]` | 引用，归于署名簿中的作者 |
+| `「文字」[@key]`、`"文字"[@key]` | 引用，归于署名簿中的作者（模型写的引用在核对前仍算模型的） |
 
 不装插件，笔记仍是普通的 Markdown。完整语法见 [docs/SPEC.zh.md](docs/SPEC.zh.md)。
 
@@ -43,6 +43,7 @@
 - **署名簿**：用一篇笔记列出所有作者，`- @key: 名字 (标识) · 人 / AI / 来源 · #颜色`；引用显示作者的颜色。
 - **忽略格式搜索**：在 Obsidian 的搜索栏、查找栏和 Omnisearch 中都能搜到被标记隔开的词。
 - **导出**：带颜色或纯文字的 PDF、去掉标记的笔记、Pandoc、Obsidian Publish，以及与 iA Writer 标注格式互转。
+- **Web Clipper 模板**：用 Obsidian Web Clipper 剪下的网页存成署好名的引用，可选附一段 AI 摘要，署上写它的模型。
 - **中文与英文界面**。
 
 各项功能的详细说明见 [docs/GUIDE.zh.md](docs/GUIDE.zh.md)。
@@ -94,7 +95,10 @@ npm install
 npm test
 npm run build   # 生成 main.js
 npm run demo    # 构建并安装到 demo-vault/
+npm run fuzz    # 完整长度的性质测试
 ```
+
+除单元测试外，还有一套基于性质的模糊测试，用 Rakkan 和 Markdown 语法拼出的随机文本检查解析、签名、引用和澄清引文：共 16 个性质，发版前每个跑 10 万次。
 
 ## 许可
 

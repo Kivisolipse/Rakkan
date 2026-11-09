@@ -48,23 +48,47 @@ describe("signRevision", () => {
   it("needs no marks for its own words in an AI block", () => {
     const block = `&& Claude (${MODEL})\n\nSome text.\n\n&&\n`;
     const revised = block.replace("Some text.", "Some better text.");
-    expect(sign(block, revised)).toEqual({ text: revised, changed: 1, unmarked: [], foreign: [] });
+    expect(sign(block, revised)).toEqual({ text: revised, changed: 1, unmarked: [], rejected: [], foreign: [], tasks: [] });
   });
 
   it("reports its words in a block another model signed, which count as that model's", () => {
     const block = "&& GPT (gpt-5)\n\nSome text.\n\n&&\n";
     const revised = block.replace("Some text.", "Some better text.");
-    expect(sign(block, revised)).toEqual({ text: revised, changed: 1, unmarked: [], foreign: [2] });
+    expect(sign(block, revised)).toEqual({ text: revised, changed: 1, unmarked: [], rejected: [], foreign: [2], tasks: [] });
     // Without a model there is no telling.
     expect(signRevision(block, revised).foreign).toEqual([]);
   });
 
-  it("reports changed lines it cannot mark and leaves them as written", () => {
+  it("marks the model's words on a line with a quote it kept", () => {
     const r = sign('She said "hello"[@fakebook].\n', 'She said "hello"[@fakebook] twice.\n');
-    expect(r.text).toBe('She said "hello"[@fakebook] twice.\n');
+    expect(r.text).toBe(`She said "hello"[@fakebook] &&twice&&[@${MODEL}].\n`);
+    expect(r.unmarked).toEqual([]);
+  });
+
+  it("reports changed lines it cannot mark and keeps the original there (Q5b)", () => {
+    // The revision dropped the quote's [@fakebook]: sign can't write the quote back.
+    const o = 'She said "hello"[@fakebook].\n';
+    const r = sign(o, 'She said "hello" twice.\n');
+    expect(r.text).toBe(o);
     expect(r.unmarked).toEqual([0]);
+    expect(r.rejected).toEqual([{ line: 0, count: 1, original: 0, revised: 'She said "hello" twice.' }]);
     const code = sign("```js\nlet a = 1\n```\n", "```js\nlet a = 2\n```\n");
+    expect(code.text).toBe("```js\nlet a = 1\n```\n");
     expect(code.unmarked).toEqual([1]);
+  });
+
+  it("keeps the lines around a change it put back as the revision has them", () => {
+    const o = "甲\n\n```\nx\n```\n\n乙\n";
+    const r = sign(o, "甲改\n\n```\ny\n```\n\n乙\n");
+    expect(r.text).toBe(`甲&&改&&[@${MODEL}]\n\n\`\`\`\nx\n\`\`\`\n\n乙\n`);
+    expect(r.rejected).toEqual([{ line: 3, count: 1, original: 3, revised: "y" }]);
+  });
+
+  it("leaves out lines the revision added that it cannot mark", () => {
+    const o = "```\nx\n```\n";
+    const r = sign(o, "```\nx\ny\n```\n");
+    expect(r.text).toBe(o);
+    expect(r.rejected).toEqual([{ line: 2, count: 0, original: 2, revised: "y" }]);
   });
 
   it("keeps a long note cheap when the edits are far apart", () => {

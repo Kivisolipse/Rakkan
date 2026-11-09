@@ -14,11 +14,28 @@ Each feature in detail: export and conversion, search, and markers in code. The 
 - **Authorship follows moved text.** Swapped lines, drag and drop, dragged list items, sorting plugins: text deleted and inserted again unchanged in one edit keeps its authors, down to the character. When a paste brings in a run as long as a code block's declaration, the declaration grows by one character.
 - **Human islands in math.** Starting a formula with `$$ %@@` (a LaTeX comment, which doesn't show) declares islands, so a formula in an AI block can mark individual characters with `@@…@@`. Both reading view and live preview render it again in colour.
 - **English and Chinese.** Choose the language in the settings; by default it follows Obsidian. Command names change after the plugin is reloaded.
-- **Author book.** A note in the vault with one author per line (`- @key: Name (ID) · kind · #colour`). Quotes take their author's colour: a person has a colour of their own, a source is dimmed, and hovering the status bar shows the authors' names. Typing `[@` (or `【@` with a Chinese IME) opens a list of authors, and **Paste as quote** adds the quotation marks and the key for you. What you type inside a quote is marked as yours too. When the authors grow many, there is no need to edit the note by hand: **Manage** in the settings (or the command **Manage authors**) opens a window where you can search, add, rename, recolour and delete authors, and the changes go straight back to their lines in the author book.
-- **Paste revision.** Select the original text, copy the AI's revised version, run **Paste revision** and choose the model. Only the changed words become `&&…&&[@model]`; the rest keep their authors. Useful for keeping a log of mistakes, or for seeing exactly what an AI changed in your text.
+- **Author book.** A note in the vault with one author per line (`- @key: Name (ID) · kind · #colour`). Quotes take their author's colour: a person has a colour of their own, a source is dimmed, and hovering the status bar shows the authors' names. Typing `[@` (or `【@` with a Chinese IME) opens a list of authors, and **Paste as quote** writes one line of plain text in the line as `「…」[@key]`, and anything else (several lines, or a line holding one of `` ` $ % & @ 「 」 " `` or Markdown that works only at the start of a line) as a blockquote ending in the key. Either way it shows as the original does, and no marker in it gets out. In AI text the quote is written as confirmed, as **Clarify quote** would: a quote on a line goes in an `@@…@@` island, and a blockquote moves out of the AI block, which goes on after it. What you type inside a quote is marked as yours too. When the authors grow many, there is no need to edit the note by hand: **Manage** in the settings (or the command **Manage authors**) opens a window where you can search, add, rename, recolour and delete authors, and the changes go straight back to their lines in the author book.
+- **Paste revision.** Select the original text, copy the AI's revised version, run **Paste revision** and choose the model. Only the changed words become `&&…&&[@model]`; the rest keep their authors. Useful for keeping a log of mistakes, or for seeing exactly what an AI changed in your text. A change it can't mark (inside a quote or code) isn't pasted: those lines keep the original, and a notice says so.
 - **Copy without markers.** Text pasted into another app has no `&&` or `@@`; pasted back into the vault, it gets the markers right for where it lands.
-- **Right-click menu.** While editing, right-click → Rakkan for **Mark as AI-generated**, **Mark as human-written**, **Paste revision** and **Remove markers in selection** (with text selected), and **Paste as AI-generated**, **Paste as quote**, **Insert AI block** and **Export as PDF…**.
-- **Commands.** Mark as AI-generated, Mark as human-written, Remove markers, Insert AI block, Add blank lines around block fences, Paste as AI-generated, Toggle writing / review display, Search (ignore formatting), Find in current note (ignore formatting), and the export and conversion commands below.
+- **Right-click menu.** While editing, right-click → Rakkan for **Mark as AI-generated**, **Mark as human-written**, **Paste revision** and **Remove markers in selection** (with text selected), and **Paste as AI-generated**, **Paste as quote**, **Clarify quote**, **Insert AI block** and **Export as PDF…**.
+- **Commands.** Mark as AI-generated, Mark as human-written, Remove markers, Insert AI block, Add blank lines around block fences, Paste as AI-generated, Toggle writing / review display, Search (ignore formatting), Find in current note (ignore formatting), Clarify quote, Go to next unclarified quote, and the export and conversion commands below.
+
+## Clarify quote
+
+Who a quote's words belong to depends only on who wrote its `[@key]`. Where the person wrote it (in their own text, or in a `@@…@@` island), the words are the source's. Where the model wrote it, the words count as the model's, and the `[@key]` is kept as the model's claim, for checking. Who typed the quotation marks makes no difference.
+
+When the parts of one quote were written by different authors (the quotation marks by the person and the words between them by the model, for example), the quote is attributed by the same rule and flagged for clarification: the status bar warnings and lint report it as `mixed-quote`.
+
+**Clarify quote** (in the Rakkan right-click menu and the command palette) works with the cursor on any quote, flagged or not. It offers:
+
+- **Confirm as quote from {name}.** The whole quote is rewritten as written by the person, and the words are the source's. A quote given by the model is confirmed the same way (the manual confirmation in SPEC §4.4).
+- **Mark as AI citation.** The whole quote is rewritten as written by the model: the words count as the model's, and the citation is kept.
+- **Remove quote markup.** The quotation marks and the `[@key]` are removed, and each word keeps its author.
+- **Remove quote markup and mark as human-written.** As above, and the words become an explicit `@@…@@` human island. Offered only in AI text: in human-written text, the words are human-written already.
+
+The menu lists only the choices that can be written. A few quotes can't be rewritten automatically, for example one with an unpaired `&&` or `@@` next to it; then no menu opens, a notice gives the reason, and the quote is left to be fixed by hand.
+
+A cited blockquote is handled the same way: marked as an AI citation, it goes into an AI block; confirmed inside an AI block, it moves out of the block, which continues after it. The result is written back into the note as ordinary markers: it stays with the note and is not lost in another app. **Go to next unclarified quote** moves the cursor to the next flagged quote, and after the last one starts again from the top. In the status bar warnings, a flagged quote has a **Clarify quote** button.
 
 ## Export and conversion
 
@@ -43,6 +60,15 @@ Then there are the conversion commands. The exports write their result into a ne
 A vault has one owner by default: unmarked human text is the owner's. Converting does nothing to the owner's text, and nobody has to be declared the owner beforehand. Other people go by the author book: an `@Name` in the iA block that the author book knows, by name or by key, becomes a `「…」[@key]` quote by that author. For people the author book doesn't know, the conversion asks which of them is the owner (left unmarked), or **None of them**. The others become quotes, with keys made from their names and definitions (`· human`) added at the end of the note. Closing the dialog cancels the conversion.
 
 Author names travel both ways. On export, an author with a `[@key]` is written `&Name <@key>` or `*Name <@key>` (an ID starting with `@` is a Rakkan key, unlike a model ID). On the way back, the key comes from that ID, or else from the name (generic names such as `AI` or `Unknown` get no key), and the name and model ID go into a definition at the end of the note (`- @key: Name (model) · AI`), without repeating one that is already there. When a `*` range is already in corner brackets `「…」`, only `[@key]` is added; one with corner brackets inside that can't be separated stays plain text, and the conversion reports how many characters.
+
+## With Obsidian Web Clipper
+
+A page clipped with [Web Clipper](https://obsidian.md/clipper) has no markers, so Rakkan counts the whole article as your own writing. [clipper/](../clipper/) has two templates that sign the clip as it is saved:
+
+- **rakkan-clip.json** puts the article in a blockquote whose last line is `> [@domain]`, and adds a definition at the end of the note: `@domain: Title (URL) · source`. The whole article counts as quoted. A `|` or `·` in the title becomes `-`, so it isn't read as a separator in the definition.
+- **rakkan-clip-ai-summary.json** does the same and opens with an AI block holding a summary from the Interpreter, signed `&& {{model}} ({{modelId}})`: the model the Interpreter actually used. The model ID is only filled in once the Interpreter has run, so turn on **Automatically run** under Web Clipper settings → Interpreter, or run it before you save each clip.
+
+To import one: Web Clipper settings → Templates → Import, and pick the JSON file. Whatever you then write in the clipped note has no marks and counts as yours, as usual.
 
 ## Search (ignore formatting)
 

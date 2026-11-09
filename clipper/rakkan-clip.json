@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "0.1.0",
+  "name": "Rakkan clip",
+  "behavior": "create",
+  "noteContentFormat": "{{content|blockquote}}\n> [@{{domain}}]\n\n@{{domain}}: {{title|replace:(\"|\":\"-\",\"｜\":\"-\",\"·\":\"-\",\"•\":\"-\")}} ({{url}}) · source\n",
+  "properties": [
+    { "name": "title", "value": "{{title}}", "type": "text" },
+    { "name": "source", "value": "{{url}}", "type": "text" },
+    { "name": "author", "value": "{{author|split:\", \"|wikilink|join}}", "type": "multitext" },
+    { "name": "published", "value": "{{published}}", "type": "date" },
+    { "name": "created", "value": "{{date}}", "type": "date" },
+    { "name": "description", "value": "{{description}}", "type": "text" },
+    { "name": "tags", "value": "clippings", "type": "multitext" }
+  ],
+  "triggers": [],
+  "noteNameFormat": "{{title|safe_name}}",
+  "path": "Clippings"
+}

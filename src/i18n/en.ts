@@ -12,6 +12,20 @@ export const en: Record<string, string> = {
   "开合行前后均已有空行": "Every block fence already has blank lines around it",
   "已补全 {n} 个空行": "Added {n} blank lines",
   "粘贴为引用": "Paste as quote",
+  "澄清引文": "Clarify quote",
+  "跳到下一处待澄清的引文": "Go to next unclarified quote",
+  "确认为 {name} 的引文": "Confirm as quote from {name}",
+  "标为 AI 的出处声明": "Mark as AI citation",
+  "移除引用标记": "Remove quote markup",
+  "移除引用标记并标为人写": "Remove quote markup and mark as human-written",
+  "光标不在引文上": "The cursor is not on a quote",
+  "没有待澄清的引文": "No unclarified quotes",
+  "引文旁有不成对的 && 或 @@ 标记，无法自动澄清，请先手动处理":
+    "An unpaired && or @@ next to the quote prevents clarifying it; fix it by hand first",
+  "这段引文的写法无法自动改写，请手动处理": "This quote is written in a way that cannot be rewritten automatically; edit it by hand",
+  "引文在菜单打开期间已改动，请重新澄清": "The quote changed while the menu was open; clarify it again",
+  "这段引文的各部分出自不同作者，目前按出处标记的书写者归属，可用「澄清引文」确定":
+    "The parts of this quote come from different authors and are currently attributed by who wrote the source marker; Clarify quote can settle this",
   "粘贴修改（仅将改动处标记为模型所写）": "Paste revision (mark only the changed parts as the model's)",
   "新建署名簿": "Create author book",
   "粘贴为 AI 生成": "Paste as AI-generated",
@@ -42,7 +56,8 @@ export const en: Record<string, string> = {
   "不标注模型": "Don't name a model",
   "请先新建署名簿": "Create the author book first",
   "{n} 行含引用或代码，未作改动": "{n} lines contain quotes or code and were left unchanged",
-  "{n} 行含引用或代码，其中的改动未能标记": "{n} changed lines contain quotes or code, so their changes are not marked",
+  "{n} 处改动含引用或代码，无法标记，已保留原文": "{n} changes hold quotes or code and can't be marked, so the original was kept there",
+  "{n} 个任务的勾选状态被改动，勾选者不会记录": "{n} tasks were ticked or unticked; who ticked them isn't recorded",
   "{n} 行的改动在其他模型署名的 AI 块里，算作该模型所写": "{n} changed lines are in an AI block another model signed, so the changes count as that model's",
   "已标记 {n} 处改动": "Marked {n} changes",
   "已复制（已移除标记）": "Copied (markers removed)",
@@ -154,6 +169,8 @@ export const en: Record<string, string> = {
   "{mark} 只在 AI 文字和引用里标出人写的字，这里按原样显示": "{mark} marks human words only inside AI text and quotes, so here it shows as is",
   "[@{key}] 没有定义：在笔记末尾加一行 @{key}: 名字 · 来源，或写进署名簿": "[@{key}] is not defined: add a line @{key}: Name · source at the end of the note, or to the author book",
   "[@{key}] 没有定义，也不是认得出的模型 ID": "[@{key}] is not defined, and it is not a model ID Rakkan recognises",
+  "这段代码跨了行：Rakkan 一行一行读，看不到它，里面的标记照样生效。把它写在一行里":
+    "This code runs over lines: Rakkan reads a line at a time and doesn't see it, so markers inside still work. Put it on one line",
 
   // author manager
   "{n} 位作者": "{n} authors",

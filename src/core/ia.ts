@@ -441,7 +441,8 @@ export function toIA(text: string, opts: ToIAOptions = {}): string {
     return "*" + named(attr.key, "Reference");
   };
   for (const s of r.segments) {
-    if (s.role !== "text") continue;
+    // Syntax (a list's `- `, a quote's `>`) keeps the label of where it stands: unlabelled would read as the person's.
+    if (s.role !== "text" && s.role !== "syntax") continue;
     const l = labelOf(s.attr);
     for (let k = s.from; k < s.to; k++) label[k] = l;
   }

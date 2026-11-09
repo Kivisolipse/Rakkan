@@ -40,7 +40,8 @@ export function plainWithMap(text: string, opts: PlainOptions = {}): Stripped {
     let line = 0;
     while (line + 1 < r.lines.length && r.lines[line + 1].from <= seg.from) line++;
     const m = CITE_LINE.exec(text.slice(r.lines[line].from, r.lines[line].to));
-    if (!m || r.lineContexts[line].pair !== "quote") continue;
+    // A model's cited blockquote (a claim, SPEC §4.4) keeps its source the same way.
+    if (!m || (r.lineContexts[line].pair !== "quote" && !r.claims.some((c) => c.cite.from === seg.from))) continue;
     edits.push({ from: seg.from, to: seg.to, insert: `— ${opts.nameOf?.(m[1]) ?? m[1]}` });
   }
   if (!edits.length) return stripMarkers(r);
@@ -80,6 +81,8 @@ interface Format {
   close(s: InlineSpan, r: ParseResult): string;
   /** What replaces the `[@key]` that follows a quote, or null to keep it. */
   quoteCite(s: InlineSpan, key: string, r: ParseResult): string | null;
+  /** The same for a model's claim (SPEC §4.4), whose words stay the AI's. */
+  claimCite(key: string): string | null;
   blockOpen(b: Block | undefined, r: ParseResult): string;
   blockClose: string;
   /** Closes a block that the next one ended, put after its last line. */
@@ -127,7 +130,11 @@ function convert(text: string, fmt: Format): string {
       case "cite": {
         // `&&x&&[@key]` carries the key in the span now; a quote keeps its citation unless the format rewrites it.
         const quote = r.spans.find((s) => s.type === "quote" && seg.from > s.contentTo && seg.to <= s.to);
-        if (!quote) edits.push({ from: seg.from, to: seg.to, insert: "" });
+        const claim = quote ? undefined : r.claims.find((c) => c.cite.from === seg.from);
+        if (claim) {
+          const made = fmt.claimCite(claim.key);
+          if (made !== null) edits.push({ from: seg.from, to: seg.to, insert: made });
+        } else if (!quote) edits.push({ from: seg.from, to: seg.to, insert: "" });
         else {
           const key = /\[@([^\]\s]+)\]/.exec(text.slice(seg.from, seg.to))?.[1];
           const made = key ? fmt.quoteCite(quote, key, r) : null;
@@ -193,6 +200,7 @@ export function exportPandoc(text: string, opts: PandocOptions = {}): string {
     open: () => "[",
     close: (s) => `]{${classOf(s)}}`,
     quoteCite: () => null,
+    claimCite: () => null,
     blockOpen: (b) => {
       const sig = b?.signature;
       const family = sig ? signatureFamily(sig)?.id : undefined;
@@ -230,6 +238,7 @@ export function exportPublish(text: string, opts: PublishOptions): string {
       const d = describe(s.attr, r);
       return `<sup class="rk-cite">${html(d ? d.label.replace(/^@/, "") : key)}</sup>`;
     },
+    claimCite: (key) => `<sup class="rk-cite rk-claim">${html(key)}</sup>`,
     blockOpen: (b, r) => {
       const d = b ? describe({ kind: "ai", block: b.index, explicit: false }, r) : null;
       const sig = b?.signature ? signatureLabel(b.signature) : "";
