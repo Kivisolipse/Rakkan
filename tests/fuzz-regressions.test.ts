@@ -161,23 +161,6 @@ describe("open Q5: signRevision", () => {
   });
 });
 
-describe("open Q7: a bare URL takes the closing marker after it (SPEC §5)", () => {
-  // A bare URL runs to the next space, so `&&` or `@@` right after it is part of the URL: the span never closes.
-  it.fails("closes inline AI text that ends in a bare URL", () => {
-    expect(owners("&&见 https://x.y/&&\n")).toEqual(["A:见 https://x.y/"]);
-  });
-
-  it.fails("closes a human island that ends in a bare URL", () => {
-    expect(owners("&& AI\n\n@@见 https://x.y/@@\n\n&&\n")).toEqual(["h:见 https://x.y/"]);
-  });
-
-  // So sign can't mark the model's words when they end in one, and leaves them the person's (reported).
-  it.fails("marks a revision that ends in a bare URL", () => {
-    const s = signRevision("前文\n", "前文见 https://x.y/\n", "m");
-    expect(s.unmarked).toEqual([]);
-  });
-});
-
 describe("open Q8: a link or the like holding two authors' words", () => {
   // sign never splits an atom. When the revision dropped the markers inside one (here `!` and the link
   // became an image), it can't keep both owners: today the line is reported and left as revised, so the

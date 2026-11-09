@@ -210,6 +210,8 @@ Definitions take no square brackets: `[@key]: …` is a Markdown link definition
 | Link URLs | The URL in `[text](URL)`, and bare URLs `https://…` |
 | iA annotation blocks | The part after a final `---` followed by `Annotations:` |
 
+**A bare URL** runs to the next whitespace, as in GFM, which leaves trailing sentence punctuation (`.,;:!?`) out of it. A live marker at its end is left out the same way and closes the span around it: in `&&see https://example.com/&&` the URL is `https://example.com/` and the `&&` closes the inline AI text, with or without a `[@key]` after it. A pair that closes nothing there stays part of the URL: one that would open a span, as in `https://example.com/&& more&&`, and `\&&` or `&&&`.
+
 Skipped regions don't change authorship: code in an AI block is AI-written as a whole, and so is the whole formula in `&&$x^2$&&`.
 
 **An unclosed code fence** turns the rest of the note into code, and every marker after it silently stops working. The implementation should warn.

@@ -140,7 +140,53 @@ class LinkEnds {
   }
 }
 
-function urlEnd(text: string, i: number): number {
+/**
+ * Where a bare URL that starts at `i` ends. As GFM leaves sentence punctuation out of it, closing markers
+ * at its end (`&&` or `@@`, with or without `[@key]`) are left out too, and close the spans around it
+ * (SPEC §5). `open` says which kinds have a span open where the URL starts.
+ */
+function urlEnd(text: string, i: number, opts: ScanOptions, open: { amp: boolean; at: boolean }): number {
+  const trim = (j: number) => {
+    while (j > i && /[.,;:!?]/.test(text[j - 1])) j--;
+    return j;
+  };
+  const full = trim(bareUrlEnd(text, i));
+  let j = full;
+  // The end of `http://` or `https://`: a URL keeps at least one character after it.
+  const min = i + (text[i + 4] === ":" ? 7 : 8);
+  // The live pairs at the end, right to left: their kind, and where the URL ends if they are left out.
+  const ends: Array<{ amp: boolean; cut: number }> = [];
+  for (;;) {
+    let k = j;
+    if (text[k - 1] === "]") {
+      const cite = text.lastIndexOf("[@", k - 1);
+      if (cite > min && /^\[@[^\s[\]]+\]$/.test(text.slice(cite, k))) k = cite;
+    }
+    const c = text[k - 1];
+    const want = c === "&" ? opts.ampLen : c === "@" ? opts.atLen : 0;
+    if (want !== 2 || text[k - 2] !== c || text[k - 3] === c || k - 2 <= min || opts.literalRuns?.has(k - 2)) break;
+    let slashes = 0;
+    while (text[k - 3 - slashes] === "\\") slashes++;
+    if (slashes % 2) break;
+    j = trim(k - 2);
+    ends.push({ amp: c === "&", cut: j });
+  }
+  // The longest run of them that are all closers, read left to right from where the URL would end.
+  ends.reverse();
+  for (let s = 0; s < ends.length; s++) {
+    const now = { ...open };
+    const closes = ends.slice(s).every((e) => {
+      const was = e.amp ? now.amp : now.at;
+      if (e.amp) now.amp = !now.amp;
+      else now.at = !now.at;
+      return was;
+    });
+    if (closes) return ends[s].cut;
+  }
+  return full;
+}
+
+function bareUrlEnd(text: string, i: number): number {
   let j = i;
   let parens = 0;
   while (j < text.length) {
@@ -174,6 +220,8 @@ export function scanInline(text: string, opts: ScanOptions): InlineScan {
   };
   const n = text.length;
   let i = 0;
+  /** Whether a pair of each kind is open so far on the line (an odd number of markers). */
+  const open = { amp: false, at: false };
   // Built on first use, for the whole line, so no construct rescans the rest of the line.
   let escapedAt: Uint8Array | undefined;
   const escaped = () => (escapedAt ??= escapedMask(text));
@@ -215,7 +263,11 @@ export function scanInline(text: string, opts: ScanOptions): InlineScan {
         (opts.literalRuns?.has(i) ?? false) ||
         (c === "&" && opts.prose && entityAt(text, i + len - 1));
       if (literal) out.literals.push({ from: i, to: i + len });
-      else out.tokens.push({ from: i, to: i + len, type: c === "&" ? "amp" : "at" });
+      else {
+        out.tokens.push({ from: i, to: i + len, type: c === "&" ? "amp" : "at" });
+        if (c === "&") open.amp = !open.amp;
+        else open.at = !open.at;
+      }
       i += len;
       continue;
     }
@@ -311,7 +363,7 @@ export function scanInline(text: string, opts: ScanOptions): InlineScan {
       (startsWithCI(text, i, "http://") || startsWithCI(text, i, "https://")) &&
       (i === 0 || !isAsciiWord(text[i - 1]))
     ) {
-      const end = urlEnd(text, i);
+      const end = urlEnd(text, i, opts, open);
       out.skips.push({ from: i, to: end, type: "url" });
       i = end;
       continue;

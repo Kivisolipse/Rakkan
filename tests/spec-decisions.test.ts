@@ -113,6 +113,40 @@ describe("Q6 (§4.3): a key runs to the first whitespace, less one colon at its 
   });
 });
 
+describe("Q7 (§5): a marker at the end of a bare URL closes the span", () => {
+  const B = "\\";
+
+  it("closes inline AI text that ends in a bare URL", () => {
+    expect(owners("&&见 https://x.y/&&\n")).toEqual(["A:见 https://x.y/"]);
+    expect(owners("&&见 http://x&&[@m]\n")).toEqual(["A@m:见 http://x"]);
+  });
+
+  it("closes a human island that ends in a bare URL", () => {
+    expect(owners("&& AI\n\n@@见 https://x.y/@@\n\n&&\n")).toEqual(["h:见 https://x.y/"]);
+  });
+
+  it("closes after sentence punctuation that ends the URL, and after the closer of an outer span", () => {
+    expect(owners("&&见 https://x.y/.&&")).toEqual(["A:见 https://x.y/."]);
+    expect(owners("> &&见 @@https://x.y/@@&&\n> [@k]")).toEqual(["A:见 ", "h:https://x.y/"]);
+  });
+
+  it("keeps in the URL a pair that closes nothing there", () => {
+    expect(owners("https://x.y/&&\n")).toEqual(["H:https://x.y/&&"]);
+    expect(owners("https://x.y/&& 甲&&\n")).toEqual(["H:https://x.y/&& 甲&&"]);
+    expect(owners("https://x.y/@@ 前\n")).toEqual(["H:https://x.y/@@ 前"]);
+    expect(owners(`&&见 https://x.y/${B}&&`)).toEqual([`H:&&见 https://x.y/${B}&&`]);
+    expect(owners("https://x.y/&&&\n")).toEqual(["H:https://x.y/&&&"]);
+  });
+
+  it("lets sign mark a revision that ends in a bare URL", () => {
+    const o = "前文\n";
+    const s = signRevision(o, "前文见 https://x.y/\n", "m");
+    expect(s.unmarked).toEqual([]);
+    expect(owners(s.text)).toEqual(["H:前文", "A@m:见 https://x.y/"]);
+    expect(signRevision(o, s.text, "m").text).toBe(s.text);
+  });
+});
+
 describe("Q2 (§3): a line ends at CR LF, CR or LF, as in CommonMark", () => {
   it("ends a line at a lone CR, as the editor does", () => {
     expect(owners("> a\rb\n> [@k]")).toEqual(owners("> a\nb\n> [@k]"));
