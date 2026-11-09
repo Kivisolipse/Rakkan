@@ -69,6 +69,27 @@ export const pathological = fc
   )
   .map(([t, n, br]) => Array.from({ length: Math.ceil(n / t.length) }, () => t).join(br));
 
+// ── Markdown, as pasted or clipped into a note ─────────────────────────────
+
+/** Markdown inline syntax, beside Rakkan's. */
+const MD_INLINE = [
+  "*x*", "_y_", "**b**", "~~s~~", "`c`", "``a`b``", "`", "``", "[t](u)", "[t]", "![i](p.png)", "<b>", "</b>",
+  "&amp;", "&copy;", "&#38;", "&#x26;", "&nope;", "\\*", "\\`", "\\\\", "\\@", "\\&", "\\%", "$x$", "$ y$", "a@b.c",
+];
+const MD_TOKEN = fc.oneof(
+  { weight: 3, arbitrary: fc.constantFrom(...PLAIN) },
+  { weight: 3, arbitrary: fc.constantFrom(...SYNTAX.filter((t) => !/[\r\n\t]/.test(t))) },
+  { weight: 3, arbitrary: fc.constantFrom(...MD_INLINE) },
+);
+const MD_PREFIXES = ["", "", "", " ", "    ", "> ", "- ", "* ", "1. ", "2) ", "# ", "## ", "| ", "  "];
+const MD_LINES = ["```", "```js", "```js @@", "````", "~~~", "~~~ &&", "$$", "$$ %@@", "---", "***", "===", "| a | b |", "|---|---|", "<div>", "</div>", ""];
+const mdLine = fc.oneof(
+  { weight: 5, arbitrary: fc.tuple(fc.constantFrom(...MD_PREFIXES), fc.array(MD_TOKEN, { maxLength: 8 })).map(([p, ts]) => p + ts.join("")) },
+  { weight: 2, arbitrary: fc.tuple(fc.constantFrom("", "", "> ", "  "), fc.constantFrom(...MD_LINES)).map(([p, l]) => p + l) },
+);
+/** A Markdown passage, the kind pasted or clipped into a note. */
+export const markdown = fc.array(mdLine, { maxLength: 8 }).map((ls) => ls.join("\n"));
+
 // ── Keys ──────────────────────────────────────────────────────────────────
 
 const KEY_CHARS = ["a", "z", "Q", "0", "9", "-", ".", "_", "门", "锁", "热", "é"];

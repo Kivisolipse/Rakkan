@@ -43,7 +43,7 @@ interface LineStruct {
   citeLine?: [number, number];
 }
 
-const FENCE_RE = /^(`{3,}|~{3,})(.*)$/;
+const FENCE_RE = /^(`{3,}|~{3,})([^]*)$/; // U+2028 ends no line, so `.` would miss it
 /** The key runs to the first whitespace, less one colon at its end (SPEC §4.3), so `@doe:2006: …` defines `doe:2006`. */
 const DEF_RE = /^(?:[-*+]\s+)?@([^\s[\]]+):\s+(.*)$/;
 const BLANK_RE = /^\s*$/;

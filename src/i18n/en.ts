@@ -155,6 +155,8 @@ export const en: Record<string, string> = {
   "{mark} 只在 AI 文字和引用里标出人写的字，这里按原样显示": "{mark} marks human words only inside AI text and quotes, so here it shows as is",
   "[@{key}] 没有定义：在笔记末尾加一行 @{key}: 名字 · 来源，或写进署名簿": "[@{key}] is not defined: add a line @{key}: Name · source at the end of the note, or to the author book",
   "[@{key}] 没有定义，也不是认得出的模型 ID": "[@{key}] is not defined, and it is not a model ID Rakkan recognises",
+  "这段代码跨了行：Rakkan 一行一行读，看不到它，里面的标记照样生效。把它写在一行里":
+    "This code runs over lines: Rakkan reads a line at a time and doesn't see it, so markers inside still work. Put it on one line",
 
   // author manager
   "{n} 位作者": "{n} authors",

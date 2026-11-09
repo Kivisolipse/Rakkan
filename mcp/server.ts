@@ -154,7 +154,7 @@ const RAKKAN_TOOLS = [
     name: "rakkan_lint",
     title: "Lint (Rakkan)",
     description:
-      "Check a note's Rakkan markers, like `rakkan lint`: AI blocks without a closer or blank lines, markers without a partner or that do nothing where they are, [@key] that neither the note nor the author book defines, markers swallowed by math. Prints line:column, a code and a message for each problem, then the share of human, AI and quoted text and the AI text by author. Run it on every note you wrote before you finish.",
+      "Check a note's Rakkan markers, like `rakkan lint`: AI blocks without a closer or blank lines, markers without a partner or that do nothing where they are, [@key] that neither the note nor the author book defines, markers swallowed by math, code spans over lines (Rakkan reads a line at a time). Prints line:column, a code and a message for each problem, then the share of human, AI and quoted text and the AI text by author. Run it on every note you wrote before you finish.",
     inputSchema: {
       type: "object",
       properties: { path: { type: "string", description: "The note to check." } },

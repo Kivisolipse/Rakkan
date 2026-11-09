@@ -64,12 +64,8 @@ describe("definitions at the end of a note", () => {
 });
 
 describe("quoteText", () => {
-  it("picks a quote mark that is free", () => {
-    expect(quoteText("纸短情长", "a")).toBe("「纸短情长」[@a]");
-    expect(quoteText("他说「好」", "a")).toBe('"他说「好」"[@a]');
-  });
-
-  it("uses a cited blockquote for several lines or when all marks are taken", () => {
+  it("uses a cited blockquote, a line of text included (Q1)", () => {
+    expect(quoteText("纸短情长", "a")).toBe("> 纸短情长\n> [@a]");
     expect(quoteText("甲\n\n乙", "a")).toBe("> 甲\n>\n> 乙\n> [@a]");
     expect(quoteText('他说「好」又说"行"', "a")).toBe('> 他说「好」又说"行"\n> [@a]');
   });

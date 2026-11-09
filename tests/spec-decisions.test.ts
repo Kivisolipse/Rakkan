@@ -1,7 +1,7 @@
 // The SPEC changes decided after the fuzz report, one regression test (or a few) each.
 
 import { describe, expect, it } from "vitest";
-import { exportPandoc, exportPlain, parse, parseBook, signRevision, toIA } from "../src/core";
+import { exportPandoc, exportPlain, parse, parseBook, quoteText, signRevision, toIA } from "../src/core";
 import { owners } from "./helpers";
 
 describe("the rule above all: when in doubt, not the person's", () => {
@@ -251,5 +251,45 @@ describe("Q2 (§3): a line ends at CR LF, CR or LF, as in CommonMark", () => {
     const o = "&& AI\r\n\r\n正文\r\n\r\n&&\r\n人写的\n另一行\r";
     const s = signRevision(o, o.replace("人写的", "人写的甲"), "m");
     expect(s.text).toBe(o.replace("人写的", "人写的&&甲&&[@m]"));
+  });
+});
+
+describe("Q1: a quote of Markdown shows as the text does and nothing in it leaves", () => {
+  const q = (t: string) => quoteText(t, "k");
+
+  it("escapes @ & % and leaves the text's own backslash escapes working", () => {
+    expect(q(String.raw`a \*b\* @x & 50%`)).toBe(String.raw`> a \*b\* \@x \& 50\%` + "\n> [@k]");
+  });
+
+  it("closes a code fence, a ~~~ fence or a $$ block left open, before the [@key] line", () => {
+    expect(q("```js\ncode @@ &&")).toBe("> ```js\n> code @@ &&\n> ```\n> [@k]");
+    expect(q("~~~\n@@")).toBe("> ~~~\n> @@\n> ~~~\n> [@k]");
+    expect(q("$$\nx && y")).toBe("> $$\n> x && y\n> $$\n> [@k]");
+  });
+
+  it("keeps a closed fence as it is", () => {
+    expect(q("```\n&& x\n```\nafter &&")).toBe("> ```\n> && x\n> ```\n> after \\&\\&\n> [@k]");
+  });
+
+  it("puts a code span over several lines on one", () => {
+    expect(q("a `x\ny` b")).toBe("> a `x y` b\n> [@k]");
+  });
+
+  it("puts indented code, which the parser reads as prose, in a fence", () => {
+    expect(q("text\n\n    code &&\n    more")).toBe("> text\n>\n> ```\n> code &&\n> more\n> ```\n> [@k]");
+    // A list item that starts with indented code, after a paragraph: a bare marker can't break into it.
+    expect(q("- a\n  -     &&")).toBe("> - a\n>\n>   -\n>     ```\n>     &&\n>     ```\n> [@k]");
+  });
+
+  it("writes @ & % as entities in raw HTML, where a backslash would show", () => {
+    expect(q("<div>\n@x & 50%\n</div>")).toBe("> <div>\n> &#64;x &amp; 50&#37;\n> </div>\n> [@k]");
+  });
+
+  it("keeps the escape-everything output for untrusted text", () => {
+    expect(quoteText("```\n<b>&&", "k", { untrusted: true })).toBe("> \\`\\`\\`\n> \\<b\\>\\&\\&\n> [@k]");
+  });
+
+  it("reads a fence whose info string holds a line separator (U+2028) as a fence", () => {
+    expect(parse("> ```js x\n> &&y\n> [@k]").lineContexts.map((c) => c.codeFence)).toEqual([undefined, 0, 0]);
   });
 });

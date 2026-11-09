@@ -294,10 +294,10 @@ export default class RakkanPlugin extends Plugin {
         if (!text.trim()) return;
         new AuthorPickerModal(this.app, { authors: () => Object.values(this.allAuthors()) }, (key) => {
           const quoted = quoteText(text, key);
-          const multi = quoted.startsWith("> ");
-          const atStart = editor.getCursor().ch === 0;
-          const lead = atStart ? "" : "\n\n";
-          editor.replaceSelection(multi ? `${lead}${quoted}\n` : quoted);
+          if (!quoted) return;
+          // Always a cited blockquote: a paragraph of its own.
+          const lead = editor.getCursor().ch === 0 ? "" : "\n\n";
+          editor.replaceSelection(`${lead}${quoted}\n`);
         }).open();
       })
       .catch(() => new Notice(t("无法读取剪贴板")));

@@ -132,15 +132,21 @@ describe("fixed: untrusted quotes", () => {
   });
 });
 
-describe("open Q1: quoteText's default output does not escape", () => {
+describe("Q1: quoteText's default output, for Markdown, keeps what it quotes the source's", () => {
   for (const [text, key] of KNOWN_QUOTES) {
-    it.fails(`keeps ${JSON.stringify(text)} the source's`, () => {
+    it(`keeps ${JSON.stringify(text)} the source's`, () => {
       expect(isolated(quoteText(text, key), key)).toBe(true);
     });
   }
 
-  it.fails("keeps two quotes apart when one opens %% and the other closes it", () => {
-    const o = owners(`前文\n\n${quoteText("读数 %% 开始", "heater")}\n\n${quoteText("结束 %% 读数", "lock")}\n\n后文`);
+  it("keeps two quotes apart when one opens %% and the other closes it", () => {
+    const o = owners(`前文
+
+${quoteText("读数 %% 开始", "heater")}
+
+${quoteText("结束 %% 读数", "lock")}
+
+后文`);
     expect(o.map((x) => x.split(":")[0])).toEqual(["H", "Q@heater", "Q@lock", "H"]);
   });
 });

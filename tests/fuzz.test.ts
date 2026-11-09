@@ -4,9 +4,12 @@
 // also a plain test in tests/fuzz-regressions.test.ts.
 
 import fc from "fast-check";
+import MarkdownIt from "markdown-it";
 import { describe, expect, it } from "vitest";
 import { atomicRanges, exportPlain, parse, Parser, keyFromName, quoteText, signRevision, stripMarkers, type ParseResult, type Segment } from "../src/core";
+import { scanInline } from "../src/core/inline";
 import { indexAt } from "../src/core/parse";
+import { quoteMarkdown } from "../src/core/quote";
 import * as A from "./arbitraries";
 
 const TIMEOUT = A.LONG ? 7 * 24 * 3600_000 : 60_000;
@@ -180,8 +183,8 @@ function isolation(Q: Quoter, before: string, s1: string, k1: string, s2: string
 
 const untrusted: Quoter = (t, k) => quoteText(t, k, { untrusted: true });
 
-const isolationProp = (Q: Quoter, keyArb: fc.Arbitrary<string>) =>
-  fc.property(A.benign, A.rawText(), keyArb, A.rawText(), keyArb, A.benign, (b, s1, k1, s2, k2, a) => {
+const isolationProp = (Q: Quoter, keyArb: fc.Arbitrary<string>, text: fc.Arbitrary<string> = A.rawText()) =>
+  fc.property(A.benign, text, keyArb, text, keyArb, A.benign, (b, s1, k1, s2, k2, a) => {
     const why = isolation(Q, b, s1, k1, s2, k2, a);
     if (why) throw new Error(why);
   });
@@ -232,8 +235,9 @@ describe("P2b code and math in a cited blockquote", () => {
 describe("P2 quote isolation", () => {
   it("holds for untrusted quotes", () => fc.assert(isolationProp(untrusted, A.key), A.params(KNOWN_PAIRS)), TIMEOUT);
   it("holds for untrusted quotes with any SPEC key", () => fc.assert(isolationProp(untrusted, A.anyKey), A.params()), TIMEOUT);
-  // Waiting for a decision on quoteText's default output (see the fuzz report): today it escapes nothing.
-  it.fails("holds for quoteText's default output", () => fc.assert(isolationProp(quoteText, A.key), A.params(KNOWN_PAIRS)), TIMEOUT);
+  // The default output is for Markdown (Q1): it escapes `@ & %` and closes code and math.
+  it("holds for quoteText's default output", () => fc.assert(isolationProp(quoteText, A.key), A.params(KNOWN_PAIRS)), TIMEOUT);
+  it("holds for quoteText's default output on Markdown", () => fc.assert(isolationProp(quoteText, A.key, A.markdown), A.params()), TIMEOUT);
 });
 
 // ── P3: quote fidelity ────────────────────────────────────────────────────
@@ -254,14 +258,6 @@ function reader(q: string, key: string): string | null {
   return unescape(lines.map((l) => l.replace(/^> ?/, "")).join("\n"));
 }
 
-/** quoteText's own convention: trimmed, blank lines emptied, \r\n as \n. */
-const asQuoteTextKeepsIt = (s: string) =>
-  s
-    .replace(/\r\n/g, "\n")
-    .trim()
-    .split("\n")
-    .map((l) => (l.trim() ? l : ""))
-    .join("\n");
 
 const fidelityProp = (Q: Quoter, expected: (s: string) => string) =>
   fc.property(A.rawText(), A.key, (s, k) => {
@@ -274,8 +270,158 @@ const fidelityProp = (Q: Quoter, expected: (s: string) => string) =>
 
 describe("P3 quote fidelity", () => {
   it("holds for untrusted quotes", () => fc.assert(fidelityProp(untrusted, (s) => s), A.params(A.KNOWN_QUOTES)), TIMEOUT);
-  // Waiting for a decision on quoteText's default output: markers and escapes in the text are lost on export.
-  it.fails("holds for quoteText's default output", () => fc.assert(fidelityProp(quoteText, asQuoteTextKeepsIt), A.params(A.KNOWN_QUOTES)), TIMEOUT);
+  // The default output is Markdown and keeps how the text shows, not its characters: P6 checks it.
+});
+
+// ── P6: a Markdown quote shows as the text does ──────────────────────────
+
+const md = new MarkdownIt({ html: true });
+// markdown-it caches where closing backticks are, and a `[` scanned for a link label before them can leave
+// the cache wrong (a code span then shows as text). CommonMark's rule, without the cache:
+md.inline.ruler.at("backticks", (state, silent) => {
+  const start = state.pos;
+  if (state.src.charCodeAt(start) !== 0x60) return false;
+  let pos = start;
+  while (pos < state.posMax && state.src.charCodeAt(pos) === 0x60) pos++;
+  const marker = state.src.slice(start, pos);
+  for (let at = state.src.indexOf("`", pos); at !== -1 && at < state.posMax; at = state.src.indexOf("`", at)) {
+    let end = at;
+    while (end < state.posMax && state.src.charCodeAt(end) === 0x60) end++;
+    if (end - at === marker.length) {
+      if (!silent) {
+        const token = state.push("code_inline", "code", 0);
+        token.markup = marker;
+        token.content = state.src.slice(pos, at).replace(/\n/g, " ").replace(/^ (.+) $/, "$1");
+      }
+      state.pos = end;
+      return true;
+    }
+    at = end;
+  }
+  if (!silent) state.pending += marker;
+  state.pos += marker.length;
+  return true;
+});
+
+/**
+ * HTML the way a browser reads it, as far as quoteText is concerned: raw HTML
+ * gets `@ & %` as entities (a backslash would show there), and `&amp;` is `&`
+ * wherever no entity name follows it. markdown-it drops the last line break of
+ * raw HTML and of code at the end of a list item or blockquote: whitespace
+ * between tags, and a last line break in `<pre>`, which shows no line. A code
+ * span folded onto one line keeps the next line's indentation in markdown-it,
+ * which CommonMark strips: runs of spaces in inline code are one.
+ */
+const dom = (html: string) =>
+  html
+    .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n)))
+    .replace(/&amp;/g, "&")
+    .replace(/\n+(?=<\/(?:li|blockquote)>|<\/code><\/pre>)/g, "")
+    .replace(/(?<!<pre>)<code>([^<]*)<\/code>/g, (_, c: string) => `<code>${c.replace(/ +/g, " ")}</code>`)
+    .replace(/\n+$/, "");
+
+/** Lines of code fences, delimiters and all, as CommonMark and as the parser read `t`. */
+function fenced(t: string): { cm: string; parser: string } {
+  const lines = t.split("\n");
+  const cm: number[] = [];
+  const cmCode: number[] = [];
+  for (const tok of md.parse(t + "\n", {})) {
+    if (tok.type !== "fence" || !tok.map) continue;
+    const [s, e] = tok.map;
+    for (let i = s; i < Math.min(e, lines.length); i++) cm.push(i);
+    const last = lines[e - 1] ?? "";
+    const close = e - 1 > s && new RegExp(`^${tok.markup[0]}{${tok.markup.length},}[ \\t]*$`).test(last.replace(/^[ \t>]*/, ""));
+    for (let i = s + 1; i < Math.min(close ? e - 1 : e, lines.length); i++) cmCode.push(i);
+  }
+  const p = parse(lines.map((l) => `> ${l}`).join("\n"));
+  const code = p.lineContexts.flatMap((c, i) => (c.codeFence !== undefined ? [i] : []));
+  const all = p.lineContexts.flatMap((c, i) =>
+    c.codeFence !== undefined || (c.mode === "other" && /^(?:`{3,}|~{3,})/.test(lines[i].replace(/^[ \t>]*/, ""))) ? [i] : [],
+  );
+  return { cm: cm.join(",") + "|" + cmCode.join(","), parser: all.join(",") + "|" + code.join(",") };
+}
+
+/**
+ * Why the comparison does not apply to `t`, or null. Where the parser and CommonMark read the text
+ * differently, isolation wins and the quote shows what the parser reads; where markdown-it parts from
+ * CommonMark, it is no judge.
+ */
+function exempt(t: string): string | null {
+  // markdown-it has no math: what `$$` holds is not compared.
+  if (t.includes("$$")) return "math blocks";
+  // A fence the parser reads and CommonMark does not, or the other way round.
+  const f = fenced(t);
+  if (f.cm !== f.parser) return "fences read apart";
+  // A bare URL runs over a backtick that opens or closes a code span for CommonMark.
+  if (/:[/][/][^ \n]*`/.test(t)) return "URL over a backtick";
+  // `$…$` math holding a backtick: the parser reads math, CommonMark a code span.
+  const math = quoteMarkdown(t).lines.some((l) =>
+    scanInline(l.replace(/[@&%]/g, "x"), { ampLen: 0, atLen: 0, prose: true }).skips.some((k) => k.type === "math" && l.slice(k.from, k.to).includes("`")),
+  );
+  if (math) return "math over a backtick";
+  // markdown-it takes `>` after any indentation for a blockquote's, and reads tables before blockquotes,
+  // headings and lists: a `>` line, a heading or a list item can be a table's header. It also lets a table
+  // on a paragraph's lazy line break out of the paragraph's list or blockquote.
+  const tokens = md.parse(t + "\n", {});
+  const lines = t.split("\n");
+  const header = /^ {0,3}(?:>|#|[-*+](?:[ \t]|$)|\d{1,9}[.)](?:[ \t]|$))/;
+  const table = tokens.some(
+    (k, n) =>
+      k.type === "table_open" &&
+      k.map &&
+      (header.test(lines[k.map[0]]) ||
+        (/_close$/.test(tokens[n - 1]?.type ?? "") && tokens[n - 1].type !== "paragraph_close" && !/^[ \t]*$/.test(lines[k.map[0] - 1] ?? ""))),
+  );
+  if (/^(?: {4,}|\t)[ \t]*>/m.test(t) || table) return "markdown-it";
+  // A code span over lines that, on one line, would make a table: it stays over lines.
+  const q = quoteMarkdown(t);
+  if (q.unfolded) return "code span kept over lines";
+  // A list item starting with indented code, set off from the paragraph above: its outer list loosens.
+  if (q.loosened) return "outer list loosened";
+  return null;
+}
+
+/** The blockquote without its `[@key]` line, rendered. */
+function shown(t: string, k: string): string | null {
+  const q = quoteText(t, k);
+  if (!q) return null;
+  const lines = q.split("\n").map((l) => l.slice(l.startsWith("> ") ? 2 : 1));
+  lines.pop();
+  // markdown-it has no math, so a `$$` that closes math would show; code closers it reads as Obsidian does.
+  const math = new Set(quoteMarkdown(t).mathClosers);
+  // `$$ % @@`, which quoteText makes of `$$ %@@`, is the same LaTeX comment.
+  const body = lines.filter((_, i) => !math.has(i)).map((l) => l.replace(/^([ \t>]*\$\$[ \t]*%) (@)/, "$1$2"));
+  return md.render(body.map((l) => (l ? `> ${l}` : ">")).join("\n"));
+}
+
+describe("P6 Markdown quotes", () => {
+  it(
+    "show inside the blockquote as the text shows on its own",
+    () => {
+      const exempted: Record<string, number> = {};
+      let runs = 0;
+      fc.assert(
+        fc.property(A.markdown, A.key, (t, k) => {
+          runs++;
+          const why = exempt(t);
+          if (why) {
+            exempted[why] = (exempted[why] ?? 0) + 1;
+            return;
+          }
+          const got = shown(t, k);
+          if (got === null) return;
+          // A raw HTML block loses its last line break inside a blockquote: whitespace only.
+          const inner = /^<blockquote>\n([^]*)<\/blockquote>\n$/.exec(got)?.[1] ?? got;
+          // Rendered as a passage of a note, its last line ended (markdown-it drops a last unended blank line in code).
+          expect(dom(inner)).toBe(dom(md.render(/[\r\n]$/.test(t) ? t : t + "\n")));
+        }),
+        A.params(),
+      );
+      // Isolation wins over looks in these; how often, so a rise shows.
+      console.log(`P6: of ${runs} texts, not compared:`, exempted);
+    },
+    TIMEOUT,
+  );
 });
 
 // ── P4: escapes ───────────────────────────────────────────────────────────
