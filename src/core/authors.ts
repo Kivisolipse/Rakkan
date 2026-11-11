@@ -1,10 +1,11 @@
 // Authors: who a `[@key]` points at. Defined one per line,
 //
-//   - @key: 名字 (标识) · 种类 · #颜色
+//   - @key: 名字 (标识) · 种类 · #颜色 · #颜色2
 //
 // either in the author book (a note in the vault) or at the end of a single
 // note (the leading `- ` is optional there). 种类 is 人 / AI / 来源; 标识 is a
-// model ID, URL or ISBN; every part after the name is optional.
+// model ID, URL or ISBN; a second colour is where a gradient ends. Every part
+// after the name is optional.
 
 import { parseSignature, signatureFamily, type ExtraPrefix } from "./signature";
 
@@ -18,6 +19,8 @@ export interface Author {
   kind: AuthorKind;
   /** `#rrggbb`, when given. */
   color?: string;
+  /** Where a gradient ends, when a second colour is given after the first. */
+  color2?: string;
 }
 
 const KIND_WORDS: Record<string, AuthorKind> = {
@@ -34,7 +37,7 @@ const KIND_WORDS: Record<string, AuthorKind> = {
 
 const COLOR_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 
-/** One definition line without its key: `名字 (标识) · 种类 · #颜色`. */
+/** One definition line without its key: `名字 (标识) · 种类 · #颜色 · #颜色2`. */
 export function parseAuthor(key: string, raw: string, extra: ExtraPrefix[] = []): Author {
   const parts = raw.split(/\s*[·•|｜]\s*/).map((p) => p.trim());
   const sig = parseSignature(parts[0] ?? "");
@@ -43,8 +46,10 @@ export function parseAuthor(key: string, raw: string, extra: ExtraPrefix[] = [])
   if (sig.id) author.id = sig.id;
   let kind: AuthorKind | undefined;
   for (const p of parts.slice(1)) {
-    if (COLOR_RE.test(p)) author.color = p;
-    else kind ??= KIND_WORDS[p.toLowerCase()];
+    if (COLOR_RE.test(p)) {
+      if (!author.color) author.color = p;
+      else author.color2 ??= p;
+    } else kind ??= KIND_WORDS[p.toLowerCase()];
   }
   // Without a stated kind, a model ID makes it an AI.
   author.kind = kind ?? (signatureFamily(sig, extra) && sig.id ? "ai" : "human");
@@ -104,10 +109,11 @@ export function hueHex(key: string): string {
 }
 
 /**
- * Set or remove the `#colour` on a key's line of the book, keeping the rest of
- * the line (and the file) as it was. Unknown keys leave the text unchanged.
+ * Set or remove the `#colour` (and the gradient's second `#colour`) on a key's
+ * line of the book, keeping the rest of the line (and the file) as it was.
+ * Unknown keys leave the text unchanged; a second colour needs a first.
  */
-export function setBookColor(text: string, key: string, color: string | null): string {
+export function setBookColor(text: string, key: string, color: string | null, color2: string | null = null): string {
   const lines = text.split("\n");
   for (let i = 0; i < lines.length; i++) {
     const cr = lines[i].endsWith("\r") ? "\r" : "";
@@ -115,6 +121,7 @@ export function setBookColor(text: string, key: string, color: string | null): s
     if (!m || m[1] !== key) continue;
     let body = m[2].replace(/\s*[·•|｜]\s*#(?:[0-9a-f]{6}|[0-9a-f]{3})(?![0-9a-f])/gi, "");
     if (color) body += ` · ${color}`;
+    if (color && color2) body += ` · ${color2}`;
     lines[i] = lines[i].slice(0, lines[i].indexOf("@")) + `@${key}: ${body}` + cr;
     break;
   }
@@ -133,11 +140,11 @@ export function keyFromName(name: string): string {
     .replace(/[@:[\]「」『』“”"]/g, "");
 }
 
-/** `名字 (标识) · 种类 · #颜色` for one author. */
+/** `名字 (标识) · 种类 · #颜色 · #颜色2` for one author. */
 function bodyOf(a: Author, words: KindWords): string {
   const name = (a.name ?? "").replace(/[·•|｜]/g, " ").replace(/\s+/g, " ").trim();
   const head = a.id ? `${name} (${a.id})`.trim() : name;
-  return [head, words[a.kind], a.color].filter(Boolean).join(" · ");
+  return [head, words[a.kind], a.color, a.color && a.color2].filter(Boolean).join(" · ");
 }
 
 const eolOf = (text: string) => (text.includes("\r\n") ? "\r\n" : "\n");

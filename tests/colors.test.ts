@@ -19,6 +19,15 @@ describe("colours", () => {
     expect(dark["--rk-c-claude"]).toBe(DEFAULT_COLORS.claude.dark);
     expect(light["--rk-c2-gemini"]).toBe(DEFAULT_COLORS.gemini.light2);
     expect([light["--rk-c-gpt"], light["--rk-c2-gpt"], dark["--rk-c-gpt"]]).toEqual(["#111111", "#111111", "#222222"]);
+    // Every built-in family has a gradient: its second colour differs from its first.
+    const plain = { colors: {}, extraPrefixes: [] };
+    for (const dk of [false, true]) {
+      const v = colorVars(plain, dk);
+      for (const id of Object.keys(DEFAULT_COLORS)) expect(v[`--rk-c2-${id}`]).not.toBe(v[`--rk-c-${id}`]);
+    }
+    // A colour the user set with a second one ends its gradient there.
+    const own = colorVars({ ...settings, colors: { claude: { light: "#111111", dark: "#222222", light2: "#333333", dark2: "#444444" } } }, true);
+    expect([own["--rk-c-claude"], own["--rk-c2-claude"]]).toEqual(["#222222", "#444444"]);
     // A family added in the settings takes the generic colour until given its own.
     expect(light["--rk-c-ernie"]).toBe(DEFAULT_COLORS.generic.light);
   });

@@ -80,7 +80,7 @@ export function attrSignature(attr: Attr, doc: Doc, s?: Pick<StyleSettings, "aut
   return null;
 }
 
-const colorStyle = (c: string) => `--rk-c: ${c}; --rk-c2: ${c};`;
+const colorStyle = (c: string, c2 = c) => `--rk-c: ${c}; --rk-c2: ${c2};`;
 
 export function resolve(attr: Attr, doc: Doc, s: StyleSettings): Resolved | null {
   if (attr.kind === "human") {
@@ -99,7 +99,7 @@ export function resolve(attr: Attr, doc: Doc, s: StyleSettings): Resolved | null
     if (!author) return out;
     if (author.id) out.id = author.id;
     if (author.kind === "source") out.cls += " rk-source";
-    if (author.color) out.style = colorStyle(author.color);
+    if (author.color) out.style = colorStyle(author.color, author.color2);
     else if (author.kind === "source") out.style = undefined;
     else if (author.kind === "human") out.style = colorStyle(hueHex(key));
     else {
@@ -124,9 +124,9 @@ export function resolve(attr: Attr, doc: Doc, s: StyleSettings): Resolved | null
   if (id) cls += ` rk-model-${slug(id)}`;
   const label = sig ? signatureLabel(sig, s.extraPrefixes) : "AI";
   const out: Resolved = { cls, label };
-  const own = attr.key ? authorOf(attr.key, doc, s)?.color : undefined;
+  const own = attr.key ? authorOf(attr.key, doc, s) : undefined;
   // styles.css maps the built-in families; one added in the settings is mapped here.
-  if (own) out.style = colorStyle(own);
+  if (own?.color) out.style = colorStyle(own.color, own.color2);
   else if (!DEFAULT_COLORS[famId]) out.style = familyStyle(famId);
   if (id) out.id = id;
   if (fam) out.family = fam.id;

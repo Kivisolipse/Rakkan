@@ -19,7 +19,8 @@ export interface AuthorsHost {
   extraPrefixes(): ExtraPrefix[];
   /** Rewrite the book note; resolves when the new text is saved and read back. */
   editBook(change: (text: string) => string): Promise<boolean>;
-  setColor(key: string, color: string | null): Promise<void>;
+  /** Set or clear an author's colour; `color2` is where a gradient ends, and needs `color`. */
+  setColor(key: string, color: string | null, color2?: string | null): Promise<void>;
 }
 
 /** The colour an author shows when the book gives none. */
@@ -123,10 +124,25 @@ export class AuthorsModal extends Modal {
     row.createEl("small", { cls: "rk-authors-key", text: `@${a.key}` });
 
     const color = row.createEl("input", { type: "color", value: a.color ?? automaticColor(a, this.host.extraPrefixes()) });
+    setTooltip(color, t("颜色"));
+    // The second picker is where a gradient ends; faint until it is set, and then the text has one colour.
+    let second = a.color2 ?? null;
+    const color2 = row.createEl("input", { type: "color", cls: "rk-color2", value: second ?? color.value });
+    color2.toggleClass("rk-unset", !second);
+    setTooltip(color2, t("渐变终止色（未设置则为单色）"));
     let timer: number | undefined;
-    color.addEventListener("input", () => {
+    const save = () => {
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => void this.host.setColor(a.key, color.value), 400);
+      timer = window.setTimeout(() => void this.host.setColor(a.key, color.value, second), 400);
+    };
+    color.addEventListener("input", () => {
+      if (!second) color2.value = color.value;
+      save();
+    });
+    color2.addEventListener("input", () => {
+      second = color2.value;
+      color2.removeClass("rk-unset");
+      save();
     });
     const reset = row.createEl("button", { cls: "clickable-icon" });
     setIcon(reset, "rotate-ccw");

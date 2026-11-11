@@ -40,7 +40,7 @@ Select text, right-click and choose **Rakkan → Mark as AI-generated**. What yo
 - **Status bar.** `Human 37% · AI 38% · Quotes 25%`; hover for the count by model and by author.
 - **Signing as you write.** Text you type inside AI text is wrapped in `@@…@@`. Moved lines keep their authors. Copied text leaves the markers behind.
 - **Paste revision.** Paste an AI's revision of your text; only the changed words are credited to the model.
-- **Author book.** One note lists every author: `- @key: Name (id) · human / AI / source · #colour`. Quotes take their author's colour.
+- **Author book.** One note lists every author: `- @key: Name (id) · human / AI / source · #colour`, with an optional second `· #colour` where gradient text ends. Quotes take their author's colour.
 - **Search that ignores markers,** in Obsidian's search, the find bar and Omnisearch.
 - **Export** to PDF in colour or plain text, to a note without markers, to Pandoc, to Obsidian Publish, and to and from iA Writer's Markdown Annotations.
 - **Web Clipper templates**: pages clipped with Obsidian Web Clipper are saved as signed quotes, with an optional AI summary signed by the model that wrote it.

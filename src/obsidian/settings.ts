@@ -269,22 +269,25 @@ export class RakkanSettingTab extends PluginSettingTab {
           const ownStyle = f.id !== "quote" && f.id !== "generic";
           return {
             name: f.label,
-            desc: t("左：浅色主题颜色；右：深色主题颜色") + (ownStyle ? t("；最右：该家族的样式") : ""),
+            desc: t("前两项：浅色主题渐变起止色；后两项：深色主题渐变起止色") + (ownStyle ? t("；最右：该家族的样式") : ""),
             render: (r) => {
               const d = DEFAULT_COLORS[f.id] ?? DEFAULT_COLORS.generic;
-              const cur = () => s.colors[f.id] ?? { light: d.light, dark: d.dark };
-              r.addColorPicker((c) => {
-                c.setValue(cur().light).onChange(async (v) => {
-                  s.colors[f.id] = { ...cur(), light: v };
-                  await save();
+              // A colour saved before there was a second one keeps its first as the second: one colour, as it was.
+              const cur = (): Required<ColorPair> => {
+                const own = s.colors[f.id];
+                return own ? { light2: own.light, dark2: own.dark, ...own } : { ...d };
+              };
+              const picker = (which: keyof ColorPair) =>
+                r.addColorPicker((c) => {
+                  c.setValue(cur()[which]).onChange(async (v) => {
+                    s.colors[f.id] = { ...cur(), [which]: v };
+                    await save();
+                  });
                 });
-              });
-              r.addColorPicker((c) => {
-                c.setValue(cur().dark).onChange(async (v) => {
-                  s.colors[f.id] = { ...cur(), dark: v };
-                  await save();
-                });
-              });
+              picker("light");
+              picker("light2");
+              picker("dark");
+              picker("dark2");
               if (ownStyle) {
                 r.addDropdown((dd) =>
                   dd

@@ -5,25 +5,29 @@
 
 import type { ExtraPrefix } from "../core";
 
+/** A family's colours on a light and a dark theme; `light2` / `dark2` are where a gradient ends. */
 export interface ColorPair {
   light: string;
   dark: string;
+  light2?: string;
+  dark2?: string;
 }
 
-export const DEFAULT_COLORS: Record<string, ColorPair & { light2?: string; dark2?: string }> = {
-  claude: { light: "#d97757", dark: "#e3916f" },
-  gpt: { light: "#10a37f", dark: "#2ec79a" },
+/** Each family's colours, and a second one in the same family of hues for gradient text. */
+export const DEFAULT_COLORS: Record<string, Required<ColorPair>> = {
+  claude: { light: "#d97757", dark: "#e3916f", light2: "#c4517a", dark2: "#e8799d" },
+  gpt: { light: "#10a37f", dark: "#2ec79a", light2: "#0e8fa6", dark2: "#38b6d6" },
   gemini: { light: "#4e7ff0", dark: "#7aa2f7", light2: "#9b72cb", dark2: "#b08fe0" },
-  deepseek: { light: "#4d6bfe", dark: "#7d93ff" },
-  grok: { light: "#6b7280", dark: "#a1a1aa" },
-  llama: { light: "#0866ff", dark: "#4c8dff" },
-  muse: { light: "#d6338a", dark: "#f06aa8" },
-  qwen: { light: "#615ced", dark: "#8b87f5" },
-  mistral: { light: "#fa520f", dark: "#ff7a45" },
-  kimi: { light: "#0ea5e9", dark: "#38bdf8" },
-  glm: { light: "#14b8a6", dark: "#2dd4bf" },
-  generic: { light: "#8b5cf6", dark: "#a78bfa" },
-  quote: { light: "#b08d57", dark: "#d4b483" },
+  deepseek: { light: "#4d6bfe", dark: "#7d93ff", light2: "#7b5cf5", dark2: "#a08cff" },
+  grok: { light: "#6b7280", dark: "#a1a1aa", light2: "#374151", dark2: "#d4d4d8" },
+  llama: { light: "#0866ff", dark: "#4c8dff", light2: "#8f3cf0", dark2: "#b57aff" },
+  muse: { light: "#d6338a", dark: "#f06aa8", light2: "#8b5cf6", dark2: "#b08cff" },
+  qwen: { light: "#615ced", dark: "#8b87f5", light2: "#3b82f6", dark2: "#6fa8ff" },
+  mistral: { light: "#fa520f", dark: "#ff7a45", light2: "#d98c00", dark2: "#ffc247" },
+  kimi: { light: "#0ea5e9", dark: "#38bdf8", light2: "#6366f1", dark2: "#8b8ff8" },
+  glm: { light: "#14b8a6", dark: "#2dd4bf", light2: "#0284c7", dark2: "#5cc8f5" },
+  generic: { light: "#8b5cf6", dark: "#a78bfa", light2: "#c026d3", dark2: "#e38df5" },
+  quote: { light: "#b08d57", dark: "#d4b483", light2: "#8f6a3a", dark2: "#e8c98f" },
 };
 
 export interface ColorSettings {
@@ -50,8 +54,10 @@ export function colorVars(s: ColorSettings, dark: boolean): Record<string, strin
   for (const id of familyIds(s)) {
     const d = DEFAULT_COLORS[id] ?? DEFAULT_COLORS.generic;
     const own = s.colors[id];
-    vars[`--rk-c-${id}`] = (own ?? d)[theme];
-    vars[`--rk-c2-${id}`] = own ? own[theme] : (dark ? d.dark2 : d.light2) ?? d[theme];
+    const pair = own ?? d;
+    vars[`--rk-c-${id}`] = pair[theme];
+    // Colours set before there was a second one have none: one colour, as they were.
+    vars[`--rk-c2-${id}`] = (dark ? pair.dark2 : pair.light2) ?? pair[theme];
   }
   return vars;
 }

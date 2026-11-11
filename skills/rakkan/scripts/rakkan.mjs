@@ -1408,8 +1408,10 @@ function parseAuthor(key, raw, extra = []) {
   if (sig.id) author.id = sig.id;
   let kind;
   for (const p of parts.slice(1)) {
-    if (COLOR_RE.test(p)) author.color = p;
-    else kind ??= KIND_WORDS[p.toLowerCase()];
+    if (COLOR_RE.test(p)) {
+      if (!author.color) author.color = p;
+      else author.color2 ??= p;
+    } else kind ??= KIND_WORDS[p.toLowerCase()];
   }
   author.kind = kind ?? (signatureFamily(sig, extra) && sig.id ? "ai" : "human");
   return author;
@@ -2192,10 +2194,12 @@ var en = {
   "\u5F15\u7528": "Quotes",
   "\u8DDF\u968F\u9ED8\u8BA4": "Follow default",
   "\u6062\u590D\u9ED8\u8BA4\u989C\u8272": "Reset colours",
-  "\u5DE6\uFF1A\u6D45\u8272\u4E3B\u9898\u989C\u8272\uFF1B\u53F3\uFF1A\u6DF1\u8272\u4E3B\u9898\u989C\u8272": "Left: colour on a light theme; right: on a dark theme",
+  "\u524D\u4E24\u9879\uFF1A\u6D45\u8272\u4E3B\u9898\u6E10\u53D8\u8D77\u6B62\u8272\uFF1B\u540E\u4E24\u9879\uFF1A\u6DF1\u8272\u4E3B\u9898\u6E10\u53D8\u8D77\u6B62\u8272": "First two: gradient start and end colours, light theme; last two: dark theme",
   "\uFF1B\u6700\u53F3\uFF1A\u8BE5\u5BB6\u65CF\u7684\u6837\u5F0F": "; further right: this family's style",
   "\u4F5C\u8005": "Authors",
   "\u6062\u590D\u81EA\u52A8\u989C\u8272": "Reset to automatic colour",
+  "\u989C\u8272": "Colour",
+  "\u6E10\u53D8\u7EC8\u6B62\u8272\uFF08\u672A\u8BBE\u7F6E\u5219\u4E3A\u5355\u8272\uFF09": "Gradient end colour (single colour if unset)",
   "\u989C\u8272\u6D53\u6DE1": "Colour intensity",
   "\u5199\u4F5C\u6A21\u5F0F\u989C\u8272\u6D53\u5EA6": "Writing mode colour strength",
   "0 \u4E3A\u4E0D\u7740\u8272\uFF0C1 \u4E0E\u5BA1\u9605\u6A21\u5F0F\u76F8\u540C\u3002": "0 is no colour at all; 1 matches review mode.",
@@ -2231,6 +2235,9 @@ var en = {
   "\u4ECE\u7F72\u540D\u5B58\u6863\u6062\u590D\u6807\u8BB0": "Restore markers from the authorship archive",
   "\u6309\u5E93\u6839\u76EE\u5F55\u7684 rakkan-authorship.json\uFF0C\u4E3A\u79FB\u9664\u540E\u672A\u7ECF\u4FEE\u6539\u7684\u7B14\u8BB0\u6062\u590D\u539F\u6709\u6807\u8BB0\u3002": "Restore the original markers, from rakkan-authorship.json at the root of the vault, to the notes not changed since they were removed.",
   "\u6062\u590D\u2026": "Restore\u2026",
+  "\u5173\u4E8E": "About",
+  "\u6E90\u4EE3\u7801\u4E0E\u95EE\u9898\u53CD\u9988": "Source code and issues",
+  "\u5982\u679C Rakkan \u5BF9\u4F60\u6709\u7528\uFF0C\u6B22\u8FCE\u5728 GitHub \u4E0A\u70B9\u4E2A Star\u3002": "If Rakkan is useful to you, a star on GitHub is welcome.",
   "\u6B63\u5728\u626B\u63CF\u5E93\u4E2D\u7684\u7B14\u8BB0\u2026": "Scanning the notes in the vault\u2026",
   "\u5E93\u4E2D\u6CA1\u6709\u542B Rakkan \u6807\u8BB0\u7684\u7B14\u8BB0\u3002": "No note in the vault has Rakkan markers.",
   "\u79FB\u9664\u540E\u4FEE\u6539\u8FC7\u7684\u7B14\u8BB0\uFF0C\u6807\u8BB0\u5C06\u6C38\u4E45\u4E22\u5931\u3002": "The markers of a note changed after removal are lost permanently.",

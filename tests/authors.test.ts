@@ -134,6 +134,18 @@ describe("author colours", () => {
     const t = r.segments.find((s) => s.role === "text" && s.attr.kind === "ai")!;
     expect(resolve(t.attr, r, styles(book))!.style).toBe("--rk-c: #ff0000; --rk-c2: #ff0000;");
   });
+
+  it("ends a gradient at the author's second colour, when there is one", () => {
+    expect(parseAuthor("m", "M · AI · #ff0000 · #0000ff")).toMatchObject({ color: "#ff0000", color2: "#0000ff" });
+    // A third colour is ignored; the kind may stand anywhere.
+    expect(parseAuthor("m", "M · #ff0000 · AI · #0000ff · #00ff00")).toMatchObject({ kind: "ai", color: "#ff0000", color2: "#0000ff" });
+    const book = { m: parseAuthor("m", "GPT (gpt-5) · AI · #ff0000 · #0000ff"), q: parseAuthor("q", "Q · 人 · #ff0000 · #0000ff") };
+    const r = doc("&&x&&[@m] 「y」[@q]");
+    const ai = r.segments.find((s) => s.role === "text" && s.attr.kind === "ai")!;
+    const quote = r.segments.find((s) => s.role === "text" && s.attr.kind === "quote")!;
+    expect(resolve(ai.attr, r, styles(book))!.style).toBe("--rk-c: #ff0000; --rk-c2: #0000ff;");
+    expect(resolve(quote.attr, r, styles(book))!.style).toBe("--rk-c: #ff0000; --rk-c2: #0000ff;");
+  });
 });
 
 describe("setBookColor", () => {
@@ -148,6 +160,11 @@ describe("setBookColor", () => {
   it("keeps line endings and leaves unknown keys alone", () => {
     expect(setBookColor(book, "bob", "#111111")).toContain("- @bob: Bob (id) · 人 · #111111\r\n");
     expect(setBookColor(book, "nobody", "#111111")).toBe(book);
+    // A second colour goes after the first, replaces an old pair, and needs a first.
+    const two = setBookColor(book, "bob", "#111111", "#222222");
+    expect(two).toContain("- @bob: Bob (id) · 人 · #111111 · #222222\r\n");
+    expect(setBookColor(two, "bob", "#333333")).toContain("- @bob: Bob (id) · 人 · #333333\r\n");
+    expect(setBookColor(book, "bob", null, "#222222")).toContain("- @bob: Bob (id) · 人\r\n");
   });
 
   it("produces something parseBook reads back", () => {

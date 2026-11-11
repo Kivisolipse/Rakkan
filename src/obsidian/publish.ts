@@ -28,7 +28,7 @@ export function publishCss(settings: RakkanSettings, authors: Record<string, Aut
   const own: string[] = [];
   for (const a of Object.values(authors)) {
     const c = a.color ?? (a.kind === "human" ? hueHex(a.key) : undefined);
-    if (c) own.push(`.rk-own-${slug(a.key)} { --rk-c: ${c}; --rk-c2: ${c}; }`);
+    if (c) own.push(`.rk-own-${slug(a.key)} { --rk-c: ${c}; --rk-c2: ${(a.color && a.color2) || c}; }`);
   }
   return [
     BEGIN,
