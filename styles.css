@@ -76,6 +76,18 @@ body.rk-mode-writing {
   background-repeat: repeat-x;
 }
 
+/*
+ * iOS treats a fixed background as a scrolling one but still repaints it all
+ * the time, and a band the column's width over a short phrase shows only its
+ * first colours. There each line runs through the whole range, without either cost.
+ */
+body.is-ios .rk-style-rainbow {
+  background-attachment: scroll;
+  background-size: 100% 100%;
+  background-position: 0 0;
+  background-repeat: no-repeat;
+}
+
 /* On a dark background those stops look dim and uneven: the same hues, lighter and evened out. */
 body.theme-dark .rk-style-rainbow {
   background-image: linear-gradient(
@@ -516,4 +528,9 @@ body.rk-print-window.rk-print-preview > .print {
 .rk-strip-modal button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* An author's second colour, where a gradient ends: faint until it is set. */
+.rk-authors-row input.rk-color2.rk-unset {
+  opacity: 0.35;
 }

@@ -506,8 +506,8 @@ export default class RakkanPlugin extends Plugin {
     return true;
   }
 
-  async setAuthorColor(key: string, color: string | null) {
-    await this.editBook((text) => setBookColor(text, key, color));
+  async setAuthorColor(key: string, color: string | null, color2: string | null = null) {
+    await this.editBook((text) => setBookColor(text, key, color, color2));
   }
 
   /** The dialog that removes every marker from every note, before the plugin is uninstalled. */
@@ -525,7 +525,7 @@ export default class RakkanPlugin extends Plugin {
       authors: () => Object.values(this.authors),
       extraPrefixes: () => this.settings.extraPrefixes,
       editBook: (change) => this.editBook(change),
-      setColor: (key, color) => this.setAuthorColor(key, color),
+      setColor: (key, color, color2) => this.setAuthorColor(key, color, color2),
     }).open();
   }
 
@@ -548,9 +548,14 @@ export default class RakkanPlugin extends Plugin {
   }
 
   private anchorReading() {
+    // iOS has no fixed backgrounds, so the CSS there ignores the column.
+    if (document.body.hasClass("is-ios")) return;
     document.querySelectorAll<HTMLElement>(".markdown-preview-sizer").forEach((el) => {
       const r = el.getBoundingClientRect();
-      el.setCssProps({ "--rk-x": `${r.left}px`, "--rk-w": `${r.width}px` });
+      const x = `${r.left}px`;
+      const w = `${r.width}px`;
+      if (el.style.getPropertyValue("--rk-x") === x && el.style.getPropertyValue("--rk-w") === w) return;
+      el.setCssProps({ "--rk-x": x, "--rk-w": w });
     });
   }
 

@@ -428,14 +428,19 @@ function imeFlush(cfg: RakkanEditorConfig) {
 function columnAnchor() {
   return ViewPlugin.fromClass(
     class {
+      private x = NaN;
+      private w = NaN;
       constructor(readonly view: EditorView) {
         this.measure();
       }
       update(u: ViewUpdate) {
-        if (u.geometryChanged || u.viewportChanged || u.docChanged) this.measure();
+        // Scrolling changes the viewport but not where the column is; only a resize moves it.
+        if (u.geometryChanged) this.measure();
       }
       measure() {
         const { view } = this;
+        // iOS has no fixed backgrounds, so the CSS there ignores the column: nothing to measure.
+        if (view.dom.ownerDocument.body.classList.contains("is-ios")) return;
         view.requestMeasure({
           key: this,
           read: () => {
@@ -443,6 +448,10 @@ function columnAnchor() {
             return { x: r.left, w: r.width };
           },
           write: (m) => {
+            // Rewriting the variables restyles every coloured span; skip it when nothing moved.
+            if (m.x === this.x && m.w === this.w) return;
+            this.x = m.x;
+            this.w = m.w;
             view.dom.style.setProperty("--rk-x", `${m.x}px`);
             view.dom.style.setProperty("--rk-w", `${m.w}px`);
           },
