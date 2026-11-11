@@ -596,6 +596,14 @@ export default class RakkanPlugin extends Plugin {
     for (const m of [s.familyStyle, s.modelStyle]) for (const k of Object.keys(m)) if (!ok(m[k])) delete m[k];
   }
 
+  /** data.json changed on disk (Obsidian Sync brought another device's settings): apply them without a restart. */
+  override async onExternalSettingsChange() {
+    await this.loadSettings();
+    await this.reloadBook();
+    this.applySearch();
+    this.refresh();
+  }
+
   /** Load the search parts the settings ask for, unloading the others. */
   applySearch() {
     this.nativeSearch = this.keep(
